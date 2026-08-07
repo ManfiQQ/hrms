@@ -176,14 +176,37 @@ The legacy system's **approval hierarchy design** and its validation checklist (
 
 - **Miscarriage leave week threshold** (20 vs 28 weeks) — source handbook contradicts
   itself. Do not implement until confirmed. See `business-rules.md`.
-- **Core Role vs Level taxonomy** — the legacy system used two overlapping
-  classification systems (`core_role`: ASSISTANT_DIRECTOR/HR/MANAGER/SUPERVISOR/STAFF/
-  MASTER_ADMIN, used for approval routing; `level`: STAFF/SUPERVISOR/MANAGER/HOD/ADMIN,
-  used for org display). These need to be reconciled into one clear model before the
-  RBAC spec is finalized.
+- **HR / Assistant Director request approval** — the legacy rule routed these to Master
+  Admin, but `adr/0001` removes Master Admin from the normal approval chain entirely
+  (oversight only, no Employee record, approves nothing routine). Who approves HR and
+  Assistant Director requests is therefore unresolved. Blocks the Approval Workflow
+  Engine spec; does not block Employee Master.
 - **Lateness penalty calculation** — source handbook clause 9.1.3 is internally
   inconsistent (garbled numbers). Confirm exact formula before implementing payroll
   deduction logic.
 - **NGTime attendance export at full scale** — structure confirmed from a 24-employee
   sample; full company export not yet reviewed. Column mapping should be re-verified
   when available.
+- **`system_access` field undefined** — `adr/0001` decision 5 provisions Directors with
+  `system_access = VIEW_ONLY` against Master Admin's `FULL`, but this field does not
+  exist in `schema.md` and its full value set and relationship to `core_role` are
+  undecided. Related: `DIRECTOR` is not one of the seven `core_role` values, yet
+  `business-rules.md` refers to a Director role throughout. Resolve in the Auth & RBAC
+  spec.
+
+---
+
+## 11. Next Spec Required
+
+**`docs/modules/auth-rbac.spec.md` (Phase 0) has not been written.** Under Principle #1,
+**no Auth code may be written until it exists** — this includes `MasterAdminSeeder`, the
+account-provisioning actions, and the forced first-login password-change middleware, all
+of which are *decided* in `adr/0001` decision 5 but **not speced**. An ADR records a
+decision; it is not a spec and does not authorize code.
+
+The spec must cover the provisioning flow, `system_access`, login/session handling,
+password policy, the forced password-change gate, and the full RBAC permission matrix
+across all seven `core_role` values. Full checklist in `adr/0001` § Follow-up.
+
+Order: resolve the open questions in `docs/modules/employee-master.spec.md` §10 →
+write `auth-rbac.spec.md` → then code.

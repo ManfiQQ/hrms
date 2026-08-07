@@ -154,16 +154,51 @@ specified — carried forward as-is:
 
 ## Approval Hierarchy
 
-Sourced from the legacy system's `AGENTS.md` — well-specified, carried forward
-directly:
+Sourced from the legacy system's `AGENTS.md` — well-specified, carried forward directly,
+then extended by `adr/0001` to add the HOD tier and to separate Master Admin structurally.
+
+**Authority is read from `core_role`, never from `level`.** `level` is display-only.
+
+### Standard routing
 
 - Staff / Supervisor requests → require Manager **and** HR approval.
 - Manager requests → require HR approval.
-- HR / Assistant Director requests → require Master Admin approval.
-- Master Admin submits no requests (Leave, Hours, OT) — oversight role only.
 - No user may approve their own request.
 - A higher approval stage may override a lower pending stage only when an explicit
   business rule allows it, and the override must be audited.
+
+### HOD tier
+
+- **An HOD is optional per department.** Some departments have an assigned HOD, some
+  don't, and it varies **between departments within the same company**. Routing must
+  therefore resolve the HOD chain **dynamically per department** at request time — check
+  whether that department has an assigned HOD before deciding stage order. The chain
+  cannot be precomputed from `core_role` alone.
+- **HOD as approver — skip-stage rule:** where a department has an assigned HOD, that
+  HOD may approve **directly, skipping the Manager/Supervisor stage**, for requests
+  originating in that department.
+- **HOD's own requests route directly to HR**, skipping Manager and Supervisor, since an
+  HOD outranks both.
+- Where a department has **no** assigned HOD, the standard chain above applies unchanged.
+
+### Master Admin
+
+- **Master Admin is a structurally separate account, not a flag on an employee login.**
+  It has no linked Employee record at all.
+- It **submits nothing** (Leave, Hours, OT, claims) — with no Employee profile it has no
+  entitlements and nothing to file.
+- It **approves nothing in the normal chain** — it is not a routing stage.
+- It exists **solely for oversight and data-repair access**.
+- This makes "no self-approval" structural rather than a logic check: the account has
+  nothing of its own to approve, so there is no path to forget to guard.
+- A person needing both normal employee access and master admin access holds **two
+  separate accounts with two separate logins**. Intentional — see `adr/0001` and
+  `schema.md` § `users`.
+
+> ⚠ **OPEN — who approves HR / Assistant Director requests?** The legacy rule routed
+> these to Master Admin, which `adr/0001` removes from the normal chain. This is
+> unresolved and logged in `CLAUDE.md` §10. It blocks the Approval Workflow Engine spec;
+> it does **not** block Employee Master.
 
 ---
 
