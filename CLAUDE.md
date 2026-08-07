@@ -36,6 +36,11 @@ skipping steps.
 4. **Multi-tenancy from day one.** Every business table is scoped to `company_id` from
    the migration that creates it. Never retrofit tenant scope onto an existing table —
    this exact mistake caused real bugs in the legacy AHS system (see §9).
+   One documented carve-out: `branches` and `departments` have a **nullable**
+   `company_id` (`NULL` = shared across companies) because org units genuinely span
+   companies in this group. The column still exists from creation, and sensitive employee
+   data stays scoped to `employees.company_id`, which is NOT NULL. See `adr/0002` and
+   `conventions.md` §2.
 5. **`schema.md` is updated in the same commit as any migration.** Not "later." Same
    commit.
 6. **One module per session.** `/clear` context frequently. Don't let one session span

@@ -25,10 +25,37 @@ Draft — pre-implementation. No migrations have been written yet.
 | timestamps, soft deletes | | |
 
 ### `branches`
-`id`, `company_id` (FK), `name`, `address`, timestamps
+`id`, `company_id` (FK, **nullable**), `name`, `address`, timestamps
 
 ### `departments`
-`id`, `company_id` (FK), `branch_id` (FK, nullable), `name`, timestamps
+`id`, `company_id` (FK, **nullable**), `branch_id` (FK, nullable), `name`, timestamps
+
+> ### Shared vs company-dedicated org structure — read before querying either table
+>
+> `company_id` on **both** tables is nullable, and `NULL` is a **meaningful value, not
+> missing data**:
+>
+> | Value | Meaning | Example |
+> |---|---|---|
+> | `NULL` | **Shared / group-level** — available across all companies | HQ, Marketing, Logistics |
+> | Set | **Company-dedicated** — belongs to that one company | THALHAH's factory |
+>
+> Branches and departments spanning companies is a **common pattern in this group, not an
+> edge case** — THALHAH and TURSENIA staff share one Logistics branch; HQ Marketing is
+> staffed from several companies. See `adr/0002`.
+>
+> **⚠ Query scope must be `company_id IS NULL OR company_id = :current_company`.** A
+> plain `where company_id = :current` silently hides every shared branch and department —
+> it returns fewer rows rather than an error, so it presents as "Logistics disappeared"
+> rather than as a bug. The global scope on these two tables must include the shared rows
+> by default.
+>
+> **This is not a multi-tenancy violation.** `branches` and `departments` are
+> org-structure reference tables holding no personal or financial data — a department row
+> is a name and a position in a hierarchy. Sensitive employee data (leave, payroll,
+> salary, documents, family, disciplinary) remains strictly scoped to
+> `employees.company_id` and is unaffected. The rule: **shared structure, scoped data.**
+> See `conventions.md` §2 for the carve-out and `adr/0002` decision 3.
 
 ### `positions`
 `id`, `department_id` (FK), `title`, timestamps
@@ -41,10 +68,11 @@ Draft — pre-implementation. No migrations have been written yet.
 | Column | Type | Notes |
 |---|---|---|
 | id | bigint PK | |
-| employee_no | string, unique | |
+| employee_no | string, unique | **Group-wide unique**, format `AHS-0001` — `AHS` prefix + sequential zero-padded number. ⚠ The prefix is **always `AHS`**, the parent company, **regardless of which subsidiary employs the person** — a THALHAH employee is still `AHS-0042`. Numbering is a single group-wide sequence, not per-company. |
 | full_name, nickname, phone_no, email | string, nullable | |
-| company_id, branch_id, department_id, position_id | FK | Scoped from creation |
-| fingerprint_id | string, unique, nullable | Matches NGTime attendance export ID |
+| company_id | FK, **NOT NULL** | The employee's **payroll and legal employer** — determines which company's leave entitlement, policy config, payroll and statutory rules apply. Mandatory, scoped from creation. |
+| branch_id, department_id, position_id | FK | Org assignment. **Independent of `company_id` and not required to match it** — an employee may sit in a shared branch/department belonging to no single company, or to a different one. This is valid and must not be rejected by validation. See `adr/0002` decision 2. |
+| fingerprint_id | string, unique, nullable | Matches NGTime attendance export ID. **HR-managed on this record; current value only.** Phase 1 keeps no enrolment history — a re-enrolment overwrites the value in place. If historical punch-to-employee resolution later proves necessary, that is a Phase 2 Attendance decision, not a Phase 1 table. |
 | core_role | enum: STAFF, SUPERVISOR, MANAGER, HOD, HR, ASSISTANT_DIRECTOR | **Authority field** — the only field consulted for approval routing and RBAC. Six values. See `business-rules.md` § Approval Hierarchy and `adr/0001`. `HOD` added (missing from legacy). **`MASTER_ADMIN` is deliberately not a value**: a Master Admin has no employee record, so the value could only ever be set in error. Excluding it makes "Master Admin never has an Employee record" **structurally impossible to violate** rather than test-enforced — there is no value to set. Master Admin is identified only at the `users` level (`is_master_admin` + null `employee_id`). `DIRECTOR` is likewise absent — see `adr/0001` decision 7. |
 | level | enum: STAFF, SUPERVISOR, MANAGER, HOD | **Display field only** — org chart, directory grouping, seniority tier. Never drives an authorization or routing decision. `ADMIN` deliberately excluded: it conflated a system permission with an org-seniority tier — see `adr/0001`. |
 | employment_type | enum: FULL-TIME, PART-TIME, CONTRACT, INTERN, FREELANCE | |
@@ -91,8 +119,20 @@ correction is a new row, not an edit. Mutability would defeat the point of the t
 > from Grade C to D," which the legacy system's flat-field design could not do.
 
 ### `employee_documents`
-`id`, `company_id` (FK), `employee_id` (FK), `type`, `file_path`, `uploaded_by`
+`id`, `company_id` (FK), `employee_id` (FK), `type` (enum), `file_path`, `uploaded_by`
 (FK → users), `created_by`, `updated_by`, timestamps, soft deletes
+
+`type` enum — Phase 1 starting set:
+
+```
+IC, PASSPORT, EDUCATION_CERTIFICATE, OFFER_LETTER, CONFIRMATION_LETTER,
+RESIGNATION_LETTER, OTHER
+```
+
+A fixed enum rather than free text, per `conventions.md` §4. **This list is a starting
+set, not exhaustive** — it may be amended by a future migration when HR needs more types.
+`OTHER` is a deliberate escape hatch so an unanticipated document is never blocked from
+being uploaded while that migration is written.
 
 ---
 
@@ -112,6 +152,15 @@ part of it) — see `business-rules.md` § Approval Hierarchy.
 > approval action (`adr/0001` decisions 6–7, `business-rules.md` § Director Discretion).
 > Where no counterpart account exists, the request is held **blocked with a reason** —
 > never auto-approved, never escalated to Master Admin.
+
+> **HOD authority is department-scoped, not company-scoped.** A shared department may
+> contain staff from several companies (`adr/0002`), and its HOD approves for **all** of
+> them. An HOD acting on a request from an employee with a **different `company_id` than
+> their own is correct behaviour and must be permitted** — not a scope violation. The
+> exception is narrow: it covers the request under approval and the context needed to
+> decide it, **never** that employee's leave history, payroll, salary, or documents, and
+> every cross-company approval is written to `audit_logs`. Test both directions — that it
+> is allowed, and that it grants no wider read. See `adr/0002` decision 4.
 
 > **Routing must resolve the HOD chain dynamically, per department.** An HOD is optional
 > per department — some departments have one, some don't, and it varies between
@@ -206,3 +255,7 @@ rather than carried over directly.
   business table **at creation** — never retrofitted, unlike the legacy system's
   `er_inquiry_findings` table, which had scope columns added via a later migration
   with a SQL backfill.
+  **Note:** "exists at creation" is about the *column*, not its nullability.
+  `branches.company_id` and `departments.company_id` are nullable by design (`adr/0002`)
+  and still satisfy this rule — the column is there from the first migration, and `NULL`
+  carries the defined meaning "shared." This is not the legacy retrofit pattern.

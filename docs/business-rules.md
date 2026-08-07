@@ -154,6 +154,13 @@ specified — carried forward as-is:
   Admin as an audited manual override — there is no Director approval step. See
   § Director Discretion.
 
+> **Two structural facts for the Payroll spec**, confirmed while speccing Employee Master
+> and captured in `docs/modules/payroll-notes.md` so they are not lost: **basic salary is
+> not static** (HR raises it over an employee's tenure, so it needs a history ledger
+> rather than an overwritable field), and **allowances (*elaun*) are not a fixed set**
+> (HR creates types manually with custom values, so they need dynamic `allowance_types` +
+> `employee_allowances` tables rather than fixed columns). Neither is built in Phase 1.
+
 ---
 
 ## Approval Hierarchy
@@ -184,6 +191,13 @@ then extended by `adr/0001` to add the HOD tier and to separate Master Admin str
 - **HOD's own requests route directly to HR**, skipping Manager and Supervisor, since an
   HOD outranks both.
 - Where a department has **no** assigned HOD, the standard chain above applies unchanged.
+- **An HOD's authority follows their department, not their payroll company.** Branches
+  and departments may be shared across group companies (`adr/0002`) — the Logistics
+  branch mixes THALHAH and TURSENIA staff, HQ Marketing draws from several companies. The
+  HOD of a shared department approves for **every** employee in it, whichever company
+  employs them. Approving across companies is correct here, is limited to the request
+  itself (it grants no access to that employee's leave, payroll, or documents), and is
+  audited.
 
 ### Master Admin
 

@@ -4,6 +4,9 @@
 - **Date:** 2026-08-07
 - **Supersedes:** the overlapping `core_role` / `level` design inherited from the legacy
   AHS system
+- **Extended by:** `adr/0002` — decision 3 (HOD per department) is extended there: a
+  department may span companies, and an HOD's authority follows the department, not their
+  payroll company
 - **Affects:** `employees`, `users`, `approval_requests`, RBAC spec, Employee Master spec
 
 ---

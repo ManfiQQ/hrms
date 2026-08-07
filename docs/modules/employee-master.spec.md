@@ -63,9 +63,14 @@ migration author needs beyond the column list.
 **Migration rules for this module**
 
 - `company_id` on every table in the migration that **creates** it. Never retrofitted
-  (`CLAUDE.md` Principle #4).
+  (`CLAUDE.md` Principle #4). `employees.company_id` is **NOT NULL**.
 - Tenant global scope applied on every model, bypassable only from an explicit Master
   Admin context.
+- **Exception — `branches` and `departments`**: `company_id` is **nullable** there
+  (`NULL` = shared across companies), and their global scope must resolve to
+  `company_id IS NULL OR company_id = :current_company` so shared rows are **included**,
+  not filtered out. See `adr/0002` and `conventions.md` §2 carve-out. A plain
+  `where company_id = :current` on these tables is a silent data-loss bug, not an error.
 - Six migrations will be generated in this module — verify with
   `ls database/migrations | sort` that no two share a timestamp before committing
   (`conventions.md` §6; the legacy system shipped three colliding timestamps).
@@ -73,10 +78,12 @@ migration author needs beyond the column list.
 
 **Indexes**
 
-- `employees`: unique on `employee_no`; unique on `fingerprint_id` (nullable — unique
-  index must permit multiple nulls); composite index on
-  `(company_id, staff_status)` for the default list query; index on `department_id`,
-  `direct_supervisor_id`, `manager_id`.
+- `employees`: unique on `employee_no` — **group-wide, not composite with `company_id`**
+  (§10 decision 1); unique on `fingerprint_id` (nullable — unique index must permit
+  multiple nulls); composite index on `(company_id, staff_status)` for the default list
+  query; index on `department_id`, `direct_supervisor_id`, `manager_id`.
+- `branches`, `departments`: index on `company_id` — the column is nullable, so the index
+  must serve `IS NULL` lookups as well as equality.
 - Child tables: index on `(company_id, employee_id)`.
 
 **Enums** — final per `adr/0001`, no longer pending:
@@ -131,10 +138,28 @@ form a cycle — validated on save.
 org display. They may legitimately differ for the same person. No code may read `level`
 for an authorization decision (`adr/0001`).
 
-**BR-10 — HOD assignment is per department, optional.** A department may or may not have
-an assigned HOD, and this varies between departments within one company. Employee Master
-stores the `HOD` role on the employee; the *department → HOD* resolution consumed by
-approval routing must be queryable dynamically (`adr/0001` decision 3).
+**BR-10 — HOD assignment is per department, optional, and department-scoped.** A
+department may or may not have an assigned HOD, and this varies between departments
+within one company. Employee Master stores the `HOD` role on the employee; the
+*department → HOD* resolution consumed by approval routing must be queryable dynamically
+(`adr/0001` decision 3).
+
+An HOD's authority **follows their department, not their payroll company** — a shared
+department may contain staff from several companies, and its HOD approves for all of
+them (`adr/0002` decision 4). Employee Master must therefore not assume an HOD and their
+department's members share a `company_id`.
+
+**BR-12 — Org assignment is independent of employing company.** `employees.company_id`
+(NOT NULL) is the payroll/legal employer. `branch_id` and `department_id` may point at
+shared org units (`company_id IS NULL`) or at units belonging to a different company.
+**Validation must not require them to match** — an employee of TURSENIA in the shared
+Logistics branch is a correct record. Sensitive data stays scoped to
+`employees.company_id` regardless of org placement. See `adr/0002` decisions 2–3.
+
+**BR-13 — `employee_no` is group-wide.** Format `AHS-0001`, sequential and zero-padded,
+**always the `AHS` prefix regardless of employing subsidiary**. Generation must draw from
+a single group-wide sequence — a per-company counter would produce collisions against the
+group-wide unique index. See §10 decision 1.
 
 **BR-11 — Master Admin has no employee record.** No Employee row may be created for a
 Master Admin account. This is **enforced structurally, not by assertion**: `core_role`
@@ -216,6 +241,24 @@ non-trivial and everything downstream depends on it:
 1. Tenant scope — a user of company A cannot read, list, or update company B's employees,
    including via child tables.
 2. `company_id` cannot be overridden via request input (mass-assignment probe).
+
+**Shared org structure (`adr/0002`) — the highest-risk area in this module:**
+
+1a. A shared branch/department (`company_id IS NULL`) **is visible** to users of every
+    company. This is the inverse of the usual tenant test and is the bug most likely to
+    ship: a plain `where company_id = :current` returns fewer rows rather than erroring,
+    so it fails silently.
+
+1b. A company-dedicated branch/department (`company_id` set) is **not** visible to other
+    companies — the carve-out must not become a blanket bypass.
+
+1c. An employee whose `branch_id`/`department_id` belongs to a different company, or to a
+    shared unit, saves successfully and is **not** rejected by validation (BR-12).
+
+1d. An HOD of a shared department **can** approve a request from an employee of a
+    different `company_id` (`adr/0002` decision 4) — and **cannot** read that employee's
+    leave history, payroll, salary, or documents. Both halves must be asserted; testing
+    only the permission turns the narrow exception into an open door.
 3. Status history row written on every qualifying change; none written on a no-op save.
 4. Status history rows cannot be updated or deleted.
 5. Status transitions — permitted ones succeed, forbidden ones rejected; terminal
@@ -229,6 +272,11 @@ non-trivial and everything downstream depends on it:
 9. Soft delete hides from list, retains child records.
 10. Importer idempotency — re-running produces no duplicates; unknown company spelling
     is rejected, not auto-created.
+11. `employee_no` generation — sequential, zero-padded, `AHS` prefix for employees of
+    **every** subsidiary; the sequence is group-wide, so two employees of different
+    companies never collide (BR-13).
+12. `employee_documents.type` accepts each of the seven enum values and rejects an
+    unlisted one.
 
 ## 9. Definition of Done
 
@@ -239,25 +287,58 @@ the sensitive-file check (no `.env`, no employee documents, no salary files stag
 Plus, specific to this module: `schema.md` updated in the same commit as each migration,
 and no migration timestamp collisions.
 
-## 10. Open Questions — resolve before approval
+## 10. Resolved Decisions
 
-1. **`employee_no` format.** Is it group-wide unique or per-company? Is there a required
-   prefix per entity (e.g. `AHS-0001`)? The schema currently says globally unique — needs
-   confirmation, since per-company numbering would change the unique index.
-2. **`fingerprint_id` source of truth.** Assigned by the NGTime device or by HR? What
-   happens when an employee's device enrolment changes — new value on the same record, or
-   history required? Affects Phase 2 matching.
-3. **Salary fields.** Deliberately excluded here (Phase 2 Payroll). Confirm HR does not
-   need a basic-salary field visible on the employee record before then — if they do, it
-   changes the permission model, since salary is more sensitive than the rest of the
-   record.
-4. **Document types.** Fixed enum (IC, passport, certificate, offer letter, …) or free
-   text? Fixed is preferred per `conventions.md` §4; needs the actual list from HR.
-5. **Departments spanning branches.** `departments` has a nullable `branch_id`. Confirm
-   whether one department can span multiple branches — affects BR-10's department → HOD
-   resolution.
+All five questions that previously blocked approval of this spec are **closed**. Recorded
+here with their answers so the reasoning survives.
 
-**Not blocking this module:** the remaining `system_access` value-set question
-(`CLAUDE.md` §10) belongs to the Auth & RBAC spec, which Employee Master does not depend
-on. The HR ↔ Assistant Director approval routing question that previously sat here is
-**resolved** — peer approval, `adr/0001` decision 6.
+**1. `employee_no` format — RESOLVED.** Group-wide unique, format `AHS-0001`: `AHS`
+prefix + sequential zero-padded number, single group-wide sequence.
+
+⚠ The prefix is **always `AHS`** — the parent company — **regardless of which subsidiary
+employs the person**. A THALHAH employee is `AHS-0042`, not `THALHAH-0042`. This is
+counterintuitive enough to be "corrected" by mistake, so: it is intentional. The unique
+index stays group-wide, not composite with `company_id`.
+
+**2. `fingerprint_id` — RESOLVED.** HR-managed on the employee record, **current value
+only**. No enrolment-history table in Phase 1; a re-enrolment overwrites in place. If
+historical punch-to-employee resolution proves necessary, that is a Phase 2 Attendance
+decision, not a Phase 1 table.
+
+**3. Salary — RESOLVED as deferred.** Not built in Employee Master; belongs to Phase 2
+Payroll. The permission-model concern that made this a question does not arise, because
+no salary data exists on the record.
+
+Two structural facts confirmed while resolving it are captured in
+`docs/modules/payroll-notes.md` so they survive to the Payroll spec: **basic salary is
+not static** (HR raises it over tenure → needs a history ledger, not an overwritable
+field), and **allowances are not a fixed set** (HR creates types manually → needs
+dynamic `allowance_types` + `employee_allowances` tables, not fixed columns).
+
+**4. Document types — RESOLVED.** Fixed enum for Phase 1:
+
+```
+IC, PASSPORT, EDUCATION_CERTIFICATE, OFFER_LETTER, CONFIRMATION_LETTER,
+RESIGNATION_LETTER, OTHER
+```
+
+A **starting set, not exhaustive** — amendable by a future migration when HR needs more
+types. `OTHER` is a deliberate escape hatch so an unanticipated document is never blocked
+from upload while that migration is written.
+
+**5. Branches / departments spanning companies — RESOLVED, and larger than the original
+question.** The question asked about departments spanning *branches*; the real answer is
+that branches and departments span **companies**, and this is a **common pattern in the
+group, not an edge case** — THALHAH and TURSENIA staff share one Logistics branch, HQ
+Marketing draws from several companies.
+
+`branches.company_id` and `departments.company_id` are therefore **nullable**: `NULL` =
+shared/group-level, set = company-dedicated. `employees.company_id` stays **mandatory**
+and independent — it is the payroll/legal employer, and need not match the employee's
+branch or department. Full decision and reasoning: **`adr/0002`**.
+
+This also closes the HOD dynamic-routing question from `adr/0001` decision 3 — see BR-10
+below.
+
+**Not blocking this module:** the `system_access` value-set question (`CLAUDE.md` §10)
+belongs to the Auth & RBAC spec, which Employee Master does not depend on.

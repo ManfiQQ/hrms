@@ -25,9 +25,28 @@ Every **business** table (not pure reference/lookup tables like `leave_types`) m
 - Have a global scope applied automatically so queries are tenant-scoped by default.
 - Only bypass tenant scope explicitly, from a Master Admin context, and never silently.
 
+### Carve-out — shared org-structure tables
+
+`branches` and `departments` have a **nullable** `company_id`, where `NULL` means
+"shared across all companies" (HQ, Marketing, Logistics) and a set value means
+company-dedicated. Their global scope must resolve to
+`company_id IS NULL OR company_id = :current_company` — it **includes** shared rows
+rather than filtering them out.
+
+This is a deliberate carve-out, not a relaxation of Principle #4. These two tables are
+org-structure references holding no personal or financial data. **Sensitive employee data
+— leave, payroll, salary, documents, family, disciplinary — stays strictly scoped to
+`employees.company_id`, which remains NOT NULL.** The rule is **shared structure, scoped
+data**: where a person works is organizational, who employs them is tenancy.
+
+An employee's `branch_id` / `department_id` need **not** match their `company_id`, and
+validation must not require it. Full reasoning and the HOD cross-company approval
+consequence: `adr/0002`.
+
 ## 3. Every Business Table Must Include
 
-- `company_id` (except pure reference/lookup tables)
+- `company_id` (except pure reference/lookup tables; nullable on the shared
+  org-structure tables `branches` and `departments` — see the §2 carve-out)
 - `created_by`, `updated_by` — nullable, FK to `users`
 - Soft deletes
 - Timestamps
