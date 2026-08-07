@@ -55,18 +55,37 @@ decision 4 below.
 
 ### 2. `core_role` — approval and RBAC authority
 
-Seven values:
+Six values:
 
 ```
-STAFF, SUPERVISOR, MANAGER, HOD, HR, ASSISTANT_DIRECTOR, MASTER_ADMIN
+STAFF, SUPERVISOR, MANAGER, HOD, HR, ASSISTANT_DIRECTOR
 ```
 
-`core_role` answers "what may this account approve, and where do its own requests go."
+`core_role` answers "what may this employee approve, and where do their own requests go."
 It is the **only** field consulted by the approval engine and by RBAC checks.
 
 `HOD` is newly added here — it was absent from the legacy `AGENTS.md` authority list
 despite existing in the display list. Its absence is why the legacy system could not
 route to a Head of Department.
+
+**`MASTER_ADMIN` is deliberately not a value.** `core_role` is a column on `employees`,
+and by decision 4 a Master Admin has **no employee record** — so a `MASTER_ADMIN`
+`core_role` could never legitimately be set on any row. Including it would define a value
+whose only possible use is a bug, and the "Master Admin has no Employee record" rule
+would then depend on a test remembering to assert that the value never appears.
+
+Excluding it makes the rule **structurally impossible to violate rather than
+test-enforced**: there is no value to set, so no row can claim Master Admin authority.
+This is the same reasoning as decision 4 itself — remove the possibility at the data
+layer instead of guarding against it in code.
+
+Master Admin is therefore identified **entirely at the `users` level**, by
+`is_master_admin` with a null `employee_id` — never by an authority value on an employee
+row. The two taxonomies do not need to merge: `core_role` describes an *employee's*
+authority within the approval chain, and Master Admin is by design not in that chain
+(decision 4).
+
+`DIRECTOR` is likewise absent, for a different reason — see decision 7.
 
 ### 3. HOD is optional per department
 
@@ -221,7 +240,7 @@ declaration and withholding, and policy exceptions generally.
 **All of these are policy text describing real-world authority within the company. None
 is a digital in-system approval step.** The Director holds no approval stage, appears in
 no routing chain, and is never assigned a request for action in the system. This is also
-why `DIRECTOR` is absent from the seven `core_role` values in decision 2 — its absence is
+why `DIRECTOR` is absent from the six `core_role` values in decision 2 — its absence is
 correct, not an oversight, and the apparent contradiction with `business-rules.md` is
 resolved by recognizing that those clauses describe company governance, not software
 workflow.
@@ -277,7 +296,8 @@ The Auth & RBAC spec must cover, at minimum:
 4. Login, logout, session handling, session lifetime, and failed-attempt throttling.
 5. The forced first-login password-change gate and its middleware.
 6. Password policy — minimum strength, expiry (if any), reuse rules.
-7. The full RBAC permission matrix across all seven `core_role` values, including how
+7. The full RBAC permission matrix across all six `core_role` values plus the Master
+   Admin account type, including how
    the optional per-department HOD (decision 3) resolves in permission checks.
 8. How the dual-account arrangement from decision 4 behaves at login — two logins, two
    sessions, no switching between them within one session.
@@ -306,10 +326,11 @@ The Auth & RBAC spec must cover, at minimum:
 - Dual accounts for dual-capacity people means two logins to manage, and audit trails for
   such a person are split across two user IDs. Accepted — the audit split is arguably
   *desirable*, since it records which capacity an action was taken in.
-- `employees.core_role` carries a `MASTER_ADMIN` value that, by decision 4, can never
-  legitimately appear on any employee row — Master Admin accounts have no employee
-  record. The value is retained so that one authority taxonomy is expressed in one
-  enum; the invariant is documented in `schema.md` and must be asserted in tests.
+- The authority taxonomy is split across two places rather than one: `employees.core_role`
+  for the six in-chain roles, and `users.is_master_admin` for Master Admin. Accepted
+  deliberately — a single enum containing an unusable value was the worse option, and the
+  split mirrors a real distinction (Master Admin is not in the approval chain at all).
+  Code must therefore not assume `core_role` alone answers "what is this account."
 
 **Open, not resolved by this ADR**
 

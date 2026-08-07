@@ -202,7 +202,8 @@ decision; it is not a spec and does not authorize code.
 
 The spec must cover the provisioning flow, `system_access`, login/session handling,
 password policy, the forced password-change gate, and the full RBAC permission matrix
-across all seven `core_role` values. Full checklist in `adr/0001` § Follow-up.
+across all six `core_role` values plus the Master Admin account type. Full checklist in
+`adr/0001` § Follow-up.
 
 Order: resolve the open questions in `docs/modules/employee-master.spec.md` §10 →
 write `auth-rbac.spec.md` → then code.

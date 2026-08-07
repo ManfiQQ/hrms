@@ -81,8 +81,9 @@ migration author needs beyond the column list.
 
 **Enums** — final per `adr/0001`, no longer pending:
 
-- `core_role`: `STAFF, SUPERVISOR, MANAGER, HOD, HR, ASSISTANT_DIRECTOR, MASTER_ADMIN`
-  — authority only.
+- `core_role`: `STAFF, SUPERVISOR, MANAGER, HOD, HR, ASSISTANT_DIRECTOR` — authority
+  only, six values. `MASTER_ADMIN` and `DIRECTOR` are deliberately absent (`adr/0001`
+  decisions 2 and 7).
 - `level`: `STAFF, SUPERVISOR, MANAGER, HOD` — display only.
 
 ## 4. Business Rules
@@ -136,8 +137,13 @@ stores the `HOD` role on the employee; the *department → HOD* resolution consu
 approval routing must be queryable dynamically (`adr/0001` decision 3).
 
 **BR-11 — Master Admin has no employee record.** No Employee row may be created for a
-Master Admin account, and `employees.core_role` must never be set to `MASTER_ADMIN`.
-Assert as a test-enforced invariant (`schema.md` § `employees`, `adr/0001` decision 4).
+Master Admin account. This is **enforced structurally, not by assertion**: `core_role`
+has no `MASTER_ADMIN` value (`adr/0001` decision 2), so no employee row can express
+Master Admin authority in the first place. Master Admin is identified solely by
+`users.is_master_admin` with a null `employee_id`.
+
+The migration must therefore define `core_role` with exactly the six values — adding
+`MASTER_ADMIN` "for completeness" would reintroduce the hole this closes.
 
 ## 5. Behaviour
 
@@ -214,8 +220,10 @@ non-trivial and everything downstream depends on it:
 4. Status history rows cannot be updated or deleted.
 5. Status transitions — permitted ones succeed, forbidden ones rejected; terminal
    statuses stay terminal.
-6. `BR-11` invariant — no employee row can be created with `core_role = MASTER_ADMIN`;
-   a Master Admin user has null `employee_id`.
+6. `BR-11` — the `core_role` enum contains exactly the six permitted values and
+   **rejects `MASTER_ADMIN`** at the database level (a guard against a future migration
+   quietly re-adding it, since this rule is structural and has no runtime check behind
+   it); and a Master Admin user has null `employee_id`.
 7. Supervisor/manager self-reference and cycle rejection (BR-8).
 8. `working_days` / times persist and cast as structured values, not strings (BR-5).
 9. Soft delete hides from list, retains child records.
