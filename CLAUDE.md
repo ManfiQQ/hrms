@@ -176,14 +176,34 @@ The legacy system's **approval hierarchy design** and its validation checklist (
 
 - **Miscarriage leave week threshold** (20 vs 28 weeks) — source handbook contradicts
   itself. Do not implement until confirmed. See `business-rules.md`.
-- **Core Role vs Level taxonomy** — the legacy system used two overlapping
-  classification systems (`core_role`: ASSISTANT_DIRECTOR/HR/MANAGER/SUPERVISOR/STAFF/
-  MASTER_ADMIN, used for approval routing; `level`: STAFF/SUPERVISOR/MANAGER/HOD/ADMIN,
-  used for org display). These need to be reconciled into one clear model before the
-  RBAC spec is finalized.
 - **Lateness penalty calculation** — source handbook clause 9.1.3 is internally
   inconsistent (garbled numbers). Confirm exact formula before implementing payroll
   deduction logic.
 - **NGTime attendance export at full scale** — structure confirmed from a 24-employee
   sample; full company export not yet reviewed. Column mapping should be re-verified
   when available.
+- **`system_access` value set** — `adr/0001` decision 5 provisions Master Admin with
+  `FULL` and Director with `VIEW_ONLY`, but the field is not yet defined in `schema.md`
+  and the value regular staff accounts receive is unspecified. Narrowed from the earlier
+  form of this item: the `DIRECTOR`-vs-`core_role` contradiction is **resolved** — see
+  `adr/0001` decision 7, Director authority is off-system and `DIRECTOR` is correctly
+  absent from `core_role`. Only the field definition remains. Resolve in the Auth & RBAC
+  spec; does not block Employee Master.
+
+---
+
+## 11. Next Spec Required
+
+**`docs/modules/auth-rbac.spec.md` (Phase 0) has not been written.** Under Principle #1,
+**no Auth code may be written until it exists** — this includes `MasterAdminSeeder`, the
+account-provisioning actions, and the forced first-login password-change middleware, all
+of which are *decided* in `adr/0001` decision 5 but **not speced**. An ADR records a
+decision; it is not a spec and does not authorize code.
+
+The spec must cover the provisioning flow, `system_access`, login/session handling,
+password policy, the forced password-change gate, and the full RBAC permission matrix
+across all six `core_role` values plus the Master Admin account type. Full checklist in
+`adr/0001` § Follow-up.
+
+Order: resolve the open questions in `docs/modules/employee-master.spec.md` §10 →
+write `auth-rbac.spec.md` → then code.
