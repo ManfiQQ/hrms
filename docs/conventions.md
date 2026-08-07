@@ -78,7 +78,26 @@ current default values.
 - No direct commits to `main`
 - **No backup-suffix files, ever** — no `*.backup_*`, `*_old.php`, `*_v2.php`. If you
   need a backup, commit first.
-- All git operations via terminal + `gh` CLI. No GitHub web interface.
+
+### Terminal for actions, browser for reading
+
+**All git *actions* — commit, push, merge, PR create/edit, branch delete, approve — go
+through the terminal + `gh` CLI.**
+
+The GitHub web UI **may** be used to visually read diffs and PR descriptions; rendered
+markdown and side-by-side diffs are genuinely easier to review in a browser, and reading
+changes nothing. But **never click an action button** there — merge, approve, edit,
+delete. Those must be run as `gh` commands so every action leaves a corresponding
+terminal record.
+
+The point is traceability: an action taken in the browser exists only in GitHub's event
+log, disconnected from the local shell history that shows what was actually done and in
+what order. Merges in particular happen via `gh pr merge`.
+
+> **One-time exception, already spent.** PR #1 was merged with the browser's merge button
+> before this clarification existed. It is recorded here as history, **not** a violation
+> to correct retroactively — the merge is sound and nothing needs reverting. Do not
+> repeat it; from here, merges are `gh pr merge`.
 
 ---
 
