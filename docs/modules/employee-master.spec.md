@@ -249,6 +249,7 @@ and no migration timestamp collisions.
    whether one department can span multiple branches — affects BR-10's department → HOD
    resolution.
 
-**Not blocking this module:** the open HR/Assistant-Director approval routing question
-(`CLAUDE.md` §10) belongs to the Approval Workflow Engine, which Employee Master does not
-depend on.
+**Not blocking this module:** the remaining `system_access` value-set question
+(`CLAUDE.md` §10) belongs to the Auth & RBAC spec, which Employee Master does not depend
+on. The HR ↔ Assistant Director approval routing question that previously sat here is
+**resolved** — peer approval, `adr/0001` decision 6.

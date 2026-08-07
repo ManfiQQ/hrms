@@ -176,23 +176,19 @@ The legacy system's **approval hierarchy design** and its validation checklist (
 
 - **Miscarriage leave week threshold** (20 vs 28 weeks) — source handbook contradicts
   itself. Do not implement until confirmed. See `business-rules.md`.
-- **HR / Assistant Director request approval** — the legacy rule routed these to Master
-  Admin, but `adr/0001` removes Master Admin from the normal approval chain entirely
-  (oversight only, no Employee record, approves nothing routine). Who approves HR and
-  Assistant Director requests is therefore unresolved. Blocks the Approval Workflow
-  Engine spec; does not block Employee Master.
 - **Lateness penalty calculation** — source handbook clause 9.1.3 is internally
   inconsistent (garbled numbers). Confirm exact formula before implementing payroll
   deduction logic.
 - **NGTime attendance export at full scale** — structure confirmed from a 24-employee
   sample; full company export not yet reviewed. Column mapping should be re-verified
   when available.
-- **`system_access` field undefined** — `adr/0001` decision 5 provisions Directors with
-  `system_access = VIEW_ONLY` against Master Admin's `FULL`, but this field does not
-  exist in `schema.md` and its full value set and relationship to `core_role` are
-  undecided. Related: `DIRECTOR` is not one of the seven `core_role` values, yet
-  `business-rules.md` refers to a Director role throughout. Resolve in the Auth & RBAC
-  spec.
+- **`system_access` value set** — `adr/0001` decision 5 provisions Master Admin with
+  `FULL` and Director with `VIEW_ONLY`, but the field is not yet defined in `schema.md`
+  and the value regular staff accounts receive is unspecified. Narrowed from the earlier
+  form of this item: the `DIRECTOR`-vs-`core_role` contradiction is **resolved** — see
+  `adr/0001` decision 7, Director authority is off-system and `DIRECTOR` is correctly
+  absent from `core_role`. Only the field definition remains. Resolve in the Auth & RBAC
+  spec; does not block Employee Master.
 
 ---
 

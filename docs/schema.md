@@ -105,6 +105,14 @@ correction is a new row, not an edit. Mutability would defeat the point of the t
 Routing logic sourced from the legacy system's `AGENTS.md` (a genuinely well-designed
 part of it) — see `business-rules.md` § Approval Hierarchy.
 
+> **The chain terminates at HR ↔ ASSISTANT_DIRECTOR peer approval** — HR requests are
+> approved by an Assistant Director and vice versa, a single stage with nothing above it.
+> No stage routes to Master Admin, and **no stage routes to a Director** — Director
+> authority is exercised off-system and recorded as an audited manual override, not an
+> approval action (`adr/0001` decisions 6–7, `business-rules.md` § Director Discretion).
+> Where no counterpart account exists, the request is held **blocked with a reason** —
+> never auto-approved, never escalated to Master Admin.
+
 > **Routing must resolve the HOD chain dynamically, per department.** An HOD is optional
 > per department — some departments have one, some don't, and it varies between
 > departments *within the same company*. The stage order therefore **cannot** be
@@ -169,6 +177,14 @@ EPF base, sick leave tiers, etc.) — see `conventions.md` §5 "Config Over Hard
 ### `attendance_corrections`
 `id`, `attendance_import_row_id` (FK), `corrected_by`, `old_value`, `new_value`,
 `reason`, timestamps — also written to `audit_logs`
+
+> **This correction pattern generalizes.** `old_value` / `new_value` / `reason` /
+> `corrected_by` + `audit_logs` is also the mechanism by which off-system Director
+> decisions are recorded (Haji/Umrah beyond entitlement, disciplinary appeal outcomes,
+> bonus declaration and withholding) — see `business-rules.md` § Director Discretion and
+> `adr/0001` decision 7. The concrete table for each is defined by that module's own
+> spec (Leave, Payroll, Discipline); the column shape and the audit requirement are
+> fixed here so the pattern stays consistent across modules.
 
 ---
 

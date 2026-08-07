@@ -63,7 +63,8 @@
 
 - **Friday:** 2-hour break for Muslim male staff for Friday prayers — exact timing
   variable, set by Director. Non-attendance without reason is subject to disciplinary
-  action.
+  action. (The Director *sets* this timing as a configuration value, entered into
+  `policy_configurations`; it is not an approval action — see § Director Discretion.)
 - **Muslim female staff:** standard lunch break 1:00 PM – 2:00 PM.
 - Thumbprint in/out mandatory each time + WhatsApp group update. Failure to do either
   = considered absent for the day.
@@ -111,7 +112,7 @@ specified — carried forward as-is:
 | Maternity | 60 days full pay (basic only), max 6 confinements |
 | Paternity (Cuti Bersalin Bapa) | 7 days |
 | Marriage (Cuti Kahwin) | 3 days, confirmed staff only, apply 14 days in advance |
-| Haji/Umrah | Max 14 consecutive days paid, 2+ years service, Director approval; excess = unpaid; deducted from annual leave |
+| Haji/Umrah | Max 14 consecutive days paid, 2+ years service; excess = unpaid; deducted from annual leave. Within entitlement, routes through the standard chain. Grants **beyond** entitlement are a Director decision made off-system and entered as a manual override — see § Director Discretion, **not** a Director approval stage |
 | Compassionate (Cuti Ehsan) | Deducted from sick leave first, then annual leave; immediate family only |
 | Unpaid | Not default policy; confirmed staff only, company discretion |
 
@@ -148,7 +149,10 @@ specified — carried forward as-is:
   since this handbook's effective date and may no longer match.
 - Salary paid via bank transfer, 1st–7th of each month.
 - Bonus: once a year, subject to company profit/performance and Director's discretion,
-  tied to KPI/performance evaluation.
+  tied to KPI/performance evaluation. The Director's discretion here is exercised
+  off-system; declaring, adjusting, or withholding a bonus is entered by HR or Master
+  Admin as an audited manual override — there is no Director approval step. See
+  § Director Discretion.
 
 ---
 
@@ -195,10 +199,69 @@ then extended by `adr/0001` to add the HOD tier and to separate Master Admin str
   separate accounts with two separate logins**. Intentional — see `adr/0001` and
   `schema.md` § `users`.
 
-> ⚠ **OPEN — who approves HR / Assistant Director requests?** The legacy rule routed
-> these to Master Admin, which `adr/0001` removes from the normal chain. This is
-> unresolved and logged in `CLAUDE.md` §10. It blocks the Approval Workflow Engine spec;
-> it does **not** block Employee Master.
+### HR ↔ Assistant Director peer approval
+
+**HR and Assistant Director approve each other.** This is the top of the system's formal
+approval chain.
+
+- An **HR** request is approved by an **ASSISTANT_DIRECTOR**.
+- An **ASSISTANT_DIRECTOR** request is approved by **HR**.
+- Single stage — no second approver above it.
+- The no-self-approval rule still binds: where two people hold the same `core_role`, one
+  may not approve their own request, but a peer holding the same role may approve it.
+- If no counterpart account exists (e.g. a company with an HR but no Assistant Director),
+  the request cannot be routed and must be **held as blocked with a clear reason**, not
+  silently auto-approved and not escalated to Master Admin. Master Admin approves nothing
+  in the normal chain.
+
+This replaces the legacy rule that routed HR and Assistant Director requests to Master
+Admin, which is incompatible with Master Admin's structural separation. See `adr/0001`
+decision 6.
+
+### The chain tops out here
+
+**The system's formal approval chain ends at HR ↔ Assistant Director peer approval. No
+request in the system routes to a Director for approval.** See § Director Discretion.
+
+---
+
+## Director Discretion (off-system)
+
+The source handbook refers throughout to **Pengarah Syarikat** / Director authority —
+Haji/Umrah leave beyond entitlement, the final decision on a disciplinary appeal, bonus
+declaration, and policy exceptions generally.
+
+**All of these are policy text describing real-world authority. None of them is a digital
+in-system approval step.** The Director does not hold an approval stage, does not appear
+in any routing chain, and no request is ever assigned to a Director for action in the
+system. Treating handbook prose about who decides something in the company as a
+specification for a software workflow stage is the mistake this section exists to
+prevent.
+
+**How Director decisions are honored instead.** When a Director exercises discretion in
+real life — which is rare and happens off-system — **HR or a Master Admin account records
+it as a manual override**, reusing the same audited-correction pattern already designed
+for attendance corrections:
+
+| Field | Meaning |
+|---|---|
+| `old_value` | the value the system held before the override |
+| `new_value` | the value the Director's decision requires |
+| `reason` | the justification, including reference to the Director's decision |
+| `corrected_by` | the HR or Master Admin **user** who entered it |
+
+Every such override is written to `audit_logs`. The result is that a Director's decision
+is **traceable to the person who entered it and the reason given**, rather than being an
+untracked exception or an approval stage that would sit empty almost all the time.
+
+**Clauses honored by manual override, not by a Director approval step:**
+
+- Haji/Umrah leave granted beyond the standard entitlement
+- Final decision on a disciplinary appeal
+- Bonus declaration and bonus withholding
+- Any other policy exception granted at Director discretion
+
+See `adr/0001` decision 7.
 
 ---
 
@@ -206,9 +269,13 @@ then extended by `adr/0001` to add the HOD tier and to separate Master Admin str
 
 - Warning letters: up to 3 issued for a given disciplinary matter, at company
   discretion.
-- Employee has the right to appeal to the Director before a final decision.
+- Employee has the right to appeal to the Director before a final decision. **The appeal
+  and the Director's final decision happen off-system** — the system records the
+  *outcome* as an audited manual override entered by HR or Master Admin, and does not
+  route the appeal to a Director for in-system approval. See § Director Discretion.
 - Possible actions (Director's discretion, per severity): verbal/written warning
   (up to 3x) → withhold salary increment → stop declared bonus → revoke benefits
-  (e.g. 2-week leave eligibility for 2+ year staff) → immediate termination.
+  (e.g. 2-week leave eligibility for 2+ year staff) → immediate termination. Same
+  treatment: the decision is the Director's, the record is a manual override.
 - No Gift Policy: any gift beyond RM100 (excluding from friends/family) must be
   declared to management.

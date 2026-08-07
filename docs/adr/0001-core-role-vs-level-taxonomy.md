@@ -169,13 +169,93 @@ decision 4. A per-controller check protects only the routes someone remembered t
 annotate.
 
 > ⚠ **`system_access` is not yet a defined field.** It does not exist in `schema.md`,
-> and its value set (beyond `FULL` and `VIEW_ONLY`), its relationship to `core_role`, and
-> whether `DIRECTOR` is a `core_role` value at all are undecided — note that `DIRECTOR`
-> is **not** among the seven `core_role` values in decision 2, though
-> `ASSISTANT_DIRECTOR` is, and `business-rules.md` refers to a "Director" role
-> repeatedly (Haji/Umrah approval, disciplinary appeal, bonus discretion). Defining
-> `system_access` and reconciling Director against `core_role` belongs to the Auth &
-> RBAC spec below, and must happen before any provisioning code is written.
+> and its full value set (beyond `FULL` for Master Admin and `VIEW_ONLY` for Director) is
+> undecided — in particular, the value regular staff accounts receive is unspecified.
+> Defining it belongs to the Auth & RBAC spec below, and must happen before any
+> provisioning code is written.
+>
+> Note that `system_access` is an **account access dimension, not an authority role** —
+> it is orthogonal to `core_role`. Director is the clearest illustration: `DIRECTOR` is
+> deliberately **not** a `core_role` value (decision 7 — Director authority is exercised
+> off-system), yet a Director legitimately holds an account with
+> `system_access = VIEW_ONLY`. Read access and approval authority are separate questions.
+
+### 6. HR ↔ Assistant Director peer approval
+
+Decision 4 removed Master Admin from the normal approval chain, which left the legacy
+rule "HR / Assistant Director requests → require Master Admin approval" with no valid
+approver. That gap is closed as follows:
+
+**HR and Assistant Director approve each other, as peers.**
+
+- An `HR` request is approved by an `ASSISTANT_DIRECTOR`.
+- An `ASSISTANT_DIRECTOR` request is approved by `HR`.
+- This is a **single stage**. Nothing sits above it.
+- **This is the top of the chain.** No stage exists beyond it, and no request escalates
+  past it.
+
+**Why peers rather than escalation.** The alternatives were to route these requests to
+Master Admin (rejected — it contradicts decision 4 and would reintroduce Master Admin as
+a routine actor, defeating the structural separation), or to invent a Director approval
+stage (rejected — see decision 7). Peer approval keeps the chain closed without adding
+an actor, and both roles already hold company-wide authority, so neither is
+under-qualified to approve the other.
+
+**No-self-approval still binds.** Where two people hold the same `core_role`, one may not
+approve their own request; a *peer* holding the same role may. The check is per-user, not
+per-role.
+
+**Failure mode made explicit.** If no counterpart account exists — a company with an HR
+but no Assistant Director, or vice versa — the request **cannot be routed**. It must be
+held as **blocked, with a clear reason surfaced to the requester**. It must **not** be
+silently auto-approved (a request nobody approved must never read as approved), and must
+**not** fall through to Master Admin. This is a foreseeable configuration state, not an
+exceptional error, and the engine must handle it deliberately.
+
+### 7. Director authority is off-system; the chain has no Director stage
+
+The source handbook refers repeatedly to **Pengarah Syarikat** / Director authority:
+Haji/Umrah leave beyond entitlement, the final decision on a disciplinary appeal, bonus
+declaration and withholding, and policy exceptions generally.
+
+**All of these are policy text describing real-world authority within the company. None
+is a digital in-system approval step.** The Director holds no approval stage, appears in
+no routing chain, and is never assigned a request for action in the system. This is also
+why `DIRECTOR` is absent from the seven `core_role` values in decision 2 — its absence is
+correct, not an oversight, and the apparent contradiction with `business-rules.md` is
+resolved by recognizing that those clauses describe company governance, not software
+workflow.
+
+**How Director decisions are honored instead.** When a Director exercises discretion —
+rare, and off-system — **HR or a Master Admin account records the outcome as a manual
+override**, reusing the audited-correction pattern already designed for attendance
+corrections: `old_value`, `new_value`, `reason`, `corrected_by`, written to `audit_logs`.
+
+**Why this rather than a Director approval stage:**
+
+- A Director stage would sit **empty almost always**, since these clauses fire rarely.
+  Modeling a rare real-world escalation as a permanent workflow stage adds a state every
+  request must pass through, or be specially exempted from, for the sake of an exception.
+- It would require Director user accounts to exist and be actively monitored for a
+  queue that is nearly always empty — an approval bottleneck staffed by someone whose
+  job is not processing HR queues.
+- The override record is **more auditable, not less**: it captures the before value, the
+  after value, the stated reason, and the identity of the person who entered it. An
+  approval click captures far less.
+- It keeps the software honest about what actually happened: the decision was made by a
+  human outside the system, and the system records who entered it and why — rather than
+  presenting a Director login as having taken an action they did not take in the software.
+
+**A Director may still hold a system account.** Decision 5 provisions Director accounts
+with `system_access = VIEW_ONLY`. That is now consistent and deliberate: a Director can
+*see* the data for oversight, but takes no in-system approval action, because there is no
+stage for them to act on.
+
+**Trade-off accepted.** Enforcement of "the Director actually decided this" lives outside
+the system — the override is trusted to HR or Master Admin, and the audit trail records
+the entering user, not the Director. This is accepted because the alternative does not
+actually verify it either; an approval stage would only prove that *someone with that
+login* clicked approve. The override at least forces a written reason.
 
 ---
 
@@ -189,10 +269,11 @@ ADR records the provisioning *decisions*; it is not a substitute for the spec.
 The Auth & RBAC spec must cover, at minimum:
 
 1. The provisioning flow in decision 5, end to end.
-2. `system_access` — full value set, semantics, and how it interacts with `core_role`
-   (see the warning above).
-3. Whether `DIRECTOR` is a `core_role` value, and how it relates to
-   `ASSISTANT_DIRECTOR`.
+2. `system_access` — full value set and semantics, including what regular staff accounts
+   receive, kept orthogonal to `core_role` (see the note above).
+3. How a Director's `VIEW_ONLY` account is scoped in practice — what it can read across
+   companies, given the Director holds no `core_role` and no approval stage
+   (decision 7).
 4. Login, logout, session handling, session lifetime, and failed-attempt throttling.
 5. The forced first-login password-change gate and its middleware.
 6. Password policy — minimum strength, expiry (if any), reuse rules.
@@ -232,10 +313,11 @@ The Auth & RBAC spec must cover, at minimum:
 
 **Open, not resolved by this ADR**
 
-- The legacy rule "HR / Assistant Director requests → require Master Admin approval"
-  cannot stand alongside decision 4, which removes Master Admin from the normal chain.
-  Who approves HR and Assistant Director requests is now an open decision — logged in
-  `CLAUDE.md` §10. It blocks the Approval Workflow Engine spec, **not** Employee Master.
+- `system_access` is referenced by decision 5 (`FULL` for Master Admin, `VIEW_ONLY` for
+  Director) but is not yet a defined field in `schema.md`, and the value regular staff
+  accounts receive is unspecified. Belongs to the Auth & RBAC spec. Note this is now the
+  *only* remaining gap from this ADR's work — the HR/Assistant Director approver gap
+  (decision 6) and the Director-authority contradiction (decision 7) are both closed.
 
 ---
 
