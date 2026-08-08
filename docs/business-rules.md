@@ -154,6 +154,13 @@ specified — carried forward as-is:
   Admin as an audited manual override — there is no Director approval step. See
   § Director Discretion.
 
+> **Two structural facts for the Payroll spec**, confirmed while speccing Employee Master
+> and captured in `docs/modules/payroll-notes.md` so they are not lost: **basic salary is
+> not static** (HR raises it over an employee's tenure, so it needs a history ledger
+> rather than an overwritable field), and **allowances (*elaun*) are not a fixed set**
+> (HR creates types manually with custom values, so they need dynamic `allowance_types` +
+> `employee_allowances` tables rather than fixed columns). Neither is built in Phase 1.
+
 ---
 
 ## Approval Hierarchy
@@ -175,15 +182,28 @@ then extended by `adr/0001` to add the HOD tier and to separate Master Admin str
 
 - **An HOD is optional per department.** Some departments have an assigned HOD, some
   don't, and it varies **between departments within the same company**. Routing must
-  therefore resolve the HOD chain **dynamically per department** at request time — check
-  whether that department has an assigned HOD before deciding stage order. The chain
-  cannot be precomputed from `core_role` alone.
-- **HOD as approver — skip-stage rule:** where a department has an assigned HOD, that
-  HOD may approve **directly, skipping the Manager/Supervisor stage**, for requests
-  originating in that department.
+  therefore resolve the HOD chain **dynamically at request time** — check whether the
+  requester's department has an assigned HOD **employed by the requester's own company**
+  before deciding stage order. The chain cannot be precomputed from `core_role` alone.
+- **HOD as approver — skip-stage rule:** where such an HOD exists, they may approve
+  **directly, skipping the Manager/Supervisor stage**, for requests originating in that
+  department **from their own company's staff**.
 - **HOD's own requests route directly to HR**, skipping Manager and Supervisor, since an
   HOD outranks both.
-- Where a department has **no** assigned HOD, the standard chain above applies unchanged.
+- Where no such HOD exists, the standard chain above applies unchanged.
+- **An HOD's authority is strictly same-company.** An HOD approves only for employees
+  who share their own `employees.company_id`. Branches and departments may be shared
+  across group companies (`adr/0002`) — the Logistics branch mixes THALHAH and TURSENIA
+  staff, HQ Marketing draws from several companies — but **sharing a department with
+  someone does not put them under that HOD's authority**. A THALHAH HOD of shared
+  Logistics approves for the THALHAH staff there and **not** for the TURSENIA staff.
+  **No cross-company HOD authority exists.**
+- **Therefore HOD resolution is per (department, company), not per department.** A shared
+  department may correctly hold more than one HOD — up to one per company represented in
+  it. Where the requester's company has no HOD in their department — including when the
+  department has an HOD employed by a *different* company — the HOD stage does not apply
+  and the standard Manager/Supervisor → HR chain runs unchanged. The request is not
+  blocked. See `adr/0002` decision 4.
 
 ### Master Admin
 
@@ -209,14 +229,45 @@ approval chain.
 - Single stage — no second approver above it.
 - The no-self-approval rule still binds: where two people hold the same `core_role`, one
   may not approve their own request, but a peer holding the same role may approve it.
-- If no counterpart account exists (e.g. a company with an HR but no Assistant Director),
-  the request cannot be routed and must be **held as blocked with a clear reason**, not
-  silently auto-approved and not escalated to Master Admin. Master Admin approves nothing
-  in the normal chain.
+- **The counterpart search is group-wide.** These two roles approve across companies (see
+  below), so a company with an HR but no Assistant Director of its own is **not** blocked
+  — that HR's requests route to an Assistant Director at any group company.
+- If no counterpart account exists **anywhere in the group**, the request cannot be routed
+  and must be **held as blocked with a clear reason**, not silently auto-approved and not
+  escalated to Master Admin. Master Admin approves nothing in the normal chain.
 
 This replaces the legacy rule that routed HR and Assistant Director requests to Master
 Admin, which is incompatible with Master Admin's structural separation. See `adr/0001`
 decision 6.
+
+### Cross-company approval — HR and Assistant Director only
+
+**`HR` and `ASSISTANT_DIRECTOR` are the only `core_role` tiers that may approve across
+companies.** Their approval authority is not restricted to their own
+`employees.company_id`. Every other tier — `STAFF`, `SUPERVISOR`, `MANAGER`, and `HOD` —
+approves strictly within its own company. Every cross-company approval is written to
+`audit_logs`.
+
+**Approving is not seeing.** An HR or Assistant Director who approves a cross-company
+request gets **the request and the context needed to decide it, and nothing else**. It
+does **not** automatically grant read access to that employee's salary, payroll, personal
+documents, family records, disciplinary history, or full leave history. Data visibility is
+governed by a **separate permission check**, evaluated independently of whether the user
+holds an approval stage on the request.
+
+⚠ **That visibility check is not yet defined** — it belongs to the Auth & RBAC spec
+(`docs/modules/auth-rbac.spec.md`, not yet written). Until it exists, no code may treat
+"is an approver on this request" as an answer to "may read this employee's data." See
+`adr/0002` decision 5.
+
+> **Known input for that spec — HR is two functional scopes, not one.** In practice there
+> are two HR staff: **Payroll HR** (salary, documents, payslip configuration) and
+> **Operations HR** (leave, attendance, OT entry). Both hold `core_role = HR` and stay
+> interchangeable for **approval routing**. For **visibility** they are not: Operations HR
+> has no business in salary records, Payroll HR none in the attendance queue. This needs a
+> separate `hr_scope` (`PAYROLL | OPERATIONS`) distinction that **is not modeled yet** —
+> recorded as a required input to the Auth & RBAC permission matrix, not something to
+> build now.
 
 ### The chain tops out here
 

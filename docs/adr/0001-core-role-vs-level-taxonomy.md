@@ -4,6 +4,11 @@
 - **Date:** 2026-08-07
 - **Supersedes:** the overlapping `core_role` / `level` design inherited from the legacy
   AHS system
+- **Extended by:** `adr/0002` — decision 3 (HOD per department) is extended there: a
+  department may span companies, but an **HOD's approval authority is strictly
+  same-company** and does not follow the shared department (`adr/0002` decision 4, as
+  amended 2026-08-08). `HR` and `ASSISTANT_DIRECTOR` are the only roles that approve
+  across companies, and that authority grants no data visibility (`adr/0002` decision 5)
 - **Affects:** `employees`, `users`, `approval_requests`, RBAC spec, Employee Master spec
 
 ---
@@ -103,11 +108,16 @@ An HOD is **not** guaranteed to exist. Assignment is per department:
 
 - **HOD as approver:** when a department has an assigned HOD, that HOD may approve
   directly, **skipping the Manager/Supervisor stage** for requests originating in that
-  department.
+  department — but **only for requesters who share the HOD's own `company_id`**
+  (`adr/0002` decision 4). An HOD never approves for another company's employee, even one
+  sitting in the same shared department.
 - **HOD as requester:** an HOD's own requests route **directly to HR**, skipping
   Manager and Supervisor stages, since an HOD outranks both.
-- When a department has **no** assigned HOD, routing falls back to the standard
-  Manager/Supervisor chain unchanged.
+- When a department has **no** assigned HOD **for the requester's company** — whether
+  because it has none at all, or because the one it has is employed by a different
+  company — routing falls back to the standard Manager/Supervisor chain unchanged.
+- Resolution is therefore per **(department, company)** pair, not per department alone. A
+  shared department may hold more than one HOD, one per company represented in it.
 
 ### 4. Master Admin is a structurally separate account
 
@@ -217,19 +227,36 @@ approver. That gap is closed as follows:
 Master Admin (rejected — it contradicts decision 4 and would reintroduce Master Admin as
 a routine actor, defeating the structural separation), or to invent a Director approval
 stage (rejected — see decision 7). Peer approval keeps the chain closed without adding
-an actor, and both roles already hold company-wide authority, so neither is
+an actor, and both roles already hold the broadest approval authority in the system — the
+only authority that reaches across companies (`adr/0002` decision 5) — so neither is
 under-qualified to approve the other.
 
 **No-self-approval still binds.** Where two people hold the same `core_role`, one may not
 approve their own request; a *peer* holding the same role may. The check is per-user, not
 per-role.
 
-**Failure mode made explicit.** If no counterpart account exists — a company with an HR
-but no Assistant Director, or vice versa — the request **cannot be routed**. It must be
-held as **blocked, with a clear reason surfaced to the requester**. It must **not** be
-silently auto-approved (a request nobody approved must never read as approved), and must
-**not** fall through to Master Admin. This is a foreseeable configuration state, not an
-exceptional error, and the engine must handle it deliberately.
+**These two roles are also the only cross-company approvers.** `HR` and
+`ASSISTANT_DIRECTOR` are the only `core_role` values whose approval authority is not
+confined to their own `employees.company_id` — every other role, `HOD` included, approves
+strictly within its own company. That is what makes peer approval workable across a group
+where one company may hold an HR but no Assistant Director. **It confers no data
+visibility**: approving a cross-company request does not grant read access to that
+employee's salary, documents, or other sensitive data, which stays behind a separate
+permission check. See `adr/0002` decision 5 — including the unmodeled `hr_scope`
+(`PAYROLL | OPERATIONS`) distinction that check will need.
+
+**Failure mode made explicit.** If no counterpart account exists, the request **cannot be
+routed**. It must be held as **blocked, with a clear reason surfaced to the requester**.
+It must **not** be silently auto-approved (a request nobody approved must never read as
+approved), and must **not** fall through to Master Admin. This is a foreseeable
+configuration state, not an exceptional error, and the engine must handle it deliberately.
+
+**The counterpart search is group-wide, not company-wide.** Because these two roles are
+precisely the ones that approve across companies (see below), a company with an HR but no
+Assistant Director is **not** a blocked state — its HR's requests route to an Assistant
+Director at any group company. The blocked state is the narrower one: **no counterpart
+exists anywhere in the group**. Scoping this search to the requester's own company would
+block requests that have a valid approver, which is the more likely bug of the two.
 
 ### 7. Director authority is off-system; the chain has no Director stage
 
@@ -297,10 +324,23 @@ The Auth & RBAC spec must cover, at minimum:
 5. The forced first-login password-change gate and its middleware.
 6. Password policy — minimum strength, expiry (if any), reuse rules.
 7. The full RBAC permission matrix across all six `core_role` values plus the Master
-   Admin account type, including how
-   the optional per-department HOD (decision 3) resolves in permission checks.
+   Admin account type, including how the optional per-department HOD (decision 3)
+   resolves in permission checks — resolved per **(department, company)** pair, since HOD
+   authority is same-company only (`adr/0002` decision 4).
 8. How the dual-account arrangement from decision 4 behaves at login — two logins, two
    sessions, no switching between them within one session.
+9. **The data-visibility permission check, separate from approval authority.** `HR` and
+   `ASSISTANT_DIRECTOR` approve across companies (decision 6, `adr/0002` decision 5); that
+   must not imply read access to the approved employee's salary, personal documents,
+   family records, disciplinary history, or full leave history. The spec must define this
+   check explicitly and state that holding an approval stage is never an input to it.
+10. **`hr_scope` — required input, not yet modeled.** There are two HR staff with distinct
+    functional scopes: **Payroll HR** (salary, documents, payslip configuration) and
+    **Operations HR** (leave, attendance, OT entry). Both share `core_role = HR` for
+    approval routing and that stays. The permission matrix needs a separate scope
+    distinction — provisionally `hr_scope: PAYROLL | OPERATIONS` — for data visibility.
+    It exists in no table or migration today. Model it in this spec; do not add the column
+    ahead of it.
 
 **This is the next spec needed**, after Employee Master's open questions (§10 of
 `docs/modules/employee-master.spec.md`) are resolved.
@@ -336,9 +376,17 @@ The Auth & RBAC spec must cover, at minimum:
 
 - `system_access` is referenced by decision 5 (`FULL` for Master Admin, `VIEW_ONLY` for
   Director) but is not yet a defined field in `schema.md`, and the value regular staff
-  accounts receive is unspecified. Belongs to the Auth & RBAC spec. Note this is now the
-  *only* remaining gap from this ADR's work — the HR/Assistant Director approver gap
-  (decision 6) and the Director-authority contradiction (decision 7) are both closed.
+  accounts receive is unspecified. Belongs to the Auth & RBAC spec. The HR/Assistant
+  Director approver gap (decision 6) and the Director-authority contradiction
+  (decision 7) are both closed.
+- **The data-visibility permission check** that must sit beside — and independent of —
+  the cross-company approval authority in decision 6. Undefined; Auth & RBAC spec,
+  follow-up item 9.
+- **`hr_scope` (`PAYROLL | OPERATIONS`)** — the Payroll HR / Operations HR distinction
+  that visibility check needs. Not modeled in any table. Auth & RBAC spec, follow-up
+  item 10.
+
+All three are Auth & RBAC concerns and none of them blocks Employee Master.
 
 ---
 
