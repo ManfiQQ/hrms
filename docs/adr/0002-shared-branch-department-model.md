@@ -1,10 +1,12 @@
 # ADR 0002 — Shared Branch & Department Model
 
-- **Status:** Accepted
+- **Status:** Accepted — **decision 4 amended 2026-08-08** (see the amendment note there)
 - **Date:** 2026-08-07
-- **Extends:** `adr/0001` decision 3 (HOD optional per department)
+- **Extends:** `adr/0001` decision 3 (HOD optional per department) and decision 6
+  (HR ↔ Assistant Director peer approval — scoped across companies here, in decision 5)
 - **Affects:** `branches`, `departments`, `employees`, `approval_requests`,
-  `conventions.md` §2–3, Employee Master spec, Org Structure spec
+  `conventions.md` §2–3, Employee Master spec, Org Structure spec, Auth & RBAC spec
+  (not yet written — decision 5 is a required input to it)
 
 ---
 
@@ -86,28 +88,88 @@ and `departments` must **include** the shared rows, not filter them out. A naïv
 `where company_id = :current` silently hides every shared branch and department, which
 would present as "the Logistics branch has disappeared" rather than as an error.
 
-### 4. HOD authority is department-scoped, not company-scoped
+### 4. HOD approval authority is strictly same-company
 
 This closes the dynamic-routing question left open by `adr/0001` decision 3.
 
-**An HOD's approval authority follows their department, and covers every employee in
-that department regardless of which company employs them.** An HOD of shared Logistics
-approves for both THALHAH and TURSENIA staff in that department. Authority is not
-limited to the HOD's own payroll company.
+**An HOD approves only for employees who share their own `employees.company_id`** — and
+this holds **even inside a shared department or a shared branch**. Sharing a department
+with someone does not place that person under the HOD's approval authority; being
+employed by the same company does. **No cross-company HOD authority exists anywhere in
+the system.**
 
-**Consequence — the approval engine must cross the tenant boundary, deliberately and
-narrowly.** An HOD acting on a request from an employee with a different `company_id`
-than their own is **correct behaviour and must be permitted**, not treated as a scope
-violation. This is a specific, audited exception:
+Concretely: shared Logistics contains both THALHAH and TURSENIA staff. A THALHAH HOD of
+that branch approves for the THALHAH staff in it, and **not** for the TURSENIA staff, who
+are not within any authority of theirs.
 
-- It applies **only** to approval actions within the approver's own department.
-- It does **not** grant read access to that employee's leave history, payroll, salary,
-  documents, or any other company-scoped data — only to the request under approval and
-  the context needed to decide it.
-- Every cross-company approval is written to `audit_logs`.
+> **⚠ Amendment — 2026-08-08.** This decision originally read the opposite way: "an HOD's
+> approval authority follows their department … regardless of which company employs
+> them," and it granted the approval engine a narrow cross-tenant path for HOD approvals.
+> **That is now reversed and must not be reinstated.** It was inferred from decision 1's
+> shared-structure model rather than confirmed as a business rule, and the client has
+> since confirmed HOD authority is same-company only. Decision 1's carve-out is about
+> *where org structure is shared*; it never implied *whose staff an HOD may approve for*.
+> Every document describing the old rule was corrected in the same commit as this
+> amendment.
 
-Getting this wrong in either direction is a real failure: too strict and shared
-departments cannot approve anything, too loose and the tenant boundary is gone.
+**Consequences for routing:**
+
+- **HOD assignment resolves per (department, company) pair, not per department alone.** A
+  shared department may legitimately have **more than one HOD** — up to one per company
+  represented in it — and that is a correct configuration, not a duplicate to clean up.
+- **Fallback when the requester's company has no HOD in their department.** This now
+  includes the case where the department *does* have an HOD, but one employed by a
+  different company. In both cases the HOD stage simply does not apply to that requester
+  and routing falls back to the standard Manager/Supervisor → HR chain, unchanged. The
+  request is **not** blocked. This is the same fallback `adr/0001` decision 3 already
+  defines for a department with no HOD; what changes is only that the check is per
+  (department, company), not per department.
+- **The approval engine needs no cross-tenant path for HOD.**
+  `approver.company_id === requester.company_id` holds for **every** HOD approval and can
+  be asserted as an invariant rather than guarded as an exception.
+
+### 5. HR and Assistant Director are the only cross-company approvers — and approval is not visibility
+
+**`HR` and `ASSISTANT_DIRECTOR` are the only two `core_role` values whose approval
+authority is not restricted to their own `employees.company_id`.** `STAFF`, `SUPERVISOR`,
+`MANAGER` and `HOD` all approve strictly within their own company (decision 4). The
+approval engine's only cross-tenant path therefore runs through HR and Assistant
+Director, and it is audited: every cross-company approval is written to `audit_logs`.
+
+**Approval authority is explicitly separate from data visibility.** An HR or Assistant
+Director approving a cross-company request gains **the request under approval and the
+context needed to decide it — nothing more**. It does **not** automatically confer read
+access to that employee's sensitive data: salary, payroll, personal documents, family
+records, disciplinary history, or full leave history.
+
+**Visibility is governed by a separate permission check**, evaluated independently of
+whether the user holds an approval stage on the request. That check is **not yet
+defined** — it belongs to `docs/modules/auth-rbac.spec.md` and must be written there
+before any permission code exists. Until then, no code may treat "is an approver on this
+request" as an answer to "may read this employee's data."
+
+Getting this wrong in either direction is a real failure: too strict and cross-company
+requests cannot be approved at all, too loose and the tenant boundary on sensitive data
+is gone.
+
+**Required input for the Auth & RBAC spec — HR is not one functional scope.** In practice
+the group runs **two HR staff with distinct functional scopes**:
+
+| Scope | Owns |
+|---|---|
+| **Payroll HR** | salary, documents, payslip configuration |
+| **Operations HR** | leave, attendance, OT entry |
+
+Both hold `core_role = HR` — that is correct and stays, because for **approval routing**
+they are interchangeable peers of an Assistant Director (`adr/0001` decision 6). But for
+**data visibility** they are not interchangeable at all: Operations HR has no business
+reading salary records, and Payroll HR has no business in the attendance queue.
+
+This needs a **separate scope distinction on top of `core_role`** — provisionally an
+`hr_scope` field with values `PAYROLL | OPERATIONS` — which is **not modeled anywhere
+yet**: not in `schema.md`, not in any migration. It is recorded here as a **required
+input to the Auth & RBAC spec's permission matrix**, not as a decision to implement now.
+Do not add the column ahead of that spec.
 
 ---
 
@@ -121,7 +183,8 @@ departments cannot approve anything, too loose and the tenant boundary is gone.
   `CLAUDE.md` §9 lesson about the same entity spelled differently across files.
 - Employees' employing company stays truthful, which keeps payroll and statutory data
   correct.
-- HOD routing has a clear, decidable rule.
+- HOD routing has a clear, decidable rule — and after the decision 4 amendment it is the
+  *simpler* of the two candidate rules: same company, no exception, no cross-tenant path.
 
 **Costs and constraints accepted**
 
@@ -132,10 +195,20 @@ departments cannot approve anything, too loose and the tenant boundary is gone.
   forgotten `OR company_id IS NULL` produces a silent wrong answer — missing rows, not an
   error. This is the single most likely bug this decision introduces, and the global
   scope exists to make the correct behaviour the default.
-- **The approval engine gains a cross-tenant path.** Narrow and audited (decision 4), but
-  it exists, and it must be tested explicitly in both directions: an HOD *can* approve
-  for another company's employee in their department, and *cannot* read that employee's
-  payroll or leave history.
+- **A shared department may need one HOD per company represented in it** (decision 4).
+  That is more configuration for HR to maintain than a single department-wide HOD would
+  be, and a company with no HOD in a shared department silently gets the standard
+  Manager/Supervisor chain instead. Accepted: the alternative gives an HOD authority over
+  staff of a company that does not employ them.
+- **The approval engine still has one cross-tenant path — but only through HR and
+  Assistant Director** (decision 5), never through HOD. It must be tested in both
+  directions: an HR/Assistant Director *can* approve a request from another company's
+  employee, and that *does not* let them read that employee's salary, documents, or other
+  sensitive data. Testing only the permission turns a narrow exception into an open door.
+- **Approval-vs-visibility is now an explicit, unresolved dependency.** The separate
+  visibility permission check (decision 5) does not exist yet, and neither does the
+  `hr_scope` distinction it will need. Both are blocking inputs to
+  `docs/modules/auth-rbac.spec.md`.
 - **`conventions.md` §2–3 needed a documented carve-out.** Without it, the conventions
   file would read as forbidding exactly what this ADR requires. Amended in the same
   commit rather than left to drift.
@@ -153,7 +226,9 @@ departments cannot approve anything, too loose and the tenant boundary is gone.
 ## References
 
 - `adr/0001` decision 3 — HOD optional per department (extended here)
+- `adr/0001` decision 6 — HR ↔ Assistant Director peer approval (scoped here by
+  decision 5)
 - `docs/schema.md` — `branches`, `departments`, `employees`, `approval_requests`
 - `docs/conventions.md` §2–3 — multi-tenancy carve-out for org-structure tables
 - `docs/modules/employee-master.spec.md` — BR-8, BR-10
-- `CLAUDE.md` Principle #4, §9
+- `CLAUDE.md` Principle #4, §9, §11 — `hr_scope` as a required Auth & RBAC spec input

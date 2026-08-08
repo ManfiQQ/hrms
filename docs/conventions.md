@@ -40,8 +40,16 @@ org-structure references holding no personal or financial data. **Sensitive empl
 data**: where a person works is organizational, who employs them is tenancy.
 
 An employee's `branch_id` / `department_id` need **not** match their `company_id`, and
-validation must not require it. Full reasoning and the HOD cross-company approval
-consequence: `adr/0002`.
+validation must not require it. Full reasoning: `adr/0002`.
+
+**Shared structure does not mean shared authority.** A shared department is a shared
+*place*, not a shared approval pool. An **HOD approves only for employees sharing their
+own `employees.company_id`**, inside a shared department as much as anywhere else
+(`adr/0002` decision 4). The only `core_role` values that approve across companies are
+`HR` and `ASSISTANT_DIRECTOR` — and even they gain **no data visibility** by doing so;
+that runs through a separate permission check owned by the Auth & RBAC spec
+(`adr/0002` decision 5). Do not infer authority scope from structure scope; that
+inference is exactly the error corrected on 2026-08-08.
 
 ## 3. Every Business Table Must Include
 

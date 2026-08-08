@@ -5,8 +5,8 @@
   Principle #1).
 - **Branch:** `feat/employee-master`
 - **Depends on:** `companies`, `branches`, `departments`, `positions`, `users` (Phase 0);
-  `adr/0001` (taxonomy — resolved)
-- **Date:** 2026-08-07
+  `adr/0001` (taxonomy — resolved), `adr/0002` (shared org structure — resolved)
+- **Date:** 2026-08-07 — approval-scope rules corrected 2026-08-08 (BR-10, BR-14)
 
 ---
 
@@ -138,16 +138,32 @@ form a cycle — validated on save.
 org display. They may legitimately differ for the same person. No code may read `level`
 for an authorization decision (`adr/0001`).
 
-**BR-10 — HOD assignment is per department, optional, and department-scoped.** A
+**BR-10 — HOD assignment is per department, optional, and same-company in authority.** A
 department may or may not have an assigned HOD, and this varies between departments
 within one company. Employee Master stores the `HOD` role on the employee; the
 *department → HOD* resolution consumed by approval routing must be queryable dynamically
 (`adr/0001` decision 3).
 
-An HOD's authority **follows their department, not their payroll company** — a shared
-department may contain staff from several companies, and its HOD approves for all of
-them (`adr/0002` decision 4). Employee Master must therefore not assume an HOD and their
-department's members share a `company_id`.
+An HOD's approval authority is **strictly same-company** — it covers only employees
+sharing the HOD's own `employees.company_id`, **even inside a shared department or
+branch** (`adr/0002` decision 4). Consequences for this module:
+
+- The resolution Employee Master must support is **(department, company) → HOD**, not
+  department → HOD. A shared department may legitimately hold **more than one** `HOD`
+  employee, one per company represented in it — the data model must not assume at most
+  one HOD per department, and no validation may reject the second.
+- Where a department's only HOD belongs to a different company than an employee in it,
+  that employee simply has no HOD stage and falls back to the standard chain. This is a
+  correct configuration, not an error state to flag.
+
+**BR-14 — Cross-company approval is `HR` / `ASSISTANT_DIRECTOR` only, and grants no
+visibility.** These two `core_role` values are the only ones whose approval authority
+crosses `company_id`; `STAFF`, `SUPERVISOR`, `MANAGER` and `HOD` are all confined to their
+own company. Approving a cross-company request **does not** confer read access to that
+employee's sensitive data — a separate visibility permission check governs that, and it
+belongs to the Auth & RBAC spec, which does not exist yet (`adr/0002` decision 5). Employee
+Master must not implement, imply, or anticipate that check; §6's permission table stays
+company-scoped as written.
 
 **BR-12 — Org assignment is independent of employing company.** `employees.company_id`
 (NOT NULL) is the payroll/legal employer. `branch_id` and `department_id` may point at
@@ -219,10 +235,18 @@ Read from `core_role` only.
 | Action | Who |
 |---|---|
 | View own record | any employee |
-| View department employees | `SUPERVISOR`, `MANAGER`, `HOD` (own department) |
-| View all in company | `HR`, `ASSISTANT_DIRECTOR` |
-| Create / edit / archive | `HR`, `ASSISTANT_DIRECTOR` |
+| View department employees | `SUPERVISOR`, `MANAGER`, `HOD` — own department **and own `company_id`** |
+| View all in company | `HR`, `ASSISTANT_DIRECTOR` — **own company only** |
+| Create / edit / archive | `HR`, `ASSISTANT_DIRECTOR` — own company only |
 | Cross-tenant view | Master Admin only, explicit, audited |
+
+**Approval authority is not on this table, and that is deliberate.** `HR` and
+`ASSISTANT_DIRECTOR` may *approve* across companies (BR-14) — that grants them no read
+access here, so "View all in company" stays company-scoped. An HOD's read access is
+bounded twice over: own department **and** own company, since a shared department can
+contain other companies' staff (BR-10). The separate visibility check that would ever
+widen any of this is an Auth & RBAC concern and is not yet defined; Employee Master
+implements the table above as written.
 
 ## 7. UI
 
@@ -255,10 +279,21 @@ non-trivial and everything downstream depends on it:
 1c. An employee whose `branch_id`/`department_id` belongs to a different company, or to a
     shared unit, saves successfully and is **not** rejected by validation (BR-12).
 
-1d. An HOD of a shared department **can** approve a request from an employee of a
-    different `company_id` (`adr/0002` decision 4) — and **cannot** read that employee's
-    leave history, payroll, salary, or documents. Both halves must be asserted; testing
-    only the permission turns the narrow exception into an open door.
+1d. An HOD of a shared department **cannot** act on — or read — an employee of a
+    different `company_id` sitting in that same department (BR-10, `adr/0002` decision 4).
+    A shared department is exactly where this is most likely to be got wrong, since the
+    two employees are visibly colleagues.
+
+1e. A shared department with **two** HODs employed by different companies saves
+    successfully, and each resolves as HOD only for their own company's staff in it
+    (BR-10). An employee in that department whose company has no HOD there falls back to
+    the standard chain rather than erroring.
+
+1f. `HR` / `ASSISTANT_DIRECTOR` cross-company **approval** is permitted, and grants **no**
+    read access to that employee's salary, documents, family records, or leave history
+    (BR-14). Both halves must be asserted; testing only the permission turns the narrow
+    exception into an open door. *(The approval half exercises the Approval engine —
+    assert here only what Employee Master owns: that the read stays denied.)*
 3. Status history row written on every qualifying change; none written on a no-op save.
 4. Status history rows cannot be updated or deleted.
 5. Status transitions — permitted ones succeed, forbidden ones rejected; terminal
@@ -337,8 +372,20 @@ shared/group-level, set = company-dedicated. `employees.company_id` stays **mand
 and independent — it is the payroll/legal employer, and need not match the employee's
 branch or department. Full decision and reasoning: **`adr/0002`**.
 
-This also closes the HOD dynamic-routing question from `adr/0001` decision 3 — see BR-10
-below.
+This also closes the HOD dynamic-routing question from `adr/0001` decision 3 — see BR-10.
 
-**Not blocking this module:** the `system_access` value-set question (`CLAUDE.md` §10)
-belongs to the Auth & RBAC spec, which Employee Master does not depend on.
+⚠ **Corrected 2026-08-08.** An earlier reading of this decision had HOD authority
+following the shared *department* across companies. It does not: **HOD authority is
+strictly same-company**, and `HR` / `ASSISTANT_DIRECTOR` are the only tiers that approve
+across companies. Shared org structure and approval scope are separate questions, and one
+was wrongly inferred from the other. See BR-10, BR-14, and `adr/0002` decision 4's
+amendment note.
+
+**Not blocking this module** — all Auth & RBAC concerns, which Employee Master does not
+depend on:
+
+- the `system_access` value-set question (`CLAUDE.md` §10);
+- the **data-visibility permission check** that must sit separate from cross-company
+  approval authority (BR-14);
+- **`hr_scope` (`PAYROLL | OPERATIONS`)** — the Payroll HR / Operations HR distinction
+  that check will need, not modeled anywhere yet (`CLAUDE.md` §11, `adr/0002` decision 5).

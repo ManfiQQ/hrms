@@ -70,7 +70,7 @@ Draft — pre-implementation. No migrations have been written yet.
 | id | bigint PK | |
 | employee_no | string, unique | **Group-wide unique**, format `AHS-0001` — `AHS` prefix + sequential zero-padded number. ⚠ The prefix is **always `AHS`**, the parent company, **regardless of which subsidiary employs the person** — a THALHAH employee is still `AHS-0042`. Numbering is a single group-wide sequence, not per-company. |
 | full_name, nickname, phone_no, email | string, nullable | |
-| company_id | FK, **NOT NULL** | The employee's **payroll and legal employer** — determines which company's leave entitlement, policy config, payroll and statutory rules apply. Mandatory, scoped from creation. |
+| company_id | FK, **NOT NULL** | The employee's **payroll and legal employer** — determines which company's leave entitlement, policy config, payroll and statutory rules apply. Mandatory, scoped from creation. **Also bounds approval authority** for every `core_role` except `HR` and `ASSISTANT_DIRECTOR`: a `SUPERVISOR`, `MANAGER` or `HOD` approves only for employees sharing this value, shared department or not (`adr/0002` decisions 4–5). |
 | branch_id, department_id, position_id | FK | Org assignment. **Independent of `company_id` and not required to match it** — an employee may sit in a shared branch/department belonging to no single company, or to a different one. This is valid and must not be rejected by validation. See `adr/0002` decision 2. |
 | fingerprint_id | string, unique, nullable | Matches NGTime attendance export ID. **HR-managed on this record; current value only.** Phase 1 keeps no enrolment history — a re-enrolment overwrites the value in place. If historical punch-to-employee resolution later proves necessary, that is a Phase 2 Attendance decision, not a Phase 1 table. |
 | core_role | enum: STAFF, SUPERVISOR, MANAGER, HOD, HR, ASSISTANT_DIRECTOR | **Authority field** — the only field consulted for approval routing and RBAC. Six values. See `business-rules.md` § Approval Hierarchy and `adr/0001`. `HOD` added (missing from legacy). **`MASTER_ADMIN` is deliberately not a value**: a Master Admin has no employee record, so the value could only ever be set in error. Excluding it makes "Master Admin never has an Employee record" **structurally impossible to violate** rather than test-enforced — there is no value to set. Master Admin is identified only at the `users` level (`is_master_admin` + null `employee_id`). `DIRECTOR` is likewise absent — see `adr/0001` decision 7. |
@@ -150,25 +150,40 @@ part of it) — see `business-rules.md` § Approval Hierarchy.
 > No stage routes to Master Admin, and **no stage routes to a Director** — Director
 > authority is exercised off-system and recorded as an audited manual override, not an
 > approval action (`adr/0001` decisions 6–7, `business-rules.md` § Director Discretion).
-> Where no counterpart account exists, the request is held **blocked with a reason** —
-> never auto-approved, never escalated to Master Admin.
+> The counterpart search is **group-wide** — these two roles approve across companies, so
+> a company holding an HR but no Assistant Director routes to another company's Assistant
+> Director rather than blocking. Only where no counterpart exists **anywhere in the group**
+> is the request held **blocked with a reason** — never auto-approved, never escalated to
+> Master Admin.
 
-> **HOD authority is department-scoped, not company-scoped.** A shared department may
-> contain staff from several companies (`adr/0002`), and its HOD approves for **all** of
-> them. An HOD acting on a request from an employee with a **different `company_id` than
-> their own is correct behaviour and must be permitted** — not a scope violation. The
-> exception is narrow: it covers the request under approval and the context needed to
-> decide it, **never** that employee's leave history, payroll, salary, or documents, and
-> every cross-company approval is written to `audit_logs`. Test both directions — that it
-> is allowed, and that it grants no wider read. See `adr/0002` decision 4.
+> **HOD authority is strictly same-company.** A shared department may contain staff from
+> several companies (`adr/0002`), but its HOD approves **only** for those who share the
+> HOD's own `employees.company_id`. An HOD acting on a request from an employee of a
+> different company is a **scope violation and must be rejected**, shared department or
+> not. `approver.company_id === requester.company_id` is an **invariant** for every HOD
+> approval, not a rule with an exception. See `adr/0002` decision 4 (amended 2026-08-08 —
+> an earlier draft of this file stated the opposite).
 
-> **Routing must resolve the HOD chain dynamically, per department.** An HOD is optional
-> per department — some departments have one, some don't, and it varies between
+> **Cross-company approval is `HR` and `ASSISTANT_DIRECTOR` only.** They are the only two
+> `core_role` values not restricted to their own `company_id`; `STAFF`, `SUPERVISOR`,
+> `MANAGER` and `HOD` are. Every cross-company approval is written to `audit_logs`.
+> **Approval authority is not data visibility** — approving a cross-company request grants
+> the request and its deciding context, and **never** that employee's salary, payroll,
+> documents, family records, disciplinary history, or full leave history. Visibility runs
+> through a **separate permission check, not yet defined** — Auth & RBAC spec, along with
+> the unmodeled `hr_scope` (`PAYROLL | OPERATIONS`) distinction it needs. Test both
+> directions: the approval is allowed, and it grants no wider read. See `adr/0002`
+> decision 5.
+
+> **Routing must resolve the HOD chain dynamically, per (department, company).** An HOD is
+> optional per department — some departments have one, some don't, and it varies between
 > departments *within the same company*. The stage order therefore **cannot** be
 > precomputed from the requester's `core_role` alone. At request time, the engine must
-> check whether the relevant department currently has an assigned HOD before deciding
-> stage order: with an HOD, the Manager/Supervisor stage is skipped; without one, the
-> standard chain applies unchanged. See `adr/0001` decision 3.
+> check whether that department has an assigned HOD **employed by the requester's own
+> company** before deciding stage order: if so, the Manager/Supervisor stage is skipped;
+> if not — no HOD at all, or one belonging to another company — the standard chain applies
+> unchanged and the request is **not** blocked. A shared department may hold one HOD per
+> company represented in it. See `adr/0001` decision 3 and `adr/0002` decision 4.
 
 ### `audit_logs`
 `id`, `user_id`, `action`, `auditable_type`, `auditable_id`, `old_values` (json),

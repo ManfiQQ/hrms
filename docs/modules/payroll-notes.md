@@ -92,3 +92,11 @@ to be group-wide, this becomes a shared reference table like `branches` (`adr/00
 4. The pre-existing payroll ambiguities already logged in `business-rules.md`: the
    RM1,700 EPF contribution base, the SOCSO threshold needing re-verification, and the
    lateness penalty formula (`CLAUDE.md` §10).
+5. **Who may read salary — `hr_scope`, decided upstream in the Auth & RBAC spec.** Not
+   every `core_role = HR` account should see salary data: the group runs a **Payroll HR**
+   (salary, documents, payslip configuration) and an **Operations HR** (leave, attendance,
+   OT entry), and both hold `core_role = HR` because they are interchangeable for
+   *approval routing*. For *visibility* they are not. A separate `hr_scope`
+   (`PAYROLL | OPERATIONS`) distinction is a required input to the Auth & RBAC permission
+   matrix (`CLAUDE.md` §11, `adr/0002` decision 5) and is **not modeled yet**. Payroll
+   must not invent its own answer — read the one Auth & RBAC settles.
