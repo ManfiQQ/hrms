@@ -178,7 +178,9 @@ specified — carried forward as-is:
 Sourced from the legacy system's `AGENTS.md` — well-specified, carried forward directly,
 then extended by `adr/0001` to add the HOD tier and to separate Master Admin structurally.
 
-**Authority is read from `core_role`, never from `level`.** `level` is display-only.
+**Authority is read from `employee_roles`, never from `level`.** `level` is display-only.
+Authority is **per company** — a person may hold a role at one group company and none at
+another — and every read filters `WHERE revoked_date IS NULL` (`adr/0003` decision 1).
 
 ### Standard routing
 
@@ -194,7 +196,8 @@ then extended by `adr/0001` to add the HOD tier and to separate Master Admin str
   don't, and it varies **between departments within the same company**. Routing must
   therefore resolve the HOD chain **dynamically at request time** — check whether the
   requester's department has an assigned HOD **employed by the requester's own company**
-  before deciding stage order. The chain cannot be precomputed from `core_role` alone.
+  before deciding stage order. The chain cannot be precomputed from the requester's roles
+  alone.
 - **HOD as approver — skip-stage rule:** where such an HOD exists, they may approve
   **directly, skipping the Manager/Supervisor stage**, for requests originating in that
   department **from their own company's staff**.
@@ -238,7 +241,7 @@ approval chain.
 - An **HR** request is approved by an **ASSISTANT_DIRECTOR**.
 - An **ASSISTANT_DIRECTOR** request is approved by **HR**.
 - Single stage — no second approver above it.
-- The no-self-approval rule still binds: where two people hold the same `core_role`, one
+- The no-self-approval rule still binds: where two people hold the same role, one
   may not approve their own request, but a peer holding the same role may approve it.
 - **The counterpart search is group-wide.** These two roles approve across companies (see
   below), so a company with an HR but no Assistant Director of its own is **not** blocked
@@ -253,10 +256,12 @@ decision 6.
 
 ### Cross-company approval — HR and Assistant Director only
 
-**`HR` and `ASSISTANT_DIRECTOR` are the only `core_role` tiers that may approve across
-companies.** Their approval authority is not restricted to their own
-`employees.company_id`. Every other tier — `STAFF`, `SUPERVISOR`, `MANAGER`, and `HOD` —
-approves strictly within its own company. Every cross-company approval is written to
+**`HR` and `ASSISTANT_DIRECTOR` are the only `employee_roles.role` tiers that may approve
+across companies.** Their approval authority is not restricted to their own
+`employees.company_id`. Every other tier — `SUPERVISOR`, `MANAGER`, and `HOD` — approves
+strictly within its own company, and an employee with **no `employee_roles` row holds no
+approval authority at all** (there is no `STAFF` role value; `adr/0003` decision 1).
+Every cross-company approval is written to
 `audit_logs`.
 
 **Approving is not seeing.** An HR or Assistant Director who approves a cross-company

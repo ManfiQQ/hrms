@@ -93,7 +93,7 @@ to be group-wide, this becomes a shared reference table like `branches` (`adr/00
    RM1,700 EPF contribution base, the SOCSO threshold needing re-verification, and the
    lateness penalty formula (`CLAUDE.md` §10).
 5. **Who may read salary — RESOLVED: the `ACCOUNT` role, and nobody else.** Not every
-   `core_role = HR` account sees salary data — **none of them does**. Only an employee
+   account holding the `HR` role sees salary data — **none of them does**. Only an employee
    holding the `ACCOUNT` role may read salary, at the company where they hold that role,
    however many HR staff exist (`adr/0003` decision 5). Enforcement is structural:
    `ACCOUNT` is a hardcoded restricted role that only Master Admin may grant (`adr/0003`
