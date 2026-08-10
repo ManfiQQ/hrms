@@ -596,10 +596,20 @@ mechanism for BR-9: HR may appoint Managers and Supervisors, but `ACCOUNT`, `HR`
 grant any role, with the restriction enforced only by hiding options in the UI, defeats
 BR-16 entirely.
 
-⚠ **`HR`'s own scope is flagged for revisiting, but not here.** This table scopes HR reads
-to their own company, while `adr/0003` notes HR and Assistant Director are employed at
-group level. That tension is real and is an **Auth & RBAC decision, not an Employee Master
-one** — the table above stands as written until that spec resolves it.
+⚠ **The `own company only` scope on HR's rows does not yet match how this group operates,
+and must be resolved before §6 is implemented in code.** Confirmed with the client:
+**`HR` and `ASSISTANT_DIRECTOR` work at group level — under AHS/HQ, across all entities —
+not for a single company.** They are not "an HR of TURSENIA"; the question *which* HR has
+no answer here, because the premise the table's scoping assumes does not hold.
+
+This covers **cross-company transfers too** (§5.7): a group-level HR moving an employee
+from AIM to TURSENIA is the ordinary case, not an exception to be carved out.
+
+Left as written deliberately — the **correct** scope is an **Auth & RBAC decision, not an
+Employee Master one**, and guessing it here would put a second answer in a second document.
+But it is now a **known-wrong row, not an open question**: shipping §6 as written would
+block HR on the system's first day. Auth & RBAC must resolve it before any permission code
+is written against this table.
 
 ## 7. UI
 
