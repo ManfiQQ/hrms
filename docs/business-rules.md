@@ -11,12 +11,19 @@
 
 | Entity | Code | Role |
 |---|---|---|
-| AL HADDAD SUCCESS SDN BHD | AHS | Parent |
+| AL HADDAD SUCCESS SDN BHD | AHS | **Parent — also an operating tenant** |
 | AL HADDAD INTEGRATED MARKETING HQ | AIM HQ | Subsidiary |
 | ZISH GLOBAL | ZISH | Subsidiary |
 | THALHAH | THALHAH | Subsidiary |
 | TURSENIA | TURSENIA | Subsidiary |
 | ESSOFEEYA ENTERPRISE | ESSOFEEYA | Subsidiary |
+| SLEGHO | SLEGHO | Subsidiary |
+
+**AHS is a parent *and* an operating tenant** with its own staff — not an empty holding
+row. It is seeded and appears in the company picker like any other company.
+
+**Master Admin may add further companies later without a migration.** See `adr/0003`
+decision 9. Canonical spelling for every entity above is `CLAUDE.md` §5.
 
 ---
 

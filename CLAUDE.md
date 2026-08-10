@@ -82,16 +82,25 @@ skipping steps.
 
 | Entity | Code | Role |
 |---|---|---|
-| AL HADDAD SUCCESS SDN BHD | AHS | Parent company |
+| AL HADDAD SUCCESS SDN BHD | AHS | **Parent company — also an operating tenant** |
 | AL HADDAD INTEGRATED MARKETING HQ | AIM HQ | Subsidiary |
 | ZISH GLOBAL | ZISH | Subsidiary |
 | THALHAH | THALHAH | Subsidiary |
 | TURSENIA | TURSENIA | Subsidiary |
 | ESSOFEEYA ENTERPRISE | ESSOFEEYA | Subsidiary |
+| SLEGHO | SLEGHO | Subsidiary |
 
 Canonical spelling is binding. The legacy system used three different spellings for
 ESSOFEEYA ENTERPRISE across three different files — do not repeat that. Always use the
 spelling in this table.
+
+**AHS is a parent *and* an operating tenant.** It employs its own staff and holds its own
+authority roles, so it is seeded like any other company and appears in every company
+picker. It is **not** an empty holding row — do not skip it when seeding, and do not
+filter it out of a company selector.
+
+**Master Admin may add further companies later without a migration.** The list above is
+seed data and a naming reference, not a schema enum. See `adr/0003` decision 9.
 
 ---
 
