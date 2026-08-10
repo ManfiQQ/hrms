@@ -242,8 +242,13 @@ strictly within its own company. That is what makes peer approval workable acros
 where one company may hold an HR but no Assistant Director. **It confers no data
 visibility**: approving a cross-company request does not grant read access to that
 employee's salary, documents, or other sensitive data, which stays behind a separate
-permission check. See `adr/0002` decision 5 — including the unmodeled `hr_scope`
-(`PAYROLL | OPERATIONS`) distinction that check will need.
+permission check. See `adr/0002` decision 5.
+
+> **⚠ `hr_scope` withdrawn — 2026-08-10.** This paragraph originally pointed at an
+> unmodeled `hr_scope` (`PAYROLL | OPERATIONS`) distinction the visibility check was said
+> to need. There is no Payroll HR / Operations HR split. **Salary visibility is the
+> `ACCOUNT` role, and no `HR` holds it** — `adr/0003` decision 5. The remainder of the
+> visibility check is still undefined and still belongs to the Auth & RBAC spec.
 
 **Failure mode made explicit.** If no counterpart account exists, the request **cannot be
 routed**. It must be held as **blocked, with a clear reason surfaced to the requester**.
@@ -334,13 +339,14 @@ The Auth & RBAC spec must cover, at minimum:
    must not imply read access to the approved employee's salary, personal documents,
    family records, disciplinary history, or full leave history. The spec must define this
    check explicitly and state that holding an approval stage is never an input to it.
-10. **`hr_scope` — required input, not yet modeled.** There are two HR staff with distinct
-    functional scopes: **Payroll HR** (salary, documents, payslip configuration) and
-    **Operations HR** (leave, attendance, OT entry). Both share `core_role = HR` for
-    approval routing and that stays. The permission matrix needs a separate scope
-    distinction — provisionally `hr_scope: PAYROLL | OPERATIONS` — for data visibility.
-    It exists in no table or migration today. Model it in this spec; do not add the column
-    ahead of it.
+10. **`hr_scope` — WITHDRAWN 2026-08-10, superseded by `adr/0003` decision 5.** This item
+    required an `hr_scope` (`PAYROLL | OPERATIONS`) field distinguishing a **Payroll HR**
+    (salary, documents, payslip configuration) from an **Operations HR** (leave,
+    attendance, OT entry) for data visibility. **That distinction does not exist.** The
+    client confirmed only the `ACCOUNT` role may see salary, and no `HR` may, however many
+    HR staff there are. The field is **withdrawn, not deferred** — do not model it, and do
+    not carry it into the permission matrix. Salary visibility is answered by `adr/0003`
+    decision 5; item 9's general visibility check remains open and no longer covers salary.
 
 **This is the next spec needed**, after Employee Master's open questions (§10 of
 `docs/modules/employee-master.spec.md`) are resolved.
@@ -382,11 +388,13 @@ The Auth & RBAC spec must cover, at minimum:
 - **The data-visibility permission check** that must sit beside — and independent of —
   the cross-company approval authority in decision 6. Undefined; Auth & RBAC spec,
   follow-up item 9.
-- **`hr_scope` (`PAYROLL | OPERATIONS`)** — the Payroll HR / Operations HR distinction
-  that visibility check needs. Not modeled in any table. Auth & RBAC spec, follow-up
-  item 10.
+- **`hr_scope` (`PAYROLL | OPERATIONS`) — WITHDRAWN**, superseded by `adr/0003`
+  decision 5. The Payroll HR / Operations HR distinction it existed to model does not
+  exist; salary visibility is the `ACCOUNT` role and no `HR` holds it. Not to be modeled.
+  See follow-up item 10.
 
-All three are Auth & RBAC concerns and none of them blocks Employee Master.
+The first two remain Auth & RBAC concerns and neither blocks Employee Master. The third is
+closed.
 
 ---
 

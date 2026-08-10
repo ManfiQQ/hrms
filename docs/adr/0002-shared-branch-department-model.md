@@ -153,24 +153,15 @@ Getting this wrong in either direction is a real failure: too strict and cross-c
 requests cannot be approved at all, too loose and the tenant boundary on sensitive data
 is gone.
 
-**Required input for the Auth & RBAC spec — HR is not one functional scope.** In practice
-the group runs **two HR staff with distinct functional scopes**:
-
-| Scope | Owns |
-|---|---|
-| **Payroll HR** | salary, documents, payslip configuration |
-| **Operations HR** | leave, attendance, OT entry |
-
-Both hold `core_role = HR` — that is correct and stays, because for **approval routing**
-they are interchangeable peers of an Assistant Director (`adr/0001` decision 6). But for
-**data visibility** they are not interchangeable at all: Operations HR has no business
-reading salary records, and Payroll HR has no business in the attendance queue.
-
-This needs a **separate scope distinction on top of `core_role`** — provisionally an
-`hr_scope` field with values `PAYROLL | OPERATIONS` — which is **not modeled anywhere
-yet**: not in `schema.md`, not in any migration. It is recorded here as a **required
-input to the Auth & RBAC spec's permission matrix**, not as a decision to implement now.
-Do not add the column ahead of that spec.
+> **⚠ `hr_scope` withdrawn — 2026-08-10.** This decision originally carried a subsection
+> titled "Required input for the Auth & RBAC spec — HR is not one functional scope,"
+> requiring an `hr_scope` field with values `PAYROLL | OPERATIONS` to separate a **Payroll
+> HR** (salary, documents, payslip configuration) from an **Operations HR** (leave,
+> attendance, OT entry) for data visibility. **That subsection is withdrawn and must not
+> be reinstated.** The client confirmed there is no such split: **only the `ACCOUNT` role
+> sees salary, and no `HR` does**, however many HR staff exist. Salary visibility is a
+> role, not an HR sub-scope — `adr/0003` decision 5. The rest of this decision stands: the
+> general visibility check is still undefined and still belongs to the Auth & RBAC spec.
 
 ---
 
@@ -207,9 +198,10 @@ Do not add the column ahead of that spec.
   employee, and that *does not* let them read that employee's salary, documents, or other
   sensitive data. Testing only the permission turns a narrow exception into an open door.
 - **Approval-vs-visibility is now an explicit, unresolved dependency.** The separate
-  visibility permission check (decision 5) does not exist yet, and neither does the
-  `hr_scope` distinction it will need. Both are blocking inputs to
-  `docs/modules/auth-rbac.spec.md`.
+  visibility permission check (decision 5) does not exist yet and is a blocking input to
+  `docs/modules/auth-rbac.spec.md`. Its **salary portion is since answered** — the
+  `ACCOUNT` role, `adr/0003` decision 5 — and the `hr_scope` distinction it was said to
+  need is **withdrawn**.
 - **`conventions.md` §2–3 needed a documented carve-out.** Without it, the conventions
   file would read as forbidding exactly what this ADR requires. Amended in the same
   commit rather than left to drift.
@@ -232,4 +224,5 @@ Do not add the column ahead of that spec.
 - `docs/schema.md` — `branches`, `departments`, `employees`, `approval_requests`
 - `docs/conventions.md` §2–3 — multi-tenancy carve-out for org-structure tables
 - `docs/modules/employee-master.spec.md` — BR-8, BR-10
-- `CLAUDE.md` Principle #4, §9, §11 — `hr_scope` as a required Auth & RBAC spec input
+- `CLAUDE.md` Principle #4, §9, §11
+- `adr/0003` decision 5 — withdraws the `hr_scope` subsection of decision 5 here

@@ -170,10 +170,11 @@ part of it) — see `business-rules.md` § Approval Hierarchy.
 > **Approval authority is not data visibility** — approving a cross-company request grants
 > the request and its deciding context, and **never** that employee's salary, payroll,
 > documents, family records, disciplinary history, or full leave history. Visibility runs
-> through a **separate permission check, not yet defined** — Auth & RBAC spec, along with
-> the unmodeled `hr_scope` (`PAYROLL | OPERATIONS`) distinction it needs. Test both
-> directions: the approval is allowed, and it grants no wider read. See `adr/0002`
-> decision 5.
+> through a **separate permission check, not yet defined** — Auth & RBAC spec. **Salary is
+> the exception and is already settled: only the `ACCOUNT` role may read it, and no `HR`
+> may** (`adr/0003` decision 5); the `hr_scope` distinction previously noted here is
+> withdrawn and must not be modeled. Test both directions: the approval is allowed, and it
+> grants no wider read. See `adr/0002` decision 5.
 
 > **Routing must resolve the HOD chain dynamically, per (department, company).** An HOD is
 > optional per department — some departments have one, some don't, and it varies between

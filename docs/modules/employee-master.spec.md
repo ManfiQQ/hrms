@@ -165,6 +165,10 @@ belongs to the Auth & RBAC spec, which does not exist yet (`adr/0002` decision 5
 Master must not implement, imply, or anticipate that check; §6's permission table stays
 company-scoped as written.
 
+**Salary is the one part already answered:** only the `ACCOUNT` role may read salary data,
+and no `HR` may (`adr/0003` decision 5). The rest of the check — personal documents, family
+records, disciplinary history, full leave history — remains undefined.
+
 **BR-12 — Org assignment is independent of employing company.** `employees.company_id`
 (NOT NULL) is the payroll/legal employer. `branch_id` and `department_id` may point at
 shared org units (`company_id IS NULL`) or at units belonging to a different company.
@@ -386,6 +390,9 @@ depend on:
 
 - the `system_access` value-set question (`CLAUDE.md` §10);
 - the **data-visibility permission check** that must sit separate from cross-company
-  approval authority (BR-14);
-- **`hr_scope` (`PAYROLL | OPERATIONS`)** — the Payroll HR / Operations HR distinction
-  that check will need, not modeled anywhere yet (`CLAUDE.md` §11, `adr/0002` decision 5).
+  approval authority (BR-14) — for everything except salary.
+
+Salary visibility is **no longer open**: it is the `ACCOUNT` role, and no `HR` holds it
+(`adr/0003` decision 5). The `hr_scope` (`PAYROLL | OPERATIONS`) distinction previously
+listed here is **withdrawn**, not deferred — the Payroll HR / Operations HR split it
+modeled does not exist.

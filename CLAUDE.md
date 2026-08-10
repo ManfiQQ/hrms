@@ -211,12 +211,15 @@ The legacy system's **approval hierarchy design** and its validation checklist (
   `adr/0001` decision 7, Director authority is off-system and `DIRECTOR` is correctly
   absent from `core_role`. Only the field definition remains. Resolve in the Auth & RBAC
   spec; does not block Employee Master.
-- **Data visibility vs approval authority** — `HR` and `ASSISTANT_DIRECTOR` may approve
-  across companies; every other `core_role`, `HOD` included, is confined to its own
-  `employees.company_id` (`adr/0002` decisions 4–5). Cross-company approval grants **no**
-  read access to that employee's sensitive data. The separate permission check that
-  governs visibility is **undefined** — Auth & RBAC spec, see §11. Does not block
-  Employee Master, which stays company-scoped for reads.
+- **Data visibility vs approval authority — narrowed, salary is now closed.** `HR` and
+  `ASSISTANT_DIRECTOR` may approve across companies; every other `core_role`, `HOD`
+  included, is confined to its own `employees.company_id` (`adr/0002` decisions 4–5).
+  Cross-company approval grants **no** read access to that employee's sensitive data.
+  **Salary is resolved:** only the `ACCOUNT` role may read salary, and no `HR` may,
+  however many HR staff exist (`adr/0003` decision 5). What remains **undefined** is the
+  visibility check for everything else — personal documents, family records, disciplinary
+  history, full leave history. Auth & RBAC spec, see §11. Does not block Employee Master,
+  which stays company-scoped for reads.
 
 ---
 
@@ -244,24 +247,21 @@ read access to that employee's salary, personal documents, family records, disci
 history, or full leave history. The spec must define that visibility check explicitly and
 state that holding an approval stage is never an input to it.
 
-**2. `hr_scope` — HR is two functional scopes, and the schema knows about neither.** In
-practice the group runs two HR staff:
+**2. Salary visibility is settled — it is the `ACCOUNT` role, not an HR sub-scope.** Only
+an employee holding `ACCOUNT` may read salary data, at the company where they hold that
+role. **No `HR` account may, regardless of how many HR staff exist** (`adr/0003`
+decision 5). Enforcement is structural rather than declarative: `ACCOUNT` is a hardcoded
+restricted role that only Master Admin may grant (`adr/0003` decision 3), so HR cannot
+grant it to itself.
 
-| Scope | Owns |
-|---|---|
-| **Payroll HR** | salary, documents, payslip configuration |
-| **Operations HR** | leave, attendance, OT entry |
+`hr_scope` (`PAYROLL | OPERATIONS`) — the provisional Payroll HR / Operations HR split
+this section previously required — is **withdrawn, not deferred**. The client confirmed
+the distinction does not exist. Do not reintroduce it, and do not carry it into the
+permission matrix.
 
-Both hold `core_role = HR`, and that is correct — for **approval routing** they are
-interchangeable peers of an Assistant Director (`adr/0001` decision 6). For **data
-visibility** they are not interchangeable at all: Operations HR has no business reading
-salary records, Payroll HR none in the attendance queue.
-
-This needs a scope distinction **on top of** `core_role` — provisionally an `hr_scope`
-field with values `PAYROLL | OPERATIONS`. It is **not modeled anywhere**: not in
-`schema.md`, not in any migration, and deliberately so. It is a **required input to the
-Auth & RBAC permission matrix**, not a decision to implement now. **Do not add the column
-ahead of that spec** (Principle #1).
+The visibility question still open for this spec is the **general** one in item 1 —
+documents, family records, disciplinary history, full leave history. It no longer
+includes salary.
 
 Order: resolve the open questions in `docs/modules/employee-master.spec.md` §10 →
 write `auth-rbac.spec.md` → then code.

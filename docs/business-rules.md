@@ -266,19 +266,19 @@ documents, family records, disciplinary history, or full leave history. Data vis
 governed by a **separate permission check**, evaluated independently of whether the user
 holds an approval stage on the request.
 
-⚠ **That visibility check is not yet defined** — it belongs to the Auth & RBAC spec
-(`docs/modules/auth-rbac.spec.md`, not yet written). Until it exists, no code may treat
-"is an approver on this request" as an answer to "may read this employee's data." See
-`adr/0002` decision 5.
+⚠ **That visibility check is not yet defined — except for salary, which is settled
+below.** It belongs to the Auth & RBAC spec (`docs/modules/auth-rbac.spec.md`, not yet
+written). Until it exists, no code may treat "is an approver on this request" as an answer
+to "may read this employee's data." See `adr/0002` decision 5.
 
-> **Known input for that spec — HR is two functional scopes, not one.** In practice there
-> are two HR staff: **Payroll HR** (salary, documents, payslip configuration) and
-> **Operations HR** (leave, attendance, OT entry). Both hold `core_role = HR` and stay
-> interchangeable for **approval routing**. For **visibility** they are not: Operations HR
-> has no business in salary records, Payroll HR none in the attendance queue. This needs a
-> separate `hr_scope` (`PAYROLL | OPERATIONS`) distinction that **is not modeled yet** —
-> recorded as a required input to the Auth & RBAC permission matrix, not something to
-> build now.
+> **Salary access is the `ACCOUNT` role, not an HR sub-scope.** Only an employee holding
+> the `ACCOUNT` role may read salary data, at the company where they hold that role.
+> **No `HR` account may, however many HR staff there are.** `ACCOUNT` is a hardcoded
+> restricted role that only Master Admin may grant, so it cannot be granted from inside
+> HR — the rule is structural, not merely declared. See `adr/0003` decisions 3 and 5.
+>
+> An earlier `hr_scope` (`PAYROLL | OPERATIONS`) split of HR into a Payroll scope and an
+> Operations scope is **withdrawn** — that distinction does not exist.
 
 ### The chain tops out here
 
