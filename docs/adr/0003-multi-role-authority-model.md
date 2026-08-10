@@ -26,7 +26,7 @@ on `employees`, one value per person.
 Client review of the Employee Master spec established that assumption is false, and
 falsifies it in three separate ways.
 
-### 1. A person holds several roles, and the roles differ per company
+### A person holds several roles, and the roles differ per company
 
 The canonical example given by the client — one employee, five roles across two
 companies:
@@ -41,7 +41,7 @@ role applies to which company**. This person is a Manager at AIM and *not* a Man
 AHS, so the question "what authority does this employee have?" has **no answer** until a
 company is named. Authority is per-company, and the schema had nowhere to put that.
 
-### 2. The role list mixes three different concepts
+### The role list mixes three different concepts
 
 The full list supplied by the client was:
 
@@ -66,7 +66,7 @@ recreate precisely the legacy defect `adr/0001` was written to remove. Further, 
 has confirmed job functions will grow as the remaining workplaces (factory, studio,
 galleria, restaurant) are mapped, so the list is not stable enough to be an enum at all.
 
-### 3. Salary visibility is a role, not an HR sub-scope
+### Salary visibility is a role, not an HR sub-scope
 
 `adr/0001` and `adr/0002` both recorded a required Auth & RBAC input: an `hr_scope` field
 distinguishing **Payroll HR** (salary, documents, payslip configuration) from
@@ -78,7 +78,7 @@ HR sees salary, regardless of how many HR staff there are.** There is no Payroll
 distinction `hr_scope` was designed to express does not exist, so the field is withdrawn
 rather than deferred.
 
-### 4. Company list correction
+### Company list correction
 
 The entity list in `CLAUDE.md` §5 and `business-rules.md` was incomplete and is corrected
 here — see decision 9.
@@ -298,6 +298,7 @@ would serve — seeing at a glance that someone also works at another company �
 querying the pivot and rendering it:
 
 > **Employer (payroll):** AHS
+>
 > **Also serving at:** AHS — BDO, Account · AIM — Manager, Account, Admin
 
 A stored column would duplicate a fact the pivot already holds, would drift the moment a
