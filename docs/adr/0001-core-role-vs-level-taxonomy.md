@@ -1,9 +1,23 @@
 # ADR 0001 — Core Role vs Level Taxonomy
 
-- **Status:** Accepted
+- **Status:** Accepted — **decision 2 superseded 2026-08-10**, follow-up item 10
+  withdrawn (see the bullet below)
 - **Date:** 2026-08-07
 - **Supersedes:** the overlapping `core_role` / `level` design inherited from the legacy
   AHS system
+- **Superseded in part by:** `adr/0003`. **Decision 2 is dead** — `core_role` is no longer
+  a column on `employees`, and the column was never created. Authority moved to the
+  `employee_roles` pivot, because a person holds several roles and the roles differ per
+  company, which a single enum column could not express in any form. `STAFF` ceased to be
+  a value (an ordinary staff member is someone with **no** authority row) and `ACCOUNT`
+  was added, so the six values are **not** the six named in decision 2.
+  **Follow-up item 10 (`hr_scope`) is withdrawn**, not deferred — the Payroll HR /
+  Operations HR distinction it modeled does not exist; salary visibility is the `ACCOUNT`
+  role (`adr/0003` decision 5).
+  **Decisions 1, 3, 4, 5, 6 and 7 stand**, re-expressed in pivot terms where they named
+  `core_role` — including decision 4's "Master Admin has no employee record", which is now
+  enforced by the absence of any `employee_roles` row rather than by the absence of an
+  enum value, and is therefore *more* structural, not less
 - **Extended by:** `adr/0002` — decision 3 (HOD per department) is extended there: a
   department may span companies, but an **HOD's approval authority is strictly
   same-company** and does not follow the shared department (`adr/0002` decision 4, as

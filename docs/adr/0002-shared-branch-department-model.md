@@ -1,9 +1,17 @@
 # ADR 0002 — Shared Branch & Department Model
 
-- **Status:** Accepted — **decision 4 amended 2026-08-08** (see the amendment note there)
+- **Status:** Accepted — **decision 4 amended 2026-08-08** (see the amendment note there);
+  **decision 5 partly withdrawn 2026-08-10** (see the bullet below)
 - **Date:** 2026-08-07
 - **Extends:** `adr/0001` decision 3 (HOD optional per department) and decision 6
   (HR ↔ Assistant Director peer approval — scoped across companies here, in decision 5)
+- **Superseded in part by:** `adr/0003`. **Only the `hr_scope` portion of decision 5 is
+  withdrawn** — the `PAYROLL | OPERATIONS` split does not exist, and salary visibility is
+  the `ACCOUNT` role instead (`adr/0003` decision 5). **The rest of decision 5 stands
+  unchanged**, including its central rule that cross-company approval authority confers
+  **no** data visibility, and that the general visibility check belongs to the Auth & RBAC
+  spec. Decisions 1–4 are untouched; where they name `core_role`, read
+  `employee_roles.role` (`adr/0003` decision 1)
 - **Affects:** `branches`, `departments`, `employees`, `approval_requests`,
   `conventions.md` §2–3, Employee Master spec, Org Structure spec, Auth & RBAC spec
   (not yet written — decision 5 is a required input to it)
