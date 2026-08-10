@@ -364,8 +364,8 @@ from upload while that migration is written.
 **5. Branches / departments spanning companies — RESOLVED, and larger than the original
 question.** The question asked about departments spanning *branches*; the real answer is
 that branches and departments span **companies**, and this is a **common pattern in the
-group, not an edge case** — AIM and TURSENIA staff share one Logistics branch, HQ
-Marketing draws from several companies.
+group, not an edge case** — AIM, TURSENIA and ES SOFEEYA staff share one Logistics
+branch, HQ Marketing draws from several companies.
 
 `branches.company_id` and `departments.company_id` are therefore **nullable**: `NULL` =
 shared/group-level, set = company-dedicated. `employees.company_id` stays **mandatory**

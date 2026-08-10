@@ -203,10 +203,11 @@ then extended by `adr/0001` to add the HOD tier and to separate Master Admin str
 - Where no such HOD exists, the standard chain above applies unchanged.
 - **An HOD's authority is strictly same-company.** An HOD approves only for employees
   who share their own `employees.company_id`. Branches and departments may be shared
-  across group companies (`adr/0002`) — the Logistics branch mixes AIM and TURSENIA
-  staff, HQ Marketing draws from several companies — but **sharing a department with
-  someone does not put them under that HOD's authority**. An AIM HOD of shared
-  Logistics approves for the AIM staff there and **not** for the TURSENIA staff.
+  across group companies (`adr/0002`) — the Logistics branch mixes AIM, TURSENIA and
+  ES SOFEEYA staff, HQ Marketing draws from several companies — but **sharing a
+  department with someone does not put them under that HOD's authority**. An AIM HOD of
+  shared Logistics approves for the AIM staff there and **not** for the TURSENIA or
+  ES SOFEEYA staff.
   **No cross-company HOD authority exists.**
 - **Therefore HOD resolution is per (department, company), not per department.** A shared
   department may correctly hold more than one HOD — up to one per company represented in

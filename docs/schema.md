@@ -38,11 +38,11 @@ Draft — pre-implementation. No migrations have been written yet.
 > | Value | Meaning | Example |
 > |---|---|---|
 > | `NULL` | **Shared / group-level** — available across all companies | HQ, Marketing, Logistics |
-> | Set | **Company-dedicated** — belongs to that one company | A single company's factory |
+> | Set | **Company-dedicated** — belongs to that one company | AIM's factory |
 >
 > Branches and departments spanning companies is a **common pattern in this group, not an
-> edge case** — AIM and TURSENIA staff share one Logistics branch; HQ Marketing is
-> staffed from several companies. See `adr/0002`.
+> edge case** — AIM, TURSENIA and ES SOFEEYA staff share one Logistics branch; HQ
+> Marketing is staffed from several companies. See `adr/0002`.
 >
 > **⚠ Query scope must be `company_id IS NULL OR company_id = :current_company`.** A
 > plain `where company_id = :current` silently hides every shared branch and department —
