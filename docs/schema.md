@@ -19,7 +19,7 @@ Draft — pre-implementation. No migrations have been written yet.
 |---|---|---|
 | id | bigint PK | |
 | name | string, unique | Canonical spelling only — see `CLAUDE.md` §5 |
-| code | string, unique | e.g. `AHS`, `AIM HQ`, `ZISH`, `THALHAH`, `TURSENIA`, `ESSOFEEYA` |
+| code | string, unique | `AHS`, `AIM`, `ES SOFEEYA`, `ZISH GLOBAL`, `TURSENIA TRADING`, `SLEGHO` — the complete set, see `CLAUDE.md` §5 |
 | parent_company_id | FK → companies, nullable, self-referencing | **Fixes legacy design.** The old system stored the parent company as a free-text string (`main_company`) repeated on every row. This is a proper hierarchy instead. |
 | status | enum: ACTIVE, INACTIVE | |
 | timestamps, soft deletes | | |
@@ -38,11 +38,11 @@ Draft — pre-implementation. No migrations have been written yet.
 > | Value | Meaning | Example |
 > |---|---|---|
 > | `NULL` | **Shared / group-level** — available across all companies | HQ, Marketing, Logistics |
-> | Set | **Company-dedicated** — belongs to that one company | THALHAH's factory |
+> | Set | **Company-dedicated** — belongs to that one company | AIM's factory |
 >
 > Branches and departments spanning companies is a **common pattern in this group, not an
-> edge case** — THALHAH and TURSENIA staff share one Logistics branch; HQ Marketing is
-> staffed from several companies. See `adr/0002`.
+> edge case** — AIM, TURSENIA and ES SOFEEYA staff share one Logistics branch; HQ
+> Marketing is staffed from several companies. See `adr/0002`.
 >
 > **⚠ Query scope must be `company_id IS NULL OR company_id = :current_company`.** A
 > plain `where company_id = :current` silently hides every shared branch and department —
@@ -68,13 +68,13 @@ Draft — pre-implementation. No migrations have been written yet.
 | Column | Type | Notes |
 |---|---|---|
 | id | bigint PK | |
-| employee_no | string, unique | **Group-wide unique**, format `AHS-0001` — `AHS` prefix + sequential zero-padded number. ⚠ The prefix is **always `AHS`**, the parent company, **regardless of which subsidiary employs the person** — a THALHAH employee is still `AHS-0042`. Numbering is a single group-wide sequence, not per-company. |
+| employee_no | string, unique | **Group-wide unique**, format `AHS-0001` — `AHS` prefix + sequential zero-padded number. ⚠ The prefix is **always `AHS`**, the parent company, **regardless of which subsidiary employs the person** — an AIM employee is still `AHS-0042`. Numbering is a single group-wide sequence, not per-company. |
+| previous_employee_id | FK → employees, self-referencing, nullable | Links a **rejoiner's** new record to their old one. `RESIGNED` and `TERMINATED` are terminal (`business-rules.md` BR-2), so a returning employee gets a **new record with a new `employee_no`** — never a reactivated one — and this column is the only thread back. BR-2 already required the reference; no column existed for it, leaving the rule unimplementable. Employee Master **stores** the link only: whether prior service counts toward leave entitlement is a Leave-spec decision, and it cannot be made at all unless the link is captured now. See `adr/0003` decision 9. |
 | full_name, nickname, phone_no, email | string, nullable | |
-| company_id | FK, **NOT NULL** | The employee's **payroll and legal employer** — determines which company's leave entitlement, policy config, payroll and statutory rules apply. Mandatory, scoped from creation. **Also bounds approval authority** for every `core_role` except `HR` and `ASSISTANT_DIRECTOR`: a `SUPERVISOR`, `MANAGER` or `HOD` approves only for employees sharing this value, shared department or not (`adr/0002` decisions 4–5). |
+| company_id | FK, **NOT NULL** | **The payroll and legal employer — that meaning only.** Determines which company's leave entitlement, policy config, payroll and statutory rules apply. Mandatory, scoped from creation. **It no longer answers "what authority does this person have"** — `employee_roles` does (`adr/0003` decision 6). Approval scope still reads this value: a `SUPERVISOR`, `MANAGER` or `HOD` approves only for employees sharing it, shared department or not (`adr/0002` decisions 4–5) — but *which* role they hold comes from the pivot. **No `secondary_company_id` column exists and none may be added**: a person's involvement with other companies is derived by querying `employee_roles`, never stored a second time. |
 | branch_id, department_id, position_id | FK | Org assignment. **Independent of `company_id` and not required to match it** — an employee may sit in a shared branch/department belonging to no single company, or to a different one. This is valid and must not be rejected by validation. See `adr/0002` decision 2. |
 | fingerprint_id | string, unique, nullable | Matches NGTime attendance export ID. **HR-managed on this record; current value only.** Phase 1 keeps no enrolment history — a re-enrolment overwrites the value in place. If historical punch-to-employee resolution later proves necessary, that is a Phase 2 Attendance decision, not a Phase 1 table. |
-| core_role | enum: STAFF, SUPERVISOR, MANAGER, HOD, HR, ASSISTANT_DIRECTOR | **Authority field** — the only field consulted for approval routing and RBAC. Six values. See `business-rules.md` § Approval Hierarchy and `adr/0001`. `HOD` added (missing from legacy). **`MASTER_ADMIN` is deliberately not a value**: a Master Admin has no employee record, so the value could only ever be set in error. Excluding it makes "Master Admin never has an Employee record" **structurally impossible to violate** rather than test-enforced — there is no value to set. Master Admin is identified only at the `users` level (`is_master_admin` + null `employee_id`). `DIRECTOR` is likewise absent — see `adr/0001` decision 7. |
-| level | enum: STAFF, SUPERVISOR, MANAGER, HOD | **Display field only** — org chart, directory grouping, seniority tier. Never drives an authorization or routing decision. `ADMIN` deliberately excluded: it conflated a system permission with an org-seniority tier — see `adr/0001`. |
+| level | enum: STAFF, SUPERVISOR, MANAGER, HOD | **Display field only** — org chart, directory grouping, seniority tier. Never drives an authorization or routing decision. `ADMIN` deliberately excluded: it conflated a system permission with an org-seniority tier — see `adr/0001`. Where a single headline value is needed for display, this is it — which is why no `primary_role` column exists on `employees` (`adr/0003` decision 1). |
 | employment_type | enum: FULL-TIME, PART-TIME, CONTRACT, INTERN, FREELANCE | |
 | staff_status | enum: PROBATION, ACTIVE, CONFIRMED, SUSPENDED, RESIGNED, TERMINATED | |
 | join_date, probation_end_date, confirmation_date | date, nullable | |
@@ -87,12 +87,128 @@ Draft — pre-implementation. No migrations have been written yet.
 | created_by, updated_by | FK → users, nullable | |
 | timestamps, soft deletes | | |
 
+> ### Two different things are called `company_id` below `employees` — do not conflate them
+>
+> | Kind | On these tables | What it means | On company transfer |
+> |---|---|---|---|
+> | **Tenant marker** | `employee_family_members`, `employee_education_history`, `employee_employment_history`, `employee_documents`, `employee_status_history` | Denormalized from the parent employee so the tenant global scope applies uniformly | Cascades or freezes — see § Company transfer below |
+> | **Company reference** | `employee_roles`, `employee_job_functions` | A real reference to *which company the row is about* — not a tenant marker at all | **Never touched** |
+>
 > **All child tables below carry `company_id` at creation**, per `conventions.md` §3 —
-> they are business tables, not reference/lookup tables. `company_id` is denormalized
-> from the parent employee so the tenant global scope applies uniformly and a
-> compromised or mistaken `employee_id` cannot leak rows across tenants. An earlier
-> draft of this file omitted it; that omission contradicted `conventions.md` §3 and is
-> corrected here.
+> they are business tables, not reference/lookup tables. On the tenant-marker tables it is
+> denormalized from the parent employee so a compromised or mistaken `employee_id` cannot
+> leak rows across tenants. An earlier draft of this file omitted the column; that omission
+> contradicted `conventions.md` §3 and is corrected here.
+>
+> On `employee_roles` and `employee_job_functions` the column instead answers **"in which
+> company does this apply"**, which is why a company transfer leaves those rows alone
+> (`adr/0003` decision 7). Cascading them would corrupt the data outright: a Manager role
+> at AIM is still a Manager role at AIM after the person's payroll moves elsewhere.
+
+### `employee_roles`
+
+**The authority pivot** — replaces the `employees.core_role` enum column, which no longer
+exists (`adr/0003` decision 1). Authority is a triple: *who*, *at which company*, *what
+role*. A single column on `employees` could express none of it — one person holds several
+roles, and the roles differ per company, so "what authority does this employee have?" has
+**no answer until a company is named**.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | bigint PK | |
+| employee_id | FK → employees | |
+| company_id | FK → companies | **Which company this role applies in.** A real company reference, **not** a tenant marker — see below |
+| role | enum | Six values, listed below |
+| effective_date | date | When the role takes effect |
+| assigned_by | FK → users | Who granted it |
+| revoked_date | date, nullable | **`NULL` = currently held** |
+| revoked_by | FK → users, nullable | |
+| revoke_reason | text, nullable | |
+| created_by, updated_by | FK → users, nullable | |
+| timestamps | | **No soft deletes** — see "rows are never deleted" below |
+
+`role` enum — **six** values:
+
+```
+ASSISTANT_DIRECTOR, HR, ACCOUNT, HOD, MANAGER, SUPERVISOR
+```
+
+**Indexes: `(employee_id, company_id)` and `(company_id, role)`.** Every authority check is
+now a query rather than a field read, so eager loading must be disciplined or the employee
+list will N+1.
+
+**`company_id` here is a real company reference, not a tenant marker.** It answers "in
+which company does this role apply," not "which tenant owns this row." That distinction is
+load-bearing: it is why these rows are **never cascaded on a company transfer**
+(`adr/0003` decision 7). Do not apply the ordinary tenant global scope to it unthinkingly.
+
+**`STAFF` is deliberately not a value.** With a pivot, an ordinary staff member is someone
+with **no row here at all**. Defining a value for the absence of authority would create a
+second way to express the same state, and the two would eventually disagree.
+
+**`MASTER_ADMIN` and `DIRECTOR` are deliberately absent**, and for the reasons `adr/0001`
+gives, both of which still hold. A Master Admin has **no employee record**, so it can hold
+no `employee_roles` row — the rule "Master Admin never has an Employee record" stays
+**structurally impossible to violate** rather than test-enforced, now enforced by the
+absence of any pivot row rather than by the absence of an enum value. Master Admin is
+identified only at the `users` level (`is_master_admin` + null `employee_id`). `DIRECTOR`
+is absent because Director authority is exercised **off-system** (`adr/0001` decision 7).
+
+**Rows are never deleted.** Revoking a role sets `revoked_date`; re-granting it later
+inserts a **new row**. This preserves the full cycle — held Jan–Aug, revoked Aug, re-granted
+November — which a boolean toggle cannot express. **Every authority query must filter
+`WHERE revoked_date IS NULL`.** Omitting it returns revoked authority as current: a silent
+security failure, not an error. It belongs in a default model scope, not repeated at each
+call site.
+
+**No `is_enabled` flag exists on this table, and none may be added.** A flag would mean
+every authority check must test two conditions instead of one, and the check that forgets
+the second is a silent security hole. Revocation is the single mechanism. This is also why
+the table carries no soft deletes: a deleted-at column would be a second way to say
+"revoked," and the two would drift.
+
+**`effective_date` is distinct from `created_at`.** A promotion is typically effective
+before HR gets to enter it; the ledger records both the date it applies from and the date
+it was typed.
+
+**Grant restrictions (`adr/0003` decision 3).** `ACCOUNT`, `HR` and `ASSISTANT_DIRECTOR`
+are **hardcoded restricted** — only Master Admin may grant them, and that cannot be
+configured away. Without this, "only `ACCOUNT` sees salary" is unenforceable: an HR who can
+grant roles freely grants themselves `ACCOUNT`. `HOD` is restricted but Master-Admin
+changeable — granting it *bypasses two stages* rather than adding one. `MANAGER` and
+`SUPERVISOR` are unrestricted routine appointments. Every change to a restriction flag is
+written to `audit_logs`.
+
+### `job_functions`
+`id`, `name`, `description`, `is_active` (boolean), timestamps, soft deletes
+
+**What work a person does**, as distinct from what they may approve. A **reference table,
+not an enum**, because the list is not stable: it grows as the remaining workplaces
+(factory, studio, galleria, restaurant) are mapped (`adr/0003` decision 2).
+
+Starting set: `BDO`, `Admin`, `Media`, `Live Host`, `Operation Crew`.
+
+**Master Admin creates and deactivates these types; HR only assigns them.** Keeping the
+vocabulary under one account is what stops it drifting into three spellings of the same
+thing (`CLAUDE.md` §5).
+
+**Removal is soft delete only.** Hard-deleting a function that employees currently hold
+would orphan their rows and break history. A "deleted" function is deactivated: it
+disappears from the assignment picker, existing assignments stay intact, and it can be
+reactivated if the workplace reopens.
+
+### `employee_job_functions`
+`id`, `employee_id` (FK), `company_id` (FK), `job_function_id` (FK), `created_by`,
+`updated_by`, timestamps, soft deletes
+
+`company_id` has the **same nature as on `employee_roles`** — a real company reference
+saying where the person performs this function, **not** a tenant marker, and **not
+cascaded** on a company transfer (`adr/0003` decision 7).
+
+Two things deliberately **not** modeled here, because they are already other fields:
+`Intern` is an `employment_type`, and `Logistic` is a **branch** (`adr/0002`). An intern
+doing media work has job function `Media` and `employment_type = INTERN` — two facts, two
+fields.
 
 ### `employee_family_members`
 `id`, `company_id` (FK), `employee_id` (FK), `relationship`, `name`, `contact_no`,
@@ -107,8 +223,28 @@ Draft — pre-implementation. No migrations have been written yet.
 `end_date` (nullable), `created_by`, `updated_by`, timestamps, soft deletes
 
 ### `employee_status_history`
-`id`, `company_id` (FK), `employee_id` (FK), `status`, `effective_date`, `reason`,
+`id`, `company_id` (FK), `employee_id` (FK), `change_type` (enum), `old_value`,
+`old_label`, `new_value`, `new_label`, `effective_date`, `reason`,
 `changed_by` (FK → users), `created_at`
+
+`change_type` enum — **four** values, and only four:
+
+```
+STAFF_STATUS, POSITION, DEPARTMENT, LEVEL
+```
+
+**`CORE_ROLE` is deliberately not among them.** Role history lives in `employee_roles`,
+which already records every grant and revocation with dates, actors and reasons. Writing
+the same event to a second table would create two records of one fact that can disagree
+(`adr/0003` decision 8).
+
+**`old_label` / `new_label` hold a snapshot of the display text at the time.** Storing only
+`department_id = 7` would require a join to render, and that join shows the department's
+name **today**, not its name **then** — so renaming a department would retroactively
+rewrite history. A ledger that changes retroactively is not a ledger. The labels are
+redundant for enum types (`CONFIRMED` / `CONFIRMED`); that is accepted, because one uniform
+row shape costs a few bytes and avoids per-type branching in every reader. **To be reviewed
+once the system is running on real data.**
 
 **Append-only ledger — deliberate exception to `conventions.md` §3.** No `updated_by`,
 no soft deletes, no `updated_at`: rows are never edited or deleted, only inserted. A
@@ -117,6 +253,15 @@ correction is a new row, not an edit. Mutability would defeat the point of the t
 > Every employment status / grade / position change is a **new row**, never an
 > overwrite of the current record — required to answer "when did this employee move
 > from Grade C to D," which the legacy system's flat-field design could not do.
+
+> **The UI merges this table and `employee_roles` into one timeline**, so HR reads a single
+> chronological history without the data being stored twice:
+>
+> ```
+> 15 Jan 2026 · Role → Manager (AIM)        [employee_roles]
+> 01 Mar 2026 · Status → CONFIRMED          [employee_status_history]
+> 08 Aug 2026 · Account (AIM) revoked       [employee_roles]
+> ```
 
 ### `employee_documents`
 `id`, `company_id` (FK), `employee_id` (FK), `type` (enum), `file_path`, `uploaded_by`
@@ -134,9 +279,72 @@ set, not exhaustive** — it may be amended by a future migration when HR needs 
 `OTHER` is a deliberate escape hatch so an unanticipated document is never blocked from
 being uploaded while that migration is written.
 
+### Company transfer — three cascade categories
+
+Transfers between group entities **do occur, rarely**. When they do, `employees.company_id`
+changes **in place**; the record and the `employee_no` stay with the person. Child tables
+then fall into three categories, distinguished by what `company_id` *means* on each
+(`adr/0003` decision 7):
+
+| Category | `company_id` means | On transfer | Tables |
+|---|---|---|---|
+| **Descriptive** | Tenant marker; the row describes the *person* | **Cascade** | `employee_family_members`, `employee_education_history`, `employee_employment_history`, `employee_documents` |
+| **Event** | The employer *at the time it happened* | **Frozen forever** | `employee_status_history`, and all Phase 2 leave / payroll / attendance tables |
+| **Company-reference** | A real reference to a company, unrelated to employment | **Untouched** | `employee_roles`, `employee_job_functions` |
+
+**The test to apply when adding any new table** — if this person's payroll employer changed
+tomorrow, would this row still be true?
+
+- Yes, and it is about the person → **descriptive**, cascade
+- Yes, because it happened under the previous employer → **event**, freeze
+- Yes, because `company_id` here is not about the employer at all → **company-reference**,
+  leave alone
+
+Freezing event records is what keeps payroll and statutory history attributable to the
+entity that actually paid. A payslip issued by AIM must not be rewritten as TURSENIA's
+because the employee later transferred; that is not an update, it is falsification.
+
+> **⚠ Consequence — frozen rows fall outside the new tenant scope.** After a transfer, the
+> employee's pre-transfer history carries the **old** `company_id`, and the new employer's
+> tenant scope excludes it. Their Status History tab would appear to begin on the transfer
+> date, with no error — the same silent-missing-rows failure mode `adr/0002` flags for
+> shared branches.
+>
+> **Therefore: event tables accessed through an employee relationship release the tenant
+> scope.** Permission has already been decided at the employee level — if the user may read
+> this employee, they may read this employee's history, and filtering again per row adds no
+> security while breaking the record. Queried **directly** for reporting, tenant scope
+> applies in full, so "how many promotions did TURSENIA make this year" stays correctly
+> scoped. Test both directions. This carve-out is recorded in `conventions.md` alongside
+> the `adr/0002` one, because Phase 2 will create many event tables.
+
 ---
 
 ## Core Engine Tables (Phase 0)
+
+### `sequences`
+`id`, `key` (string, unique), `next_value` (bigint), timestamps
+
+**Generic gap-free counter.** Its first consumer is Employee Master, via the row for
+`key = 'employee_no'`, but the table is deliberately generic — claim numbers and letter
+numbers will use it later rather than each inventing their own counter.
+
+**The row is taken with `lockForUpdate()` inside the same transaction as the insert it
+numbers.** `MAX() + 1` is **not** acceptable: it collides whenever two requests read the
+current maximum before either writes — a double-clicked Save button, two open tabs, a
+legacy import running alongside manual entry, a seeder. The client's operating rule that
+**one HR does all registration** does not remove this; that rule prevents duplicate
+*people*, not duplicate *numbers*, and the two protections are complementary rather than
+alternatives (`adr/0003` decision 9).
+
+Deriving the number from `employees.id` was **rejected**: it leaves visible gaps whenever a
+transaction rolls back, couples the number to a primary key, and makes Master Admin
+correction impossible, since a derived value cannot be edited.
+
+**The sequence never rewinds.** A resigned or terminated employee's number is retired with
+them, permanently, and is never reissued. A number vacated by a Master Admin correction is
+likewise **burned, not returned to the pool** — reissuing it would point previously printed
+letters and payslips at the wrong person.
 
 ### `approval_requests`
 `id`, `requestable_type`, `requestable_id` (polymorphic), `requested_by`, `current_stage`,
@@ -165,25 +373,50 @@ part of it) — see `business-rules.md` § Approval Hierarchy.
 > an earlier draft of this file stated the opposite).
 
 > **Cross-company approval is `HR` and `ASSISTANT_DIRECTOR` only.** They are the only two
-> `core_role` values not restricted to their own `company_id`; `STAFF`, `SUPERVISOR`,
-> `MANAGER` and `HOD` are. Every cross-company approval is written to `audit_logs`.
+> `employee_roles.role` values not restricted to their own `company_id`; `SUPERVISOR`,
+> `MANAGER` and `HOD` are confined to their own company, and an employee with **no**
+> `employee_roles` row holds no approval authority at all. `ACCOUNT` is not a routing tier
+> in either direction — it is functional authority over money, not a management rank, and
+> is ignored for routing entirely (`adr/0003` decision 4).
+> Every cross-company approval is written to `audit_logs`.
 > **Approval authority is not data visibility** — approving a cross-company request grants
 > the request and its deciding context, and **never** that employee's salary, payroll,
 > documents, family records, disciplinary history, or full leave history. Visibility runs
-> through a **separate permission check, not yet defined** — Auth & RBAC spec, along with
-> the unmodeled `hr_scope` (`PAYROLL | OPERATIONS`) distinction it needs. Test both
-> directions: the approval is allowed, and it grants no wider read. See `adr/0002`
-> decision 5.
+> through a **separate permission check, not yet defined** — Auth & RBAC spec. **Salary is
+> the exception and is already settled: only the `ACCOUNT` role may read it, and no `HR`
+> may** (`adr/0003` decision 5); the `hr_scope` distinction previously noted here is
+> withdrawn and must not be modeled. Test both directions: the approval is allowed, and it
+> grants no wider read. See `adr/0002` decision 5.
 
 > **Routing must resolve the HOD chain dynamically, per (department, company).** An HOD is
 > optional per department — some departments have one, some don't, and it varies between
 > departments *within the same company*. The stage order therefore **cannot** be
-> precomputed from the requester's `core_role` alone. At request time, the engine must
+> precomputed from the requester's roles alone. At request time, the engine must
 > check whether that department has an assigned HOD **employed by the requester's own
 > company** before deciding stage order: if so, the Manager/Supervisor stage is skipped;
 > if not — no HOD at all, or one belonging to another company — the standard chain applies
 > unchanged and the request is **not** blocked. A shared department may hold one HOD per
 > company represented in it. See `adr/0001` decision 3 and `adr/0002` decision 4.
+
+> **Multi-role routing (`adr/0003` decision 4).** One person may hold several roles across
+> several companies, so the engine reads them differently depending on the direction:
+>
+> - **As an approver — no ambiguity.** If they hold *any* role qualifying for the stage,
+>   they may act on it, subject to the existing checks: same company (except `HR` and
+>   `ASSISTANT_DIRECTOR`) and never their own request. Multiple roles mean *more* things
+>   approvable, never a conflict.
+> - **As a requester — rank is the highest role held anywhere in the group**, not only at
+>   their payroll employer, on the hierarchy
+>   `ASSISTANT_DIRECTOR → HR → HOD → MANAGER → SUPERVISOR`. An employee with no
+>   `employee_roles` row anywhere is routed as ordinary staff. Accepted consequence: rank
+>   can be conferred by a position at another group company.
+> - **Entitlement and approvers still come from `employees.company_id`** — leave is drawn
+>   from the payroll employer's quota and approved by that company's people. Only the
+>   requester's *rank* is read group-wide.
+>
+> **This table must record which role was used to route each request**, so that "why did
+> this skip the Manager stage?" has a written answer months later. The column shape belongs
+> to the Approval Engine spec, which has not been written.
 
 ### `audit_logs`
 `id`, `user_id`, `action`, `auditable_type`, `auditable_id`, `old_values` (json),

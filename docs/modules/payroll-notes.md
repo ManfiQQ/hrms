@@ -92,11 +92,15 @@ to be group-wide, this becomes a shared reference table like `branches` (`adr/00
 4. The pre-existing payroll ambiguities already logged in `business-rules.md`: the
    RM1,700 EPF contribution base, the SOCSO threshold needing re-verification, and the
    lateness penalty formula (`CLAUDE.md` §10).
-5. **Who may read salary — `hr_scope`, decided upstream in the Auth & RBAC spec.** Not
-   every `core_role = HR` account should see salary data: the group runs a **Payroll HR**
-   (salary, documents, payslip configuration) and an **Operations HR** (leave, attendance,
-   OT entry), and both hold `core_role = HR` because they are interchangeable for
-   *approval routing*. For *visibility* they are not. A separate `hr_scope`
-   (`PAYROLL | OPERATIONS`) distinction is a required input to the Auth & RBAC permission
-   matrix (`CLAUDE.md` §11, `adr/0002` decision 5) and is **not modeled yet**. Payroll
-   must not invent its own answer — read the one Auth & RBAC settles.
+5. **Who may read salary — RESOLVED: the `ACCOUNT` role, and nobody else.** Not every
+   account holding the `HR` role sees salary data — **none of them does**. Only an employee
+   holding the `ACCOUNT` role may read salary, at the company where they hold that role,
+   however many HR staff exist (`adr/0003` decision 5). Enforcement is structural:
+   `ACCOUNT` is a hardcoded restricted role that only Master Admin may grant (`adr/0003`
+   decision 3), so it cannot be granted from inside HR.
+
+   This item previously deferred to an `hr_scope` (`PAYROLL | OPERATIONS`) split of
+   **Payroll HR** from **Operations HR**, to be settled by the Auth & RBAC spec. That
+   split does not exist and the field is **withdrawn** — do not model it, and do not wait
+   on Auth & RBAC for this question. Payroll still must not invent its own answer: gate
+   salary reads on the `ACCOUNT` role.
