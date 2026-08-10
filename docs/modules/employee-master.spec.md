@@ -534,8 +534,27 @@ Writing a `STAFF_STATUS`-style history row for the transfer itself is **not** in
 current `change_type` set; if the client wants transfers on the timeline, that is a new
 enum value and an ADR, not an improvisation here.
 
-**Who may initiate a transfer is not yet decided** — see §10 § Open. The action's
-behaviour above is fully specified and unaffected by that answer.
+**Who may initiate a transfer — `HR` or Master Admin, either one, directly.** HR is the
+ordinary actor: a transfer is an HR operation, not an administrative repair. Master Admin
+exists on this action as a **support path** for when HR is unavailable — on leave, not
+responding, or any situation where an employee would otherwise be left untransferred.
+
+**This is not an approval hierarchy.** Neither party approves the other, and Master Admin
+is not an escalation above HR. Both may execute the transfer outright. It is the same
+pattern as HR's may-act-at-any-time position in approval routing (`adr/0003` § Confirmed
+but not yet specced) — a second capable actor so the work never stalls on one person's
+availability, not a second gate the work must pass through.
+
+**Every transfer is written to `audit_logs` with the identity of whoever performed it.**
+This is not routine change-logging. A transfer changes **which legal entity is responsible
+for that employee's EPF, SOCSO and EA Form** — a statutory reassignment between two
+companies. When a filing is later queried, the record must show which entity was
+responsible from which date and **who made that so**. Since either of two parties may have
+acted, the actor identity is the only thing distinguishing an ordinary HR transfer from a
+Master Admin support intervention after the fact.
+
+The audit entry is written **inside the same transaction** as the transfer and its
+cascade (BR-17), so a transfer can never land without its audit record.
 
 ## 6. Permissions
 
@@ -555,7 +574,7 @@ is the normal case, not an edge case.
 | Create / deactivate `job_functions` types | **Master Admin only** (BR-15) |
 | Assign `job_functions` to an employee | `HR` — own company only |
 | Edit `employee_no` | **Master Admin only**, audited (BR-13) |
-| Transfer employee between companies | ⚠ **Not decided** — see §10 open item |
+| Transfer employee between companies | `HR` **or** Master Admin — either, directly; always audited with the actor's identity (§5.7) |
 | Cross-tenant view | Master Admin only, explicit, audited |
 
 **Approval authority is not on this table, and that is deliberate.** `HR` and
@@ -724,6 +743,13 @@ error.**
     **existing `employee_job_functions` rows stay intact and readable**, and it can be
     reactivated.
 25. `HR` cannot create or deactivate a `job_functions` type; Master Admin can (BR-15, §6).
+26. **Both `HR` and Master Admin can transfer an employee**, each acting alone with no
+    approval step — assert both actors, since implementing only one still passes a
+    single-actor test (§5.7). A user holding neither is rejected.
+27. **Every transfer writes an `audit_logs` entry naming the actor**, and a transfer that
+    fails mid-cascade leaves **neither** the transfer nor the audit row behind — both are
+    in one transaction (§5.7). The actor identity is what later distinguishes an ordinary
+    HR transfer from a Master Admin support intervention.
 
 ## 9. Definition of Done
 
@@ -736,10 +762,11 @@ and no migration timestamp collisions.
 
 ## 10. Resolved Decisions
 
-The five questions that previously blocked approval of this spec are **closed**, and item
-6 records a sixth decision that arrived later and superseded part of the foundation the
-others were written on. Recorded here with their answers so the reasoning survives. One
-question opened by that supersession remains — see § Open below.
+The five questions that previously blocked approval of this spec are **closed**. Item 6
+records a sixth decision that arrived later and superseded part of the foundation the
+others were written on; item 7 closes the one question that supersession opened.
+**Nothing in this section is outstanding.** Recorded here with their answers so the
+reasoning survives.
 
 **1. `employee_no` format — RESOLVED.** Group-wide unique, format `AHS-0001`: `AHS`
 prefix + sequential zero-padded number, single group-wide sequence.
@@ -828,14 +855,11 @@ above.
 This is `CLAUDE.md` Principle #1 paying for itself: the assumption was falsified while it
 was still a paragraph in a spec, not a migration with a backfill behind it.
 
-### Open — this module
+**7. Who may initiate a company transfer — RESOLVED.** **Both `HR` and Master Admin, each
+acting directly.** HR is the ordinary actor; Master Admin is a support path for when HR is
+unavailable. Neither approves the other and Master Admin is not an escalation tier — the
+same shape as HR's may-act-at-any-time position in approval routing. Every transfer is
+audited with the actor's identity, because it reassigns statutory responsibility for EPF,
+SOCSO and the EA Form between two legal entities. Full rule: §5.7; permission row: §6.
 
-**Who may perform a company transfer?** BR-17 and §5.7 define **what** a transfer does to
-each table, which is the part that corrupts data if got wrong. **Who is authorized to
-initiate one is not decided** — `adr/0003` decision 7 is silent on it, and §6 records the
-row as undecided rather than guessing. It is plausibly Master Admin (it rewrites tenant
-scope across four tables) but plausibly `HR` with an audit entry.
-
-This **does not block the migrations**, which are unaffected by who calls the action. It
-**does** block shipping the transfer UI. Resolve before §5.7 is implemented, either with
-the client directly or in the Auth & RBAC spec.
+This closes the last question this spec was holding.
