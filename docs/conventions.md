@@ -45,11 +45,68 @@ validation must not require it. Full reasoning: `adr/0002`.
 **Shared structure does not mean shared authority.** A shared department is a shared
 *place*, not a shared approval pool. An **HOD approves only for employees sharing their
 own `employees.company_id`**, inside a shared department as much as anywhere else
-(`adr/0002` decision 4). The only `core_role` values that approve across companies are
+(`adr/0002` decision 4). The only `employee_roles.role` values that approve across companies are
 `HR` and `ASSISTANT_DIRECTOR` — and even they gain **no data visibility** by doing so;
 that runs through a separate permission check owned by the Auth & RBAC spec
 (`adr/0002` decision 5). Do not infer authority scope from structure scope; that
 inference is exactly the error corrected on 2026-08-08.
+
+### Carve-out — event tables freeze `company_id`, and release tenant scope through an employee
+
+This is the **second** carve-out to §2, independent of the shared org-structure one above.
+It comes from `adr/0003` decision 7 and it governs every table Phase 2 is about to create.
+
+On an **event** table — `employee_status_history` today, and all Phase 2 leave, payroll and
+attendance tables — `company_id` is a **frozen historical fact**: it records the employer
+**at the moment the event happened**. It is written once and **never cascaded** when the
+employee later transfers to another group company. A payslip issued by AIM must not be
+rewritten as TURSENIA's because the person transferred afterwards; that is not an update,
+it is falsification.
+
+**⚠ Consequence — frozen rows fall outside the new employer's tenant scope.** After a
+transfer, every pre-transfer history row still carries the **old** `company_id`, so the
+ordinary tenant scope filters them out. The employee's history tab would appear to
+**begin on the transfer date, with no error raised** — the same silent-missing-rows
+failure mode the shared-branch carve-out above guards against (`adr/0002`). Fewer rows,
+not an exception.
+
+**Therefore: an event table accessed *through* an employee relationship releases the
+tenant scope.** Permission has already been decided one level up — **if the user may read
+this employee, they may read this employee's history.** Re-filtering row by row adds no
+security whatsoever and breaks the record. Queried **directly** for reporting, the tenant
+scope applies in full, so "how many promotions did TURSENIA make this year" stays
+correctly scoped to TURSENIA.
+
+**Test both directions**, as with the `adr/0002` carve-out: history stays visible after a
+transfer, *and* direct reporting queries stay scoped.
+
+#### The three cascade categories — apply this when creating any new table
+
+What `company_id` *means* differs per table, and that meaning decides what happens on a
+company transfer. There are exactly three categories:
+
+| Category | `company_id` means | On transfer | Tables |
+|---|---|---|---|
+| **Descriptive** | Tenant marker; the row describes the *person* | **Cascade** | `employee_family_members`, `employee_education_history`, `employee_employment_history`, `employee_documents` |
+| **Event** | The employer *at the time it happened* | **Frozen forever** | `employee_status_history`, and all Phase 2 leave / payroll / attendance tables |
+| **Company-reference** | A real reference to a company, unrelated to employment | **Untouched** | `employee_roles`, `employee_job_functions` |
+
+**The three-question test — ask it of every new table.** *If this person's payroll employer
+changed tomorrow, would this row still be true?*
+
+- Yes, and it is about the person → **descriptive**, cascade
+- Yes, because it happened under the previous employer → **event**, freeze
+- Yes, because `company_id` here is not about the employer at all → **company-reference**,
+  leave alone
+
+Company-reference rows are left alone for a different reason than event rows: a Manager
+role at AIM is still a Manager role at AIM after the person's payroll moves elsewhere.
+Cascading it would corrupt the data outright rather than merely hide it.
+
+**A new table placed in the wrong category corrupts data on transfer**, and the corruption
+is not visible at insert time — it appears only after a transfer that may be months away.
+Decide the category in the module spec, before the migration is written. Full reasoning:
+`adr/0003` decision 7; per-table detail in `schema.md` § Company transfer.
 
 ## 3. Every Business Table Must Include
 
@@ -58,6 +115,38 @@ inference is exactly the error corrected on 2026-08-08.
 - `created_by`, `updated_by` — nullable, FK to `users`
 - Soft deletes
 - Timestamps
+
+### Deliberate exceptions — do not "fix" these
+
+Two tables depart from the list above **on purpose**. Each omission is load-bearing:
+adding the missing column back would create a second way to express a state the table
+already expresses once, and two mechanisms for one meaning eventually disagree. If you
+find yourself about to add a soft delete here because "every business table has one,"
+that is the mistake this section exists to stop.
+
+| Table | Omits | Why |
+|---|---|---|
+| `employee_status_history` | `updated_by`, `updated_at`, soft deletes | Append-only ledger — rows are inserted, never edited or deleted |
+| `employee_roles` | Soft deletes | Revocation is `revoked_date`; a `deleted_at` would be a second way to say "revoked" |
+
+**`employee_status_history` is an append-only ledger.** A correction is a **new row**, not
+an edit to an existing one. Mutability would defeat the entire point of the table: a
+ledger that can be rewritten after the fact cannot answer "when did this employee move
+from Grade C to D" with any authority. It therefore carries `created_at` and
+`changed_by` only — no `updated_at`, no `updated_by`, no `deleted_at`. See `adr/0003`
+decision 8.
+
+**`employee_roles` has no soft deletes, and none may be added.** A role is withdrawn by
+setting `revoked_date`; re-granting later inserts a **new row**, which preserves the full
+cycle (held Jan–Aug, revoked Aug, re-granted November). Adding `deleted_at` would create a
+**second mechanism meaning "revoked"**, and every authority check would then have to test
+both — the check that tests only one is a silent security hole, not an error. **Every
+authority query filters `WHERE revoked_date IS NULL`**, applied as a default model scope
+rather than repeated at each call site. The same reasoning bans an `is_enabled` flag on
+this table. See `adr/0003` decisions 1 and 3.
+
+Both exceptions are recorded in `schema.md` on the tables themselves as well, so neither
+can be discovered only by reading this file.
 
 ## 4. Structured Data Over Free Text
 
