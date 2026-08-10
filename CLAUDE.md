@@ -207,19 +207,32 @@ The legacy system's **approval hierarchy design** and its validation checklist (
 - **`system_access` value set** — `adr/0001` decision 5 provisions Master Admin with
   `FULL` and Director with `VIEW_ONLY`, but the field is not yet defined in `schema.md`
   and the value regular staff accounts receive is unspecified. Narrowed from the earlier
-  form of this item: the `DIRECTOR`-vs-`core_role` contradiction is **resolved** — see
+  form of this item: the `DIRECTOR`-vs-authority-role contradiction is **resolved** — see
   `adr/0001` decision 7, Director authority is off-system and `DIRECTOR` is correctly
-  absent from `core_role`. Only the field definition remains. Resolve in the Auth & RBAC
-  spec; does not block Employee Master.
+  absent from the authority enum. Only the field definition remains. Resolve in the Auth &
+  RBAC spec; does not block Employee Master.
+- **HR and Assistant Director are employed at group level, and the Employee Master
+  permission table does not yet reflect it.** Confirmed with the client: `HR` and
+  `ASSISTANT_DIRECTOR` sit under AHS/HQ and administer **all** entities — they are not
+  "an HR of TURSENIA". `employee-master.spec.md` §6 currently scopes their reads to
+  `own company only`, which is **known-wrong, not merely unconfirmed**: shipping it would
+  block HR on the system's first day. It also covers cross-company transfers (§5.7) — a
+  group-level HR moving an employee from AIM to TURSENIA is the ordinary case, so the
+  question "*which* HR, source or destination" does not arise.
+  The §6 table is deliberately left as written with a ⚠ note, because the correct scope is
+  an **Auth & RBAC decision** and a second answer written into Employee Master would be a
+  second source of truth. **This blocks §6 being implemented in code, not the migrations.**
 - **Data visibility vs approval authority — narrowed, salary is now closed.** `HR` and
-  `ASSISTANT_DIRECTOR` may approve across companies; every other `core_role`, `HOD`
-  included, is confined to its own `employees.company_id` (`adr/0002` decisions 4–5).
+  `ASSISTANT_DIRECTOR` may approve across companies; every other authority role, `HOD`
+  included, is confined to its own `employees.company_id` (`adr/0002` decisions 4–5), and
+  an employee with **no `employee_roles` row holds no approval authority at all**.
   Cross-company approval grants **no** read access to that employee's sensitive data.
   **Salary is resolved:** only the `ACCOUNT` role may read salary, and no `HR` may,
   however many HR staff exist (`adr/0003` decision 5). What remains **undefined** is the
   visibility check for everything else — personal documents, family records, disciplinary
-  history, full leave history. Auth & RBAC spec, see §11. Does not block Employee Master,
-  which stays company-scoped for reads.
+  history, full leave history — **and, per the item above, the company scope of HR's reads
+  in the first place.** Auth & RBAC spec, see §11. Does not block Employee Master's
+  migrations; does block its permission layer.
 
 ---
 
@@ -233,19 +246,30 @@ decision; it is not a spec and does not authorize code.
 
 The spec must cover the provisioning flow, `system_access`, login/session handling,
 password policy, the forced password-change gate, and the full RBAC permission matrix
-across all six `core_role` values plus the Master Admin account type. Full checklist in
-`adr/0001` § Follow-up.
+across all six `employee_roles.role` values plus the Master Admin account type — and the
+**absence** of any role, which is how ordinary staff are expressed (`adr/0003`
+decision 1). Full checklist in `adr/0001` § Follow-up.
 
 ### Required inputs already known — carry these into that spec
 
 **1. Approval authority and data visibility are separate axes, and only one is decided.**
-Approval scope is settled: `HR` and `ASSISTANT_DIRECTOR` are the **only** `core_role`
-values that approve across companies; `STAFF`, `SUPERVISOR`, `MANAGER` and `HOD` approve
-strictly within their own `employees.company_id`, shared department or not (`adr/0002`
-decisions 4–5). Visibility is **not** settled: a cross-company approval must confer **no**
-read access to that employee's salary, personal documents, family records, disciplinary
-history, or full leave history. The spec must define that visibility check explicitly and
-state that holding an approval stage is never an input to it.
+Approval scope is settled: `HR` and `ASSISTANT_DIRECTOR` are the **only**
+`employee_roles.role` values that approve across companies; `SUPERVISOR`, `MANAGER` and
+`HOD` approve strictly within their own `employees.company_id`, shared department or not
+(`adr/0002` decisions 4–5). An employee with **no `employee_roles` row holds no approval
+authority at all** — there is no `STAFF` role value — and `ACCOUNT` is **not a routing
+tier in either direction** (`adr/0003` decision 4). Visibility is **not** settled: a
+cross-company approval must confer **no** read access to that employee's salary, personal
+documents, family records, disciplinary history, or full leave history. The spec must
+define that visibility check explicitly and state that holding an approval stage is never
+an input to it.
+
+**Authority is per company and must be read as such.** It lives in the `employee_roles`
+pivot, not on `employees`, so *"what authority does this person have?"* has **no answer
+until a company is named** — a permission function without a `company_id` argument is a
+bug. Every read filters `WHERE revoked_date IS NULL`; omitting it returns revoked
+authority as current, which is a **silent security failure, not an error** (`adr/0003`
+decision 1).
 
 **2. Salary visibility is settled — it is the `ACCOUNT` role, not an HR sub-scope.** Only
 an employee holding `ACCOUNT` may read salary data, at the company where they hold that
@@ -263,5 +287,22 @@ The visibility question still open for this spec is the **general** one in item 
 documents, family records, disciplinary history, full leave history. It no longer
 includes salary.
 
-Order: resolve the open questions in `docs/modules/employee-master.spec.md` §10 →
-write `auth-rbac.spec.md` → then code.
+**3. HR and Assistant Director work at group level — this spec must set their scope, and
+Employee Master §6 is wrong until it does.** They sit under AHS/HQ and administer all
+entities; there is no "HR of TURSENIA". `employee-master.spec.md` §6 scopes their reads to
+`own company only`, which is **known-wrong rather than merely undecided** — it would block
+HR on day one. That table was deliberately left as written, carrying a ⚠ note, so the
+answer is written **once, here**, and not twice in two documents.
+
+Two things follow for the permission matrix. **Approval scope and read scope are still
+separate axes** — group-level employment settles *where HR works*, not *what HR may read*,
+and item 1's rule that approving grants no visibility stands unchanged. And **salary stays
+out of it regardless**: group-level or not, no `HR` reads salary (item 2).
+
+This also disposes of a question raised against cross-company transfers
+(`employee-master.spec.md` §5.7): there is no "source HR vs destination HR", because HR is
+not a per-company role in this group.
+
+Order: `auth-rbac.spec.md` → then code. `employee-master.spec.md` §10 has **no open
+questions left** — its migrations are unblocked; only its §6 permission layer waits on
+this spec.
