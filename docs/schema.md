@@ -19,7 +19,7 @@ Draft — pre-implementation. No migrations have been written yet.
 |---|---|---|
 | id | bigint PK | |
 | name | string, unique | Canonical spelling only — see `CLAUDE.md` §5 |
-| code | string, unique | e.g. `AHS`, `AIM HQ`, `ZISH`, `THALHAH`, `TURSENIA`, `ESSOFEEYA` |
+| code | string, unique | `AHS`, `AIM`, `ES SOFEEYA`, `ZISH GLOBAL`, `TURSENIA TRADING`, `SLEGHO` — the complete set, see `CLAUDE.md` §5 |
 | parent_company_id | FK → companies, nullable, self-referencing | **Fixes legacy design.** The old system stored the parent company as a free-text string (`main_company`) repeated on every row. This is a proper hierarchy instead. |
 | status | enum: ACTIVE, INACTIVE | |
 | timestamps, soft deletes | | |
@@ -38,10 +38,10 @@ Draft — pre-implementation. No migrations have been written yet.
 > | Value | Meaning | Example |
 > |---|---|---|
 > | `NULL` | **Shared / group-level** — available across all companies | HQ, Marketing, Logistics |
-> | Set | **Company-dedicated** — belongs to that one company | THALHAH's factory |
+> | Set | **Company-dedicated** — belongs to that one company | A single company's factory |
 >
 > Branches and departments spanning companies is a **common pattern in this group, not an
-> edge case** — THALHAH and TURSENIA staff share one Logistics branch; HQ Marketing is
+> edge case** — AIM and TURSENIA staff share one Logistics branch; HQ Marketing is
 > staffed from several companies. See `adr/0002`.
 >
 > **⚠ Query scope must be `company_id IS NULL OR company_id = :current_company`.** A
@@ -68,7 +68,7 @@ Draft — pre-implementation. No migrations have been written yet.
 | Column | Type | Notes |
 |---|---|---|
 | id | bigint PK | |
-| employee_no | string, unique | **Group-wide unique**, format `AHS-0001` — `AHS` prefix + sequential zero-padded number. ⚠ The prefix is **always `AHS`**, the parent company, **regardless of which subsidiary employs the person** — a THALHAH employee is still `AHS-0042`. Numbering is a single group-wide sequence, not per-company. |
+| employee_no | string, unique | **Group-wide unique**, format `AHS-0001` — `AHS` prefix + sequential zero-padded number. ⚠ The prefix is **always `AHS`**, the parent company, **regardless of which subsidiary employs the person** — an AIM employee is still `AHS-0042`. Numbering is a single group-wide sequence, not per-company. |
 | full_name, nickname, phone_no, email | string, nullable | |
 | company_id | FK, **NOT NULL** | The employee's **payroll and legal employer** — determines which company's leave entitlement, policy config, payroll and statutory rules apply. Mandatory, scoped from creation. **Also bounds approval authority** for every `core_role` except `HR` and `ASSISTANT_DIRECTOR`: a `SUPERVISOR`, `MANAGER` or `HOD` approves only for employees sharing this value, shared department or not (`adr/0002` decisions 4–5). |
 | branch_id, department_id, position_id | FK | Org assignment. **Independent of `company_id` and not required to match it** — an employee may sit in a shared branch/department belonging to no single company, or to a different one. This is valid and must not be rejected by validation. See `adr/0002` decision 2. |

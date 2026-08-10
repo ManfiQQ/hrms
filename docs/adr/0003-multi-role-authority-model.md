@@ -333,7 +333,7 @@ changed tomorrow, would this row still be true?
   leave alone
 
 Freezing event records is what keeps payroll and statutory history attributable to the
-entity that actually paid. A payslip issued by THALHAH must not be rewritten as TURSENIA's
+entity that actually paid. A payslip issued by AIM must not be rewritten as TURSENIA's
 because the employee later transferred; that is not an update, it is falsification.
 
 Company-reference rows are untouched for a different reason: a Manager role at AIM is
@@ -444,19 +444,20 @@ that cannot be made at all without this data being captured now.
 legacy import value. **A number vacated by an edit is burned, not returned to the pool** —
 reissuing it would point previously printed letters and payslips at the wrong person.
 
-**Company list — corrected.** The parent is AL HADDAD SUCCESS (AHS), with **six**
-subsidiaries. `Slegho` was missing from `CLAUDE.md` §5 and `business-rules.md`; both are
-corrected in the same commit as this ADR.
+**Company list — corrected.** The parent is AL HADDAD SUCCESS SDN BHD (AHS), with
+**five** subsidiaries. Three errors are corrected in `CLAUDE.md` §5 and
+`business-rules.md`: `SLEGHO ALYA KITCHEN` was missing entirely, `THALHAH` was listed as
+an entity when it is a **brand under AIM** and not a registered company, and
+`ES SOFEEYA` was spelled as the joined `ESSOFEEYA`.
 
 | Entity | Role |
 |---|---|
-| AL HADDAD SUCCESS | Parent |
-| Alhaddad Integrated Marketing (AIM) | Subsidiary |
-| Essofeeya | Subsidiary |
-| Zish Global PLT | Subsidiary |
-| Tursenia Trading | Subsidiary |
-| Slegho | Subsidiary |
-| Thalhah | Subsidiary |
+| AL HADDAD SUCCESS SDN BHD | Parent — also an operating tenant |
+| AL HADDAD INTEGRATED MARKETING | Subsidiary |
+| ES SOFEEYA ENTERPRISE | Subsidiary |
+| ZISH GLOBAL PLT | Subsidiary |
+| TURSENIA TRADING | Subsidiary |
+| SLEGHO ALYA KITCHEN | Subsidiary |
 
 AHS is an operating tenant with its own staff, not an empty holding row — the example
 employee holds BDO and Account there. Master Admin may add further companies without a

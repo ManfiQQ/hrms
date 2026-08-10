@@ -21,10 +21,10 @@ is a **common operating pattern, not an edge case**:
 
 - **HQ Marketing** is a shared department staffed by people employed by different group
   companies.
-- **Logistics** is a shared branch where THALHAH and TURSENIA staff work side by side.
+- **Logistics** is a shared branch where AIM and TURSENIA staff work side by side.
 
-Meanwhile some branches and departments genuinely *are* company-dedicated — THALHAH's
-factory, for instance.
+Meanwhile some branches and departments genuinely *are* company-dedicated — a factory
+belonging to one company, for instance.
 
 So the model must express both, and a mandatory `company_id` cannot. Forcing one would
 push the group into one of three bad outcomes: duplicating the same real-world department
@@ -48,7 +48,7 @@ exist to prevent.
 | Value | Meaning |
 |---|---|
 | `NULL` | **Shared / group-level.** Available across all companies — e.g. HQ, Marketing, Logistics |
-| Set | **Company-dedicated.** Belongs to that one company — e.g. THALHAH's factory |
+| Set | **Company-dedicated.** Belongs to that one company — e.g. a single company's factory |
 
 The column still exists on both tables from the migration that creates them — this is
 **not** a retrofit, and Principle #4 is not being relaxed. What changes is that
@@ -98,8 +98,8 @@ with someone does not place that person under the HOD's approval authority; bein
 employed by the same company does. **No cross-company HOD authority exists anywhere in
 the system.**
 
-Concretely: shared Logistics contains both THALHAH and TURSENIA staff. A THALHAH HOD of
-that branch approves for the THALHAH staff in it, and **not** for the TURSENIA staff, who
+Concretely: shared Logistics contains both AIM and TURSENIA staff. An AIM HOD of
+that branch approves for the AIM staff in it, and **not** for the TURSENIA staff, who
 are not within any authority of theirs.
 
 > **⚠ Amendment — 2026-08-08.** This decision originally read the opposite way: "an HOD's

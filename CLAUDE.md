@@ -83,16 +83,24 @@ skipping steps.
 | Entity | Code | Role |
 |---|---|---|
 | AL HADDAD SUCCESS SDN BHD | AHS | **Parent company — also an operating tenant** |
-| AL HADDAD INTEGRATED MARKETING HQ | AIM HQ | Subsidiary |
-| ZISH GLOBAL | ZISH | Subsidiary |
-| THALHAH | THALHAH | Subsidiary |
-| TURSENIA | TURSENIA | Subsidiary |
-| ESSOFEEYA ENTERPRISE | ESSOFEEYA | Subsidiary |
-| SLEGHO | SLEGHO | Subsidiary |
+| AL HADDAD INTEGRATED MARKETING | AIM | Subsidiary |
+| ES SOFEEYA ENTERPRISE | ES SOFEEYA | Subsidiary |
+| ZISH GLOBAL PLT | ZISH GLOBAL | Subsidiary |
+| TURSENIA TRADING | TURSENIA TRADING | Subsidiary |
+| SLEGHO ALYA KITCHEN | SLEGHO | Subsidiary |
+
+**Six entities: one parent and five subsidiaries.** That is the complete list.
 
 Canonical spelling is binding. The legacy system used three different spellings for
-ESSOFEEYA ENTERPRISE across three different files — do not repeat that. Always use the
+ES SOFEEYA ENTERPRISE across three different files — do not repeat that. Always use the
 spelling in this table.
+
+**`ES SOFEEYA` is two words, with a space.** That is the registered spelling. The joined
+form `ESSOFEEYA` used throughout the legacy system is wrong and must not be reintroduced.
+
+**THALHAH is a brand under AIM, not a registered entity.** It does **not** exist as a
+company in this system — no `companies` row, no `company_id`, and it must never appear in
+a company picker. Anything labelled THALHAH belongs to AL HADDAD INTEGRATED MARKETING.
 
 **AHS is a parent *and* an operating tenant.** It employs its own staff and holds its own
 authority roles, so it is seeded like any other company and appears in every company

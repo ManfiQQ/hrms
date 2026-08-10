@@ -225,7 +225,7 @@ never edited or deleted; a correction is a new row. Also mirrored to `audit_logs
 One-off, idempotent, re-runnable command. Matches on `employee_no`. Writes an import
 report of unmatched/ambiguous rows rather than guessing. Company names normalized against
 the canonical table in `CLAUDE.md` §5 — the legacy data contains three spellings of
-ESSOFEEYA ENTERPRISE and the importer must reject unknown spellings loudly, not silently
+ES SOFEEYA ENTERPRISE and the importer must reject unknown spellings loudly, not silently
 create a new company.
 
 ## 6. Permissions
@@ -331,7 +331,7 @@ here with their answers so the reasoning survives.
 prefix + sequential zero-padded number, single group-wide sequence.
 
 ⚠ The prefix is **always `AHS`** — the parent company — **regardless of which subsidiary
-employs the person**. A THALHAH employee is `AHS-0042`, not `THALHAH-0042`. This is
+employs the person**. An AIM employee is `AHS-0042`, not `AIM-0042`. This is
 counterintuitive enough to be "corrected" by mistake, so: it is intentional. The unique
 index stays group-wide, not composite with `company_id`.
 
@@ -364,7 +364,7 @@ from upload while that migration is written.
 **5. Branches / departments spanning companies — RESOLVED, and larger than the original
 question.** The question asked about departments spanning *branches*; the real answer is
 that branches and departments span **companies**, and this is a **common pattern in the
-group, not an edge case** — THALHAH and TURSENIA staff share one Logistics branch, HQ
+group, not an edge case** — AIM and TURSENIA staff share one Logistics branch, HQ
 Marketing draws from several companies.
 
 `branches.company_id` and `departments.company_id` are therefore **nullable**: `NULL` =

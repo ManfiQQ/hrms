@@ -1,7 +1,7 @@
 # Business Rules
 
-> Sourced from the ESSOFEEYA ENTERPRISE Employee Handbook (effective 01 November 2024)
-> and the legacy AHS system's `AGENTS.md`. All five current group entities share these
+> Sourced from the ES SOFEEYA ENTERPRISE Employee Handbook (effective 01 November 2024)
+> and the legacy AHS system's `AGENTS.md`. All six current group entities share these
 > values today, but every number below **must** be implemented as a per-company
 > `policy_configurations` entry, not hardcoded — see `conventions.md` §5.
 
@@ -12,12 +12,15 @@
 | Entity | Code | Role |
 |---|---|---|
 | AL HADDAD SUCCESS SDN BHD | AHS | **Parent — also an operating tenant** |
-| AL HADDAD INTEGRATED MARKETING HQ | AIM HQ | Subsidiary |
-| ZISH GLOBAL | ZISH | Subsidiary |
-| THALHAH | THALHAH | Subsidiary |
-| TURSENIA | TURSENIA | Subsidiary |
-| ESSOFEEYA ENTERPRISE | ESSOFEEYA | Subsidiary |
-| SLEGHO | SLEGHO | Subsidiary |
+| AL HADDAD INTEGRATED MARKETING | AIM | Subsidiary |
+| ES SOFEEYA ENTERPRISE | ES SOFEEYA | Subsidiary |
+| ZISH GLOBAL PLT | ZISH GLOBAL | Subsidiary |
+| TURSENIA TRADING | TURSENIA TRADING | Subsidiary |
+| SLEGHO ALYA KITCHEN | SLEGHO | Subsidiary |
+
+**Six entities: one parent and five subsidiaries.** `ES SOFEEYA` is two words — that is
+the registered spelling, not a typo. **THALHAH is a brand under AIM, not an entity**, and
+does not exist as a company in this system.
 
 **AHS is a parent *and* an operating tenant** with its own staff — not an empty holding
 row. It is seeded and appears in the company picker like any other company.
@@ -200,10 +203,10 @@ then extended by `adr/0001` to add the HOD tier and to separate Master Admin str
 - Where no such HOD exists, the standard chain above applies unchanged.
 - **An HOD's authority is strictly same-company.** An HOD approves only for employees
   who share their own `employees.company_id`. Branches and departments may be shared
-  across group companies (`adr/0002`) — the Logistics branch mixes THALHAH and TURSENIA
+  across group companies (`adr/0002`) — the Logistics branch mixes AIM and TURSENIA
   staff, HQ Marketing draws from several companies — but **sharing a department with
-  someone does not put them under that HOD's authority**. A THALHAH HOD of shared
-  Logistics approves for the THALHAH staff there and **not** for the TURSENIA staff.
+  someone does not put them under that HOD's authority**. An AIM HOD of shared
+  Logistics approves for the AIM staff there and **not** for the TURSENIA staff.
   **No cross-company HOD authority exists.**
 - **Therefore HOD resolution is per (department, company), not per department.** A shared
   department may correctly hold more than one HOD — up to one per company represented in

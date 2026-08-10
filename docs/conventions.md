@@ -70,7 +70,7 @@ parsed at runtime.
 
 All HR policy numbers — annual leave days, OT rate, EPF contribution base, sick leave
 tiers, lateness penalty amounts — live in a per-company Policy Configuration
-table/model. Never hardcode them in business logic, even though all five current
+table/model. Never hardcode them in business logic, even though all six current
 entities happen to share the same values today. See `business-rules.md` for the
 current default values.
 
