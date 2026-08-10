@@ -5,9 +5,12 @@
 - **Supersedes:** `adr/0001` decision 2 (`core_role` as a single enum column on
   `employees`). `adr/0001` decisions 1, 3, 4, 5, 6, 7 stand unchanged except where
   re-expressed in terms of the pivot introduced here.
-- **Withdraws:** `hr_scope` (`PAYROLL | OPERATIONS`) — `adr/0001` follow-up item 10,
-  `adr/0002` decision 5, `CLAUDE.md` §11 item 2, `payroll-notes.md` open item 5.
-  The distinction it was invented to model does not exist.
+- **Withdraws:** `hr_scope` (`PAYROLL | OPERATIONS`) — the distinction it was invented to
+  model does not exist. Referenced in **seven** documents, all corrected: `CLAUDE.md` §10
+  and §11 item 2; `adr/0001` decision 6, follow-up item 10 and Consequences; `adr/0002`
+  decision 5, Consequences and References; `business-rules.md` § Cross-company approval;
+  `schema.md` `approval_requests`; `payroll-notes.md` open item 5; and
+  `employee-master.spec.md` BR-14 and §10.
 - **Affects:** `employees`, `employee_roles` (new), `employee_job_functions` (new),
   `job_functions` (new), `sequences` (new), `employee_status_history`,
   `approval_requests`, `companies`, `CLAUDE.md` §5, §10, §11, `conventions.md` §2–3,
@@ -477,7 +480,7 @@ migration.
   separate audit mechanism, no second table to keep in step.
 - Salary access is enforced structurally (`ACCOUNT` + hardcoded `is_restricted`) rather
   than declaratively, and one `CLAUDE.md` §10 open item closes.
-- `hr_scope` is removed from four documents. A speculative field modeling a
+- `hr_scope` is removed from seven documents. A speculative field modeling a
   non-existent distinction is gone before it reached a migration.
 - Job functions grow through a UI rather than a migration, avoiding the repair-migration
   pattern `CLAUDE.md` §9 records from the legacy system.
