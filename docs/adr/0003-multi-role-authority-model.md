@@ -1,6 +1,6 @@
 # ADR 0003 — Multi-Role Authority Model
 
-- **Status:** Draft — awaiting approval
+- **Status:** Accepted
 - **Date:** 2026-08-10
 - **Supersedes:** `adr/0001` decision 2 (`core_role` as a single enum column on
   `employees`). `adr/0001` decisions 1, 3, 4, 5, 6, 7 stand unchanged except where
