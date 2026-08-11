@@ -8,10 +8,32 @@
 
 ## Status
 
-**Pre-implementation, with one exception.** As of **2026-08-11** the `users` and `sessions`
-tables are **migrated** — `0001_01_01_000000_create_users_table.php`, carrying the Phase 0
-account columns the Auth & RBAC spec requires. Everything else on this page is still a
-draft with no migration behind it.
+**Partly implemented.** As of **2026-08-11** the following tables are **migrated**:
+
+| Table | Migration |
+|---|---|
+| `users`, `sessions` | `0001_01_01_000000_create_users_table.php` |
+| `companies` | `2026_08_11_100000_create_companies_table.php` |
+| `branches` | `2026_08_11_100100_create_branches_table.php` |
+| `departments` | `2026_08_11_100200_create_departments_table.php` |
+| `positions` | `2026_08_11_100300_create_positions_table.php` |
+| `employees` | `2026_08_11_100400_create_employees_table.php` |
+| `employee_roles` | `2026_08_11_100500_create_employee_roles_table.php` |
+| `policy_configurations` | `2026_08_11_100600_create_policy_configurations_table.php` |
+
+**Still draft, with no migration behind them:** the Employee Master satellite tables
+(`employee_family_members`, `employee_education_history`, `employee_employment_history`,
+`employee_documents`, `employee_status_history`), `job_functions`,
+`employee_job_functions`, `sequences`, `approval_requests`, `audit_logs`, and everything
+under Phase 2.
+
+**The `users.employee_id` foreign key is added by the `employees` migration**, in the same
+file that creates the table it references — not by a separate migration. See
+§ `employee_id` below.
+
+Migration timestamps are spaced **one minute apart**. The legacy system shipped three
+migrations sharing an identical timestamp in one batch, risking ambiguous execution order
+(`CLAUDE.md` §9, `conventions.md` §6).
 
 **`password_reset_tokens` is deliberately not created.** Laravel's default migration
 includes it; this one does not. Password reset is **not** self-service by email — it is
@@ -85,10 +107,12 @@ gone, and changes become forward-only migrations.
 | id | bigint PK | |
 | employee_no | string, unique | **Group-wide unique**, format `AHS-0001` — `AHS` prefix + sequential zero-padded number. ⚠ The prefix is **always `AHS`**, the parent company, **regardless of which subsidiary employs the person** — an AIM employee is still `AHS-0042`. Numbering is a single group-wide sequence, not per-company. |
 | previous_employee_id | FK → employees, self-referencing, nullable | Links a **rejoiner's** new record to their old one. `RESIGNED` and `TERMINATED` are terminal (`business-rules.md` BR-2), so a returning employee gets a **new record with a new `employee_no`** — never a reactivated one — and this column is the only thread back. BR-2 already required the reference; no column existed for it, leaving the rule unimplementable. Employee Master **stores** the link only: whether prior service counts toward leave entitlement is a Leave-spec decision, and it cannot be made at all unless the link is captured now. See `adr/0003` decision 9. |
-| full_name, nickname, email | string, nullable | `email` is **nullable and frequently absent** — much of this workforce (factory crew, studio staff, live hosts) has no company email. That is precisely why login runs on `phone_no` and not on email (`adr/0004` decision 6). |
+| full_name | string, **NOT NULL** | Every other record in the system identifies a person by this. An employee master where the name is optional cannot do its one job. |
+| nickname, email | string, nullable | `email` is **nullable and frequently absent** — much of this workforce (factory crew, studio staff, live hosts) has no company email. That is precisely why login runs on `phone_no` and not on email (`adr/0004` decision 6). |
 | phone_no | string, **NOT NULL**, **unique** | **This is the login username** (`adr/0004` decision 6). `NOT NULL` **and** uniquely indexed — it previously had neither. Normalised, validated, and restricted to HR / Master Admin for edits — see the note below. |
 | company_id | FK, **NOT NULL** | **The payroll and legal employer — that meaning only.** Determines which company's leave entitlement, policy config, payroll and statutory rules apply. Mandatory, scoped from creation. **It no longer answers "what authority does this person have"** — `employee_roles` does (`adr/0003` decision 6). Approval scope still reads this value: a `SUPERVISOR`, `MANAGER` or `HOD` approves only for employees sharing it, shared department or not (`adr/0002` decisions 4–5) — but *which* role they hold comes from the pivot. **No `secondary_company_id` column exists and none may be added**: a person's involvement with other companies is derived by querying `employee_roles`, never stored a second time. **It additionally bounds read scope**, via the employer's position in `companies.parent_company_id` — see the read-scope note below (`adr/0004` decision 1). |
-| branch_id, department_id, position_id | FK | Org assignment. **Independent of `company_id` and not required to match it** — an employee may sit in a shared branch/department belonging to no single company, or to a different one. This is valid and must not be rejected by validation. See `adr/0002` decision 2. |
+| department_id | FK, **NOT NULL** | Approval routing resolves per **(department, company)** — an employee with no department has no HOD stage to resolve (`adr/0001` decision 3, `adr/0002` decision 4). Org assignment is **independent of `company_id` and not required to match it**: an employee may sit in a shared department belonging to no single company, or to a different one. This is valid and must not be rejected by validation (`adr/0002` decision 2). |
+| branch_id, position_id | FK, **nullable** | Not every employee has a fixed place of work or a titled position, and the legacy import carries records with neither. Same independence from `company_id` as `department_id` above. |
 | fingerprint_id | string, unique, nullable | Matches NGTime attendance export ID. **HR-managed on this record; current value only.** Phase 1 keeps no enrolment history — a re-enrolment overwrites the value in place. If historical punch-to-employee resolution later proves necessary, that is a Phase 2 Attendance decision, not a Phase 1 table. |
 | level | enum: STAFF, SUPERVISOR, MANAGER, HOD | **Display field only** — org chart, directory grouping, seniority tier. Never drives an authorization or routing decision. `ADMIN` deliberately excluded: it conflated a system permission with an org-seniority tier — see `adr/0001`. Where a single headline value is needed for display, this is it — which is why no `primary_role` column exists on `employees` (`adr/0003` decision 1). |
 | employment_type | enum: FULL-TIME, PART-TIME, CONTRACT, INTERN, FREELANCE | |
@@ -96,7 +120,8 @@ gone, and changes become forward-only migrations.
 | join_date, probation_end_date, confirmation_date | date, nullable | |
 | direct_supervisor_id, manager_id | FK → employees, self-referencing, nullable | Two-tier reporting confirmed from legacy Staff Master template |
 | attendance_type | enum: FIXED, FLEXIBLE | FIXED = late after configured start time; FLEXIBLE = OT applied manually |
-| work_start_time, work_end_time, ot_after_time | TIME | **Fixes legacy design** — old system stored these as free-text strings |
+| work_start_time, work_end_time | TIME, **NOT NULL** | **Fixes legacy design** — old system stored these as free-text strings |
+| ot_after_time | TIME, **nullable** | **`NULL` means "not applicable"** — not "unknown", not "zero". For `attendance_type = FLEXIBLE` overtime is applied manually and no threshold exists. ⚠ Forcing a value would put a real-looking time in the column that future code reads as a **genuine OT threshold**, silently computing overtime for employees whose OT is decided by a human — a wrong number is worse than an absent one, because only the absent one can be detected. **Required when `attendance_type = FIXED`, and that rule is enforced in the service layer, not as a database constraint**: it is conditional on another column, and `conventions.md` §1 puts business logic in services. |
 | working_days | JSON array | e.g. `["MON","TUE","WED","THU","FRI","SAT"]`. **Fixes legacy design** — old system stored `"ISNIN - SABTU"` as a string |
 | offday | JSON array | |
 | hours_enabled | boolean | Whether Saturday accumulated-hours banking applies to this employee |
