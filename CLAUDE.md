@@ -267,24 +267,23 @@ been made.
 
 ---
 
-## 11. Next Spec Required
+## 11. Spec Status and Required Inputs
 
-**`docs/modules/auth-rbac.spec.md` (Phase 0) has not been written.** Under Principle #1,
-**no Auth code may be written until it exists** — this includes `MasterAdminSeeder`, the
-account-provisioning actions, and the forced first-login password-change middleware, all
-of which are *decided* in `adr/0001` decision 5 but **not speced**. An ADR records a
-decision; it is not a spec and does not authorize code.
+**`docs/modules/auth-rbac.spec.md` (Phase 0) is written and Accepted — 2026-08-11.**
+Under Principle #1, **Auth code is now authorized against it** — `MasterAdminSeeder`
+included, along with the account-provisioning actions and the forced first-login
+password-change middleware that `adr/0001` decision 5 *decided* but could not authorize.
+An ADR records a decision; it is not a spec and does not authorize code. The spec is what
+does, and it now exists.
 
-**Its decisions are now made — `adr/0004` is the primary input, and it decided everything
-this section previously listed as open.** That changes what is missing, not whether code is
-authorized: **an ADR is not a spec.** The remaining work is the spec's own — the
-provisioning flow end to end, login/session handling, the forced password-change gate as a
-middleware design, and the full permission matrix across all six `employee_roles.role`
-values plus the Master Admin account type, including the **absence** of any role, which is
-how ordinary staff are expressed (`adr/0003` decision 1). Full checklist in `adr/0001`
-§ Follow-up; every unchecked item there now has a decision behind it.
+`adr/0004` was its primary input and decided everything this section previously listed as
+open. The spec covers the provisioning flow end to end, login and session handling, the
+password-change gate as a middleware design, and the permission matrix across all six
+`employee_roles.role` values plus the Master Admin account type — including the **absence**
+of any role, which is how ordinary staff are expressed (`adr/0003` decision 1). The
+checklist in `adr/0001` § Follow-up is covered.
 
-### Required inputs — all decided, carry them in as written
+### Required inputs — decided, and carried into the spec as written
 
 **1. Approval authority and data visibility are separate axes, and both are now decided.**
 Approval scope: `HR` and `ASSISTANT_DIRECTOR` are the **only** `employee_roles.role` values
@@ -351,6 +350,16 @@ HR/Account/Master Admin only — decision 10), and Leave must store the **MC att
 separately from the request metadata**, since managers may see that a certificate exists but
 never its contents (decision 11).
 
-Order: `auth-rbac.spec.md` → then code. **`employee-master.spec.md` is fully unblocked** —
-§10 has no open questions, its migrations were never blocked, and its §6 permission layer is
-now decided and written. Employee Master no longer waits on this spec; only Auth code does.
+### What is blocked, and what is not
+
+**Nothing blocks code in Phase 0 Auth or Phase 1 Employee Master.** `auth-rbac.spec.md` is
+Accepted, and **`employee-master.spec.md` is fully unblocked** — §10 has no open questions,
+its migrations were never blocked, and its §6 permission layer is decided and written.
+
+**Still undesigned — neither blocks the two above:**
+
+- **Employee self-service** (§10) — confirmed as required, not designed. A module of its
+  own.
+- **A consumer for the `BR-A16` freeze event.** `auth-rbac.spec.md` emits it when an account
+  is frozen; the **Approval Engine** is what must act on it, and that spec does not exist
+  yet. Until it does, the event is emitted and nothing listens.
