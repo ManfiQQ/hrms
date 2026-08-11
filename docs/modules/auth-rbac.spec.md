@@ -155,7 +155,9 @@ forgotten.
 This is what makes BR-A15 possible: `DELETE FROM sessions WHERE user_id = ?` terminates
 someone's access immediately. File sessions cannot be located by user without reading
 every file, so "immediately" would in practice mean "on their next request." Redis was
-rejected — the VPS is RAM-constrained, which is the same reason Coolify was ruled out.
+rejected — the VPS is RAM-constrained, which is the same reason Coolify was ruled out
+(`CLAUDE.md` §3 § Deployment constraints). That constraint is a **cost** one: if a resident
+cache is ever genuinely needed, it is weighed against a larger VPS rather than refused.
 
 Expired session rows are pruned on a schedule; without it the table grows without bound.
 
