@@ -62,6 +62,31 @@ skipping steps.
 | Version control | Git + GitHub CLI (`gh`) — terminal only, no GitHub web UI |
 | Docs | Obsidian vault, stored in-repo at `/docs` |
 
+### Deployment constraints
+
+Confirmed with the client. Recorded here because the reasoning was otherwise unwritten,
+and an unwritten constraint is one the next person re-litigates or breaks.
+
+**VPS RAM is a cost constraint, not an absolute one.** Coolify was evaluated and rejected
+on RAM. Every further resident service — Redis, Elasticsearch, containerised production —
+carries the same constraint and must be **weighed against the cost of a larger VPS**. Not
+rejected outright, and not assumed free: the client accepts an upgrade where one is
+warranted. Decide it per service, with the trade-off written down.
+
+**Daily automated backups, off the VPS, encrypted before upload — with a key we hold.** Not
+the storage provider's own encryption. Backups contain IC scans, salary, and medical
+records, so a provider-encrypted backup is a backup the provider can read.
+
+| Destination | Role |
+|---|---|
+| Vultr Object Storage | **Primary** — Singapore, same region as the VPS |
+| Google Drive | **Secondary** — a dedicated backup account with 2FA, never a personal one |
+
+**No data is ever deleted for performance.** HR records carry statutory retention periods
+(~7 years — Employment Act and LHDN). Where reads get slow the answer is an index, or an
+archive table **inside** the database — never a delete. Speed comes from indexes, not from
+row count.
+
 ---
 
 ## 4. Division of Labor

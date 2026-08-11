@@ -579,7 +579,7 @@ is the normal case, not an edge case.
 | View own record | any employee |
 | View department employees | `SUPERVISOR`, `MANAGER`, `HOD` — own department **and own `company_id`** |
 | View all in **read scope** | `HR`, `ASSISTANT_DIRECTOR` — scope **derived from the employer's hierarchy position**, see below |
-| Create / edit / archive | `HR`, `ASSISTANT_DIRECTOR` — within their read scope |
+| Create / edit / archive | `HR`, `ASSISTANT_DIRECTOR` — within their read scope, **`phone_no` excepted** (§6.4) |
 | Grant / revoke `MANAGER`, `SUPERVISOR` | `HR` — within their read scope |
 | Grant / revoke `ACCOUNT`, `HR`, `ASSISTANT_DIRECTOR`, `HOD` | **Master Admin only** (BR-16) |
 | Create / deactivate `job_functions` types | **Master Admin only** (BR-15) |
@@ -666,6 +666,32 @@ routine request (a confirmation letter for a bank loan) into an HR errand.
 fit the fixed types (§10 decision 4), which makes it the natural place for internal notes
 and investigation material. Hiding it gives it a defined purpose rather than leaving it an
 undifferentiated bucket.
+
+### 6.4 `phone_no` is read-only on the employee form — for everyone
+
+**The employee form displays `phone_no` and never edits it. This holds for every role,
+`HR` and Master Admin included.** There is no edit affordance on this form, greyed out or
+otherwise.
+
+**Changing it is an account operation, not a profile edit.** It is done from the account
+management screen specified in `auth-rbac.spec.md` §7 — the same place as password reset,
+unlock, and QR regeneration — where `HR` and Master Admin are the only ones who may do it
+(`auth-rbac.spec.md` §6, `adr/0004` decision 6).
+
+**`ASSISTANT_DIRECTOR` keeps full create / edit / archive rights** on the employee record.
+The exception is not a demotion: `phone_no` is not a profile field, so it is not theirs to
+edit here — and it is not `HR`'s to edit here either.
+
+**Why the field leaves the form entirely rather than carrying a role check.** `phone_no`
+serves two masters: it is **profile data** (how you reach a person) and it is an **account
+credential** (the login username, `adr/0004` decision 6). Putting it on the employee form
+treats it as only the first. A greyed-out field invites the question "why can't I edit
+this?" every time someone opens the form; removing it makes the boundary clean — **the
+employee form is for employee data, the account screen is for account credentials.**
+
+It also keeps account operations coherent. An `ASSISTANT_DIRECTOR` who could change
+someone's **username** but could not reset their **password** is a combination that makes
+sense from no direction at all.
 
 **Approval authority is not on this table, and that is deliberate.** `HR` and
 `ASSISTANT_DIRECTOR` may *approve* across companies (BR-14); that grants them **no** read
