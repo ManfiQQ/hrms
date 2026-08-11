@@ -1,6 +1,6 @@
 # ADR 0004 — Account Access, Authentication, and the Permission Matrix
 
-- **Status:** Draft — awaiting approval
+- **Status:** Accepted
 - **Date:** 2026-08-11
 - **Extends:** `adr/0001` decision 5 (account provisioning) and decision 7 (Director
   authority is off-system); `adr/0003` decision 5 (salary visibility is the `ACCOUNT`
