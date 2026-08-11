@@ -423,6 +423,30 @@ Returns the set of `company_id` values an account may read.
 **Cached per request, never per session.** A hierarchy change or a transfer must take
 effect on the next request, not on the next login.
 
+**A `STANDARD` account that cannot be resolved to an employer throws
+`App\Exceptions\Auth\OrphanedAccountException` — it does not resolve to an empty scope.**
+Added 2026-08-11; this spec did not previously cover the case.
+
+That state is **impossible under BR-A20**: every account other than Master Admin and
+Director is created in the same transaction as its employee record, and the two account
+types that legitimately have no employee are `FULL` and `VIEW_ONLY`, both handled above.
+Reaching it means the data is already corrupt.
+
+⚠ **An empty scope is the wrong answer specifically because it is a valid one.** It renders
+as an empty list and the user reads it as *"there is no data yet"*, while the actual cause
+is an account that should not exist. Nothing anywhere would say so — the person affected
+cannot tell the difference, and neither can whoever they report it to. Returning `[]` would
+convert a data fault into a user-facing mystery.
+
+This is the pattern `adr/0001` established for Master Admin: an impossible state is **held
+out at the boundary with a clear reason**, not accommodated quietly. Where a condition
+cannot legitimately arise, code that silently absorbs it removes the only signal that
+something is wrong.
+
+The same exception covers a missing or soft-deleted employer. `employees.company_id` is
+NOT NULL, so an unloadable company is the same class of corruption, and scope must not be
+guessed from an absent hierarchy position.
+
 ### 5.5 Authorization
 
 Laravel Policies, one per model, in `app/Policies/`. Modules call `authorize()`; they do

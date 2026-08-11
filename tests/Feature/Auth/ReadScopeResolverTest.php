@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\Auth\OrphanedAccountException;
 use App\Models\Company;
 use App\Models\Department;
 use App\Models\Employee;
@@ -141,18 +142,43 @@ it('returns the same instance within a request', function () {
     expect(app(ReadScopeResolver::class))->toBe(app(ReadScopeResolver::class));
 });
 
-it('fails closed for a STANDARD account with no employee record', function () {
-    // Should not exist — every staff account is created alongside its employee (BR-A20),
-    // and the two account types that legitimately have none are FULL and VIEW_ONLY. If it
-    // happens anyway, reading nothing is the safe answer: too few rows is visible to the
-    // user, too many is a silent leak.
+it('throws for a STANDARD account with no employee record', function () {
+    // Impossible under BR-A20 — every staff account is created alongside its employee, and
+    // the two account types that legitimately have none are FULL and VIEW_ONLY. Reaching
+    // this means the data is corrupt, so it is held out at the boundary rather than
+    // answered.
     $user = User::factory()->create(['employee_id' => null, 'system_access' => 'STANDARD']);
 
-    expect($this->resolver->resolve($user))->toBe([]);
+    expect(fn () => $this->resolver->resolve($user))
+        ->toThrow(OrphanedAccountException::class);
 });
 
-it('grants no scope at all rather than defaulting to the first company', function () {
+it('does not answer a corrupt account with an empty scope', function () {
+    // The distinction this test exists for: an empty scope is a VALID, ORDINARY answer. It
+    // renders as an empty list and the user reads it as "there is no data yet", while the
+    // real cause is an account that should not exist. Returning [] here would convert a
+    // data fault into a user-facing mystery — so [] must never be the answer.
     $user = User::factory()->create(['employee_id' => null, 'system_access' => 'STANDARD']);
 
-    expect($this->resolver->resolve($user))->not->toContain($this->ahs->id);
+    expect(fn () => $this->resolver->resolve($user))->toThrow(OrphanedAccountException::class);
+
+    // And it certainly must not quietly fall back to some company.
+    try {
+        $this->resolver->resolve($user);
+    } catch (OrphanedAccountException $e) {
+        expect($e->getMessage())->toContain('no employee record');
+    }
+});
+
+it('throws when the employer cannot be loaded', function () {
+    // employees.company_id is NOT NULL, so a null employer means the company row is missing
+    // or soft-deleted. Scope cannot be derived from an absent hierarchy position, and
+    // guessing is exactly what must not happen.
+    $sub = Company::factory()->subsidiary($this->ahs)->create(['code' => 'GONE']);
+    $user = standardAccountAt($sub);
+
+    $sub->delete();
+
+    expect(fn () => (new ReadScopeResolver())->resolve($user->fresh()))
+        ->toThrow(OrphanedAccountException::class);
 });

@@ -2,6 +2,7 @@
 
 namespace App\Services\Auth;
 
+use App\Exceptions\Auth\OrphanedAccountException;
 use App\Models\Company;
 use App\Models\User;
 
@@ -46,9 +47,14 @@ class ReadScopeResolver
     private array $cache = [];
 
     /**
-     * The company ids this account may read. Empty means: nothing.
+     * The company ids this account may read.
      *
      * @return list<int>
+     *
+     * @throws OrphanedAccountException when a STANDARD account cannot be resolved to an
+     *                                  employer. That state is impossible under BR-A20, so
+     *                                  it is thrown rather than answered with an empty
+     *                                  scope, which would read as "no data yet".
      */
     public function resolve(User $user): array
     {
@@ -89,19 +95,26 @@ class ReadScopeResolver
 
         $employee = $user->employee;
 
-        // Fail closed. A STANDARD account with no employee record should not exist — every
-        // staff account is created alongside its employee (BR-A20), and the two account
-        // types that legitimately have no employee are FULL and VIEW_ONLY, handled above.
-        // If it happens anyway, reading nothing is the safe answer: too few rows is
-        // visible to the user, too many is a silent leak.
+        // ⚠ Impossible under BR-A20, and therefore thrown rather than accommodated.
+        //
+        // An empty scope would be a valid, ordinary answer: it renders as an empty list and
+        // reads as "there is no data yet". The real cause would be an account that should
+        // not exist, and nothing would say so — the user cannot distinguish the two, and
+        // neither can anyone they report it to.
+        //
+        // Same pattern as adr/0001: an impossible state is held out at the boundary with a
+        // clear reason, not handled quietly.
         if ($employee === null) {
-            return [];
+            throw OrphanedAccountException::missingEmployee($user);
         }
 
+        // employees.company_id is NOT NULL, so a null employer means the company row is
+        // missing or soft-deleted. Same reasoning: scope cannot be derived and must not be
+        // guessed.
         $employer = $employee->company;
 
         if ($employer === null) {
-            return [];
+            throw OrphanedAccountException::missingEmployer($user);
         }
 
         // The parent (AHS) reads the whole group. HR, Assistant Director and Account see
