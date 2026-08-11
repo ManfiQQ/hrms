@@ -58,11 +58,10 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        Schema::create('password_reset_tokens', function (Blueprint $table) {
-            $table->string('email')->primary();
-            $table->string('token');
-            $table->timestamp('created_at')->nullable();
-        });
+        // No password_reset_tokens table. Password reset is not self-service by email —
+        // it is performed by HR or Master Admin from the account management screen
+        // (BR-A7). Most of this workforce has no email address to send a link to, so the
+        // table would never hold a row, and an unused table reads as an unfinished feature.
 
         // Sessions are stored in the database, not in files (BR-A5). This is what makes
         // BR-A15 possible: DELETE FROM sessions WHERE user_id = ? ends access immediately
@@ -85,7 +84,6 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('users');
-        Schema::dropIfExists('password_reset_tokens');
         Schema::dropIfExists('sessions');
     }
 };

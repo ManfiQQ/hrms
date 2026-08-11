@@ -8,11 +8,16 @@
 
 ## Status
 
-**Pre-implementation, with one exception.** As of **2026-08-11** the `users`,
-`password_reset_tokens` and `sessions` tables are **migrated** —
-`0001_01_01_000000_create_users_table.php`, carrying the Phase 0 account columns the
-Auth & RBAC spec requires. Everything else on this page is still a draft with no migration
-behind it.
+**Pre-implementation, with one exception.** As of **2026-08-11** the `users` and `sessions`
+tables are **migrated** — `0001_01_01_000000_create_users_table.php`, carrying the Phase 0
+account columns the Auth & RBAC spec requires. Everything else on this page is still a
+draft with no migration behind it.
+
+**`password_reset_tokens` is deliberately not created.** Laravel's default migration
+includes it; this one does not. Password reset is **not** self-service by email — it is
+performed by `HR` or Master Admin from the account management screen
+(`auth-rbac.spec.md` BR-A7) — and most of this workforce has no email address to send a
+link to. The table would never hold a row.
 
 The Laravel base migration was **edited in place** rather than patched by a later `ALTER`.
 That is deliberate and was only available because no migration had ever run against real
@@ -526,6 +531,23 @@ nullable), `activation_token` (string, unique, nullable), `activation_expires_at
 >
 > Same reasoning as the withdrawals above and in `adr/0003`: two ways to state one fact
 > eventually disagree, and the stored one is the copy that goes stale.
+
+#### `employee_id` — the FK constraint arrives with the `employees` migration
+
+The column exists from the migration that creates `users`, as Principle #4 requires — that
+rule is about the **column**, not the constraint. The **foreign key constraint is not**,
+because `employees` does not exist yet: `users` is migrated and Employee Master's tables are
+not, and a constraint cannot reference a table that has not been created.
+
+**The constraint is added by the `employees` migration itself, not by a separate
+migration.** The table being pointed at is created there, so that is the first moment the
+constraint can exist — adding it in the same migration is **ordering**, not the later
+"repair migration" pattern `conventions.md` §7 warns against. A standalone
+`add_foreign_key_to_users` migration would be that pattern, and is not what happens here.
+
+Until then the column is a plain nullable `unsignedBigInteger`. It stays **nullable
+permanently** regardless — Master Admin and Director accounts have no employee record and
+carry null here for good (`adr/0001` decision 4, `adr/0004` decision 4).
 
 > **⚠ `remember_token` withdrawn — 2026-08-11.** Laravel's default `users` table creates it
 > via `rememberToken()`. **This migration does not, and it may not be added back.**
