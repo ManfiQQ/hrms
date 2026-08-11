@@ -490,12 +490,32 @@ part of it) — see `business-rules.md` § Approval Hierarchy.
 
 ### `users`
 Standard Laravel `users` table — **with `email` changed to nullable, see below** — plus
-`company_id`, `role`, `employee_id` (FK → employees,
+`employee_id` (FK → employees,
 **nullable**), `system_access` (enum, **NOT NULL, default
 `STANDARD`**), `must_change_password` (boolean, **default true**), `password_changed_at` (timestamp,
 nullable), `activation_token` (string, unique, nullable), `activation_expires_at`
 (timestamp, nullable), `activation_downloaded_at` (timestamp, nullable),
 `activation_used_at` (timestamp, nullable).
+
+> **⚠ `role` and `company_id` withdrawn from `users` — 2026-08-11.** This list previously
+> carried both. **Neither exists, and neither may be added.** They were drafted before the
+> decisions that replaced them, were never written into a migration, and each is now a
+> second answer to a question something else answers better.
+>
+> **`role` is answered by `employee_roles`.** Authority is per company and a person holds
+> several — *"what authority does this person have?"* has **no answer until a company is
+> named** (`adr/0003` decision 1). A single column on `users` can express none of that, and
+> it is the same mistake `employees.core_role` was removed for. This is also why
+> `employee_roles` is a pivot rather than a field in the first place.
+>
+> **`company_id` is answered by derived read scope.** An account's scope comes from where
+> its **employer** sits in `companies.parent_company_id`, never from a value stored on the
+> account (`adr/0004` decision 1). A stored `users.company_id` would be exactly the manual
+> override that decision forbids, and it could not describe Master Admin or Director
+> accounts at all — they belong to **no** company and carry a null `employee_id`.
+>
+> Same reasoning as the withdrawals above and in `adr/0003`: two ways to state one fact
+> eventually disagree, and the stored one is the copy that goes stale.
 
 #### `email` — nullable, unique retained
 

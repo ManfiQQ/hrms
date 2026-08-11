@@ -113,8 +113,13 @@ the database session driver (BR-A5), which is what makes BR-A15 possible.
 
 **Migration rules**
 
-- `users` carries no `company_id` global scope. An account's scope is *derived* (§5.4), not
-  stored, and Master Admin and Director accounts belong to no company at all.
+- **`users` has no `company_id` column and no `company_id` global scope.** An account's
+  scope is *derived* (§5.4), never stored — a stored value would be the manual override
+  `adr/0004` decision 1 forbids — and Master Admin and Director accounts belong to no
+  company at all.
+- **`users` has no `role` column either.** Authority lives in `employee_roles`, per company,
+  and a person may hold several (`adr/0003` decision 1). A single column could express none
+  of it. `schema.md` listed both until 2026-08-11; neither ever reached a migration.
 - `must_change_password` defaults to **true**, so an account created by a code path that
   forgets to set it lands in the safe state.
 - `system_access` defaults to `STANDARD`, the narrowest of the three, for the same reason.
