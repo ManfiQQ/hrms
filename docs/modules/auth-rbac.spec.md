@@ -408,6 +408,21 @@ Three carve-outs already exist and must be honoured (`conventions.md` §2):
    scope applies in full.
 3. **Master Admin context** — bypassed explicitly and audited (BR-A14).
 
+**The bypass is `App\Services\Auth\MasterAdminContext`, and it must be entered on purpose.**
+The scope lifts only inside `run()`, restores on exit, and refuses a bypass with no stated
+reason. Holding `system_access = FULL` does **not** lift it: such an account is scoped by the
+ordinary mechanism and simply resolves to every company, which is why a row belonging to a
+soft-deleted company is invisible to it outside the context and visible inside
+(`adr/0005` decision 5).
+
+> **⚠ Half implemented — the audit write is deferred.** `audit_logs` has no migration, so the
+> reason passed to `run()` is captured and goes nowhere. **That table is deliberately not
+> created by the tenant-scope work**: it has no spec, and it accepts writes from every module
+> — auth, approvals, attendance corrections, Director overrides, role grants — so its column
+> shape is not a decision for a scoping branch to make. Adding the write is a one-line change
+> to `run()` once the table exists. Until then, "explicit, never ambient" holds and "audited"
+> does not.
+
 ### 5.4 Read scope resolution
 
 ```
@@ -422,6 +437,30 @@ Returns the set of `company_id` values an account may read.
 
 **Cached per request, never per session.** A hierarchy change or a transfer must take
 effect on the next request, not on the next login.
+
+**A `STANDARD` account that cannot be resolved to an employer throws
+`App\Exceptions\Auth\OrphanedAccountException` — it does not resolve to an empty scope.**
+Added 2026-08-11; this spec did not previously cover the case.
+
+That state is **impossible under BR-A20**: every account other than Master Admin and
+Director is created in the same transaction as its employee record, and the two account
+types that legitimately have no employee are `FULL` and `VIEW_ONLY`, both handled above.
+Reaching it means the data is already corrupt.
+
+⚠ **An empty scope is the wrong answer specifically because it is a valid one.** It renders
+as an empty list and the user reads it as *"there is no data yet"*, while the actual cause
+is an account that should not exist. Nothing anywhere would say so — the person affected
+cannot tell the difference, and neither can whoever they report it to. Returning `[]` would
+convert a data fault into a user-facing mystery.
+
+This is the pattern `adr/0001` established for Master Admin: an impossible state is **held
+out at the boundary with a clear reason**, not accommodated quietly. Where a condition
+cannot legitimately arise, code that silently absorbs it removes the only signal that
+something is wrong.
+
+The same exception covers a missing or soft-deleted employer. `employees.company_id` is
+NOT NULL, so an unloadable company is the same class of corruption, and scope must not be
+guessed from an absent hierarchy position.
 
 ### 5.5 Authorization
 
