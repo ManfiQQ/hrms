@@ -492,7 +492,8 @@ Standard Laravel `users` table + `company_id`, `role`, `employee_id` (FK → emp
 **nullable**), `is_master_admin` (boolean), `system_access` (enum, **NOT NULL, default
 `STANDARD`**), `must_change_password` (boolean, **default true**), `password_changed_at` (timestamp,
 nullable), `activation_token` (string, unique, nullable), `activation_expires_at`
-(timestamp, nullable), `activation_used_at` (timestamp, nullable).
+(timestamp, nullable), `activation_downloaded_at` (timestamp, nullable),
+`activation_used_at` (timestamp, nullable).
 
 #### `system_access` — three values
 
@@ -584,14 +585,33 @@ one extra step. `VIEW_ONLY` stays strictly read-only.
 
 #### Activation — single-use QR, not a temporary password
 
-`activation_token`, `activation_expires_at` and `activation_used_at` implement
-`adr/0004` decision 7.
+`activation_token`, `activation_expires_at`, `activation_downloaded_at` and
+`activation_used_at` implement `adr/0004` decision 7 and `auth-rbac.spec.md` BR-A22.
 
 | Column | Meaning |
 |---|---|
 | `activation_token` | The single-use activation secret encoded into the QR image. Unique. |
 | `activation_expires_at` | **48 hours** from issue. Past this, HR regenerates. |
+| `activation_downloaded_at` | **`NULL` = HR has not fetched the image.** Set **automatically** when HR downloads the QR — no button, no user action. |
 | `activation_used_at` | **`NULL` = not yet scanned.** Stamped on first scan, after which the token is dead. |
+
+**Regenerating a token clears both `activation_downloaded_at` and `activation_used_at`**,
+and invalidates the previous token.
+
+**Why a download timestamp and not a "mark as sent" button.** The system records what it can
+**observe**. Delivery happens over WhatsApp, outside the system, so a "sent" button would
+record an *assertion*, not a fact — and a timestamp reading "HR sent this at 2:15pm" looks
+authoritative while meaning only that someone clicked. The download is observable, and it
+settles half the question with certainty: **if it was never downloaded, it was certainly
+never sent.** The other half is not fabricated.
+
+Three states follow, and the HR dashboard shows them:
+
+| State | Meaning |
+|---|---|
+| Generated, not downloaded | HR has not acted |
+| Downloaded, not redeemed | In flight — or the employee is ignoring it |
+| Redeemed | Done |
 
 **The account is created in the same transaction as the employee record**, not as a separate
 step HR must remember. This is an operational requirement, not a convenience: the client
@@ -675,6 +695,21 @@ middleware, not per-controller checks. See `adr/0001` decision 5.
 The **QR activation flow above is what triggers this gate in practice** for staff accounts:
 the employee arrives already authenticated by the token and is stopped at the
 password-change screen before reaching anything else.
+
+### `sessions`
+The standard Laravel session table — `id`, `user_id` (**indexed**), `ip_address`,
+`user_agent`, `payload`, `last_activity`.
+
+**The session driver is `database`, not `file`** (`auth-rbac.spec.md` BR-A5). This is not a
+preference: it is what makes the termination in BR-A15 possible.
+
+`DELETE FROM sessions WHERE user_id = ?` ends someone's access **immediately** when
+`staff_status` becomes `TERMINATED`. File sessions cannot be located by user without reading
+every session file, so "immediately" would in practice mean "on their next request" — which
+may never come while a screen sits open in front of the person being dismissed. **`user_id`
+carries an index for exactly this query.**
+
+**Expired session rows are pruned on a schedule.** Without it the table grows without bound.
 
 ### `policy_configurations`
 `id`, `company_id` (FK), `key`, `value`, `effective_from`, timestamps
