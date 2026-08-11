@@ -464,19 +464,41 @@ This module's own surface only. Per-module tables live in their own specs (BR-A8
 | Reset another's password | `HR`, Master Admin |
 | Unlock a locked account | `HR`, Master Admin |
 | Regenerate an activation QR | `HR`, Master Admin |
-| Change an employee's `phone_no` | `HR`, Master Admin |
+| Change an employee's `phone_no` | `HR`, Master Admin — **from the account screen only**, see below |
 | Create / remove a Master Admin | Master Admin |
 | Change `system_access` on an account | Master Admin |
 
 `ACCOUNT` appears nowhere in this table. It reads the most data in the system and
 administers none of it — that separation is deliberate.
 
+**`phone_no` is not editable from the employee form, by anyone — `HR` and Master Admin
+included.** Employee Master displays it read-only (`employee-master.spec.md` §6.4). The
+only place it changes is the account management screen (§7), and only the two roles above
+may do it there.
+
+**It serves two masters, and this is which one wins.** `phone_no` is profile data (how you
+reach a person) *and* an account credential (the login username, BR-A1). Leaving it on the
+employee form treats it as only the first. Removing it makes the boundary clean — **the
+employee form is for employee data, the account screen is for account credentials** — and
+avoids a greyed-out field that invites the same question every time the form is opened.
+
+The alternative was a field-level role check on the employee form, which would have let an
+`ASSISTANT_DIRECTOR` — who may create, edit and archive employee records
+(`employee-master.spec.md` §6) — sit one config change away from editing usernames while
+still unable to reset a password. Those two powers belong together or not at all.
+
 ## 7. UI
 
 Blade + Livewire 3. Screens: login, forced password change, activation landing (reached by
-QR), account management for HR (reset, unlock, regenerate QR), Master Admin management.
+QR), account management for HR (reset, unlock, regenerate QR, **change `phone_no`**), Master
+Admin management.
 
 The login form carries **no remember-me checkbox** (BR-A4).
+
+**Changing `phone_no` lives on the account management screen, not on the employee form.**
+It sits beside password reset, unlock, and QR regeneration because it is the same kind of
+operation — it changes a credential, not a profile detail. Employee Master renders it
+read-only and offers no edit path (`employee-master.spec.md` §6.4).
 
 The activation QR image is generated and downloadable from the employee record; the
 download sets `activation_downloaded_at` (BR-A22). HR's view shows the three activation
