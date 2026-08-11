@@ -8,10 +8,32 @@
 
 ## Status
 
-**Pre-implementation, with one exception.** As of **2026-08-11** the `users` and `sessions`
-tables are **migrated** — `0001_01_01_000000_create_users_table.php`, carrying the Phase 0
-account columns the Auth & RBAC spec requires. Everything else on this page is still a
-draft with no migration behind it.
+**Partly implemented.** As of **2026-08-11** the following tables are **migrated**:
+
+| Table | Migration |
+|---|---|
+| `users`, `sessions` | `0001_01_01_000000_create_users_table.php` |
+| `companies` | `2026_08_11_100000_create_companies_table.php` |
+| `branches` | `2026_08_11_100100_create_branches_table.php` |
+| `departments` | `2026_08_11_100200_create_departments_table.php` |
+| `positions` | `2026_08_11_100300_create_positions_table.php` |
+| `employees` | `2026_08_11_100400_create_employees_table.php` |
+| `employee_roles` | `2026_08_11_100500_create_employee_roles_table.php` |
+| `policy_configurations` | `2026_08_11_100600_create_policy_configurations_table.php` |
+
+**Still draft, with no migration behind them:** the Employee Master satellite tables
+(`employee_family_members`, `employee_education_history`, `employee_employment_history`,
+`employee_documents`, `employee_status_history`), `job_functions`,
+`employee_job_functions`, `sequences`, `approval_requests`, `audit_logs`, and everything
+under Phase 2.
+
+**The `users.employee_id` foreign key is added by the `employees` migration**, in the same
+file that creates the table it references — not by a separate migration. See
+§ `employee_id` below.
+
+Migration timestamps are spaced **one minute apart**. The legacy system shipped three
+migrations sharing an identical timestamp in one batch, risking ambiguous execution order
+(`CLAUDE.md` §9, `conventions.md` §6).
 
 **`password_reset_tokens` is deliberately not created.** Laravel's default migration
 includes it; this one does not. Password reset is **not** self-service by email — it is
