@@ -24,7 +24,10 @@ return new class extends Migration
             // thread back (adr/0003 decision 9).
             $table->foreignId('previous_employee_id')->nullable()->constrained('employees');
 
-            $table->string('full_name')->nullable();
+            // NOT NULL. Every other record in the system identifies a person by this;
+            // an employee master where the name is optional cannot do its one job.
+            $table->string('full_name');
+
             $table->string('nickname')->nullable();
 
             // Nullable and frequently absent — much of this workforce (factory crew, studio
@@ -57,9 +60,15 @@ return new class extends Migration
             // employee may sit in a shared branch/department belonging to no single company,
             // or to a different one. That is a correct record and validation must not
             // reject it (adr/0002 decision 2).
-            $table->foreignId('branch_id')->constrained('branches');
+            //
+            // branch_id and position_id are NULLABLE: not every employee has a fixed place
+            // of work or a titled position, and the legacy import carries records that have
+            // neither. department_id stays NOT NULL because approval routing resolves per
+            // (department, company) — an employee with no department has no HOD stage to
+            // resolve (adr/0001 decision 3, adr/0002 decision 4).
+            $table->foreignId('branch_id')->nullable()->constrained('branches');
             $table->foreignId('department_id')->constrained('departments');
-            $table->foreignId('position_id')->constrained('positions');
+            $table->foreignId('position_id')->nullable()->constrained('positions');
 
             // Matches the NGTime attendance export ID. Current value only — a re-enrolment
             // overwrites in place, and Phase 1 keeps no enrolment history.
@@ -96,7 +105,19 @@ return new class extends Migration
             // ("9.00 AM - 5.00 PM"), which cannot be calculated against (conventions.md §4).
             $table->time('work_start_time');
             $table->time('work_end_time');
-            $table->time('ot_after_time');
+
+            // NULLABLE, and null means NOT APPLICABLE — not "unknown" and not "zero".
+            //
+            // For attendance_type = FLEXIBLE, overtime is applied manually and there is no
+            // threshold at all. Forcing a value would put a real-looking time in the column
+            // that future code reads as a genuine OT threshold, silently computing overtime
+            // for employees whose OT is decided by a human. A wrong number is worse than an
+            // absent one, because only the absent one can be detected.
+            //
+            // Required when attendance_type = FIXED. That rule is enforced in the SERVICE
+            // LAYER, not as a database constraint: it is conditional on another column, and
+            // conventions.md §1 puts business logic in services rather than in the schema.
+            $table->time('ot_after_time')->nullable();
 
             // JSON arrays, e.g. ["MON","TUE","WED","THU","FRI","SAT"]. The legacy system
             // stored "ISNIN - SABTU" as a string — unquery-able (conventions.md §4).
