@@ -489,8 +489,8 @@ part of it) — see `business-rules.md` § Approval Hierarchy.
 `new_values` (json), timestamps
 
 ### `users`
-Standard Laravel `users` table — **with `email` changed to nullable, see below** — plus
-`employee_id` (FK → employees,
+Standard Laravel `users` table — **with `email` changed to nullable and `remember_token`
+dropped, both below** — plus `employee_id` (FK → employees,
 **nullable**), `system_access` (enum, **NOT NULL, default
 `STANDARD`**), `must_change_password` (boolean, **default true**), `password_changed_at` (timestamp,
 nullable), `activation_token` (string, unique, nullable), `activation_expires_at`
@@ -516,6 +516,21 @@ nullable), `activation_token` (string, unique, nullable), `activation_expires_at
 >
 > Same reasoning as the withdrawals above and in `adr/0003`: two ways to state one fact
 > eventually disagree, and the stored one is the copy that goes stale.
+
+> **⚠ `remember_token` withdrawn — 2026-08-11.** Laravel's default `users` table creates it
+> via `rememberToken()`. **This migration does not, and it may not be added back.**
+> Remember-me is removed entirely — checkbox gone from the login form *and* the driver
+> disabled (`auth-rbac.spec.md` BR-A4).
+>
+> **The column is not merely unused; it is an invitation.** Left in place, the next person
+> reads it as "remember-me exists, it just isn't wired up yet" and wires it up. Its absence
+> is what makes BR-A4 hold without depending on anyone remembering the rule.
+>
+> The reasoning behind BR-A4 is worth keeping in view here: a persistent cookie
+> re-authenticates a user past the 2-hour inactivity window, which matters because much of
+> this workforce logs in from **shared terminals** at the factory, studio and galleria. It
+> is also a second credential that must be invalidated on password change and on freeze —
+> not having it removes something that can be forgotten.
 
 #### `email` — nullable, unique retained
 

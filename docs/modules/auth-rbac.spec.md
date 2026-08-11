@@ -120,6 +120,12 @@ the database session driver (BR-A5), which is what makes BR-A15 possible.
 - **`users` has no `role` column either.** Authority lives in `employee_roles`, per company,
   and a person may hold several (`adr/0003` decision 1). A single column could express none
   of it. `schema.md` listed both until 2026-08-11; neither ever reached a migration.
+- **`users` has no `remember_token`.** Laravel's default table creates one via
+  `rememberToken()`; **this migration must not**, and it may not be added later. BR-A4
+  removes remember-me entirely, and an unused column is read as "the feature exists, it just
+  isn't wired up" — which is how it gets wired up. Dropping it is what makes BR-A4 hold
+  structurally rather than by anyone remembering it. `UserFactory` and the `User` model's
+  hidden-attribute list reference the column today and must be updated with the migration.
 - `must_change_password` defaults to **true**, so an account created by a code path that
   forgets to set it lands in the safe state.
 - `system_access` defaults to `STANDARD`, the narrowest of the three, for the same reason.
