@@ -489,12 +489,37 @@ part of it) — see `business-rules.md` § Approval Hierarchy.
 `new_values` (json), timestamps
 
 ### `users`
-Standard Laravel `users` table + `company_id`, `role`, `employee_id` (FK → employees,
+Standard Laravel `users` table — **with `email` changed to nullable, see below** — plus
+`company_id`, `role`, `employee_id` (FK → employees,
 **nullable**), `system_access` (enum, **NOT NULL, default
 `STANDARD`**), `must_change_password` (boolean, **default true**), `password_changed_at` (timestamp,
 nullable), `activation_token` (string, unique, nullable), `activation_expires_at`
 (timestamp, nullable), `activation_downloaded_at` (timestamp, nullable),
 `activation_used_at` (timestamp, nullable).
+
+#### `email` — nullable, unique retained
+
+**`users.email` is `nullable` and keeps its unique index.** This is a deliberate change to
+Laravel's default, which declares it NOT NULL + unique.
+
+**Email is not a login credential here.** The username is `employees.phone_no`
+(`adr/0004` decision 6). `employees.email` is already nullable because most field staff —
+Operation Crew, Live Host, factory — have no company email, and a `users` row is created for
+**every** employee in the same transaction as their employee record. NOT NULL would
+therefore fail on the **second** employee without an email. That is not a risk; it is a
+certainty, and it would surface as a failed employee registration.
+
+**A placeholder address is not the workaround.** `AHS-0042@placeholder.local` is rejected for
+the same reason a placeholder phone number is (`auth-rbac.spec.md` BR-A1): it occupies the
+unique index and manufactures data that is not true.
+
+**Nullable + unique states exactly the intent.** MySQL permits many `NULL` rows under a
+unique index, so the pair reads as *email is optional, but where present it is unique*.
+
+> **This is the inverse of `phone_no`, and the difference carries the meaning.**
+> `employees.phone_no` is **NOT NULL** because it *is* the username. `users.email` is
+> **nullable** because it is not. Same unique index on both, opposite nullability, for one
+> reason: which of the two is a credential.
 
 #### `system_access` — three values
 

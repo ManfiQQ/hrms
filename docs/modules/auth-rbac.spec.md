@@ -71,6 +71,7 @@ records only what a migration author needs beyond the column list.
 
 | Column | Note |
 |---|---|
+| `email` | string, **nullable**, unique retained. **Not a login credential** — see below. Changed from Laravel's NOT NULL default |
 | `employee_id` | FK, **nullable**. Null for Master Admin and Director (`adr/0001` decision 4, `adr/0004` decision 4) |
 | `system_access` | enum, **NOT NULL**, default `STANDARD` (`adr/0004` decision 2). **`FULL` + null `employee_id` is what identifies a Master Admin** — see below |
 | `must_change_password` | boolean, **default true** |
@@ -79,6 +80,20 @@ records only what a migration author needs beyond the column list.
 | `activation_expires_at` | timestamp, nullable |
 | `activation_downloaded_at` | timestamp, nullable — **null means HR has not fetched the image** |
 | `activation_used_at` | timestamp, nullable — **null means not yet redeemed** |
+
+**`email` is nullable, and that follows directly from BR-A1.** The login identifier is
+`employees.phone_no`; **email authenticates nothing in this system**. `employees.email` is
+already nullable because most field staff have none, and BR-A20 creates a `users` row for
+every employee — so a NOT NULL email would fail on the **second** employee without one.
+Certainty, not risk.
+
+A placeholder address is rejected for the same reason BR-A1 rejects a placeholder phone
+number: it occupies the unique index and manufactures data that is not true. The unique
+index is **kept**, because MySQL allows many `NULL` rows beneath it — so nullable + unique
+says precisely *optional, but unique where present*.
+
+Note this is the **inverse of `phone_no` below**, and the inversion is the point:
+`phone_no` is NOT NULL because it is the username, `email` is nullable because it is not.
 
 > **⚠ `is_master_admin` withdrawn — 2026-08-11.** This table previously listed an
 > `is_master_admin` boolean, carried over from `adr/0001` decision 2. **It does not exist
