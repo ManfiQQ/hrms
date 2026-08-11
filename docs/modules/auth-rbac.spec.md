@@ -1,8 +1,8 @@
 # Module Spec — Auth & RBAC
 
 - **Phase:** 0 — Core Engine
-- **Status:** Draft — awaiting approval. **No Auth code until this is approved**
-  (`CLAUDE.md` Principle #1). This includes `MasterAdminSeeder`.
+- **Status:** **Accepted** — 2026-08-11. Auth code is authorized against this spec,
+  `MasterAdminSeeder` included (`CLAUDE.md` Principle #1).
 - **Branch:** `feat/auth-rbac`
 - **Depends on:** `companies`, `employees`, `employee_roles`, `users`,
   `policy_configurations`, `audit_logs`; `adr/0001` (provisioning, Director off-system),
