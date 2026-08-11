@@ -72,14 +72,22 @@ records only what a migration author needs beyond the column list.
 | Column | Note |
 |---|---|
 | `employee_id` | FK, **nullable**. Null for Master Admin and Director (`adr/0001` decision 4, `adr/0004` decision 4) |
-| `system_access` | enum, **NOT NULL**, default `STANDARD` (`adr/0004` decision 2) |
-| `is_master_admin` | boolean |
+| `system_access` | enum, **NOT NULL**, default `STANDARD` (`adr/0004` decision 2). **`FULL` + null `employee_id` is what identifies a Master Admin** — see below |
 | `must_change_password` | boolean, **default true** |
 | `password_changed_at` | timestamp, nullable |
 | `activation_token` | string, unique, nullable |
 | `activation_expires_at` | timestamp, nullable |
 | `activation_downloaded_at` | timestamp, nullable — **null means HR has not fetched the image** |
 | `activation_used_at` | timestamp, nullable — **null means not yet redeemed** |
+
+> **⚠ `is_master_admin` withdrawn — 2026-08-11.** This table previously listed an
+> `is_master_admin` boolean, carried over from `adr/0001` decision 2. **It does not exist
+> and must not be added.** `system_access = FULL` already says it, and two columns asserting
+> one fact eventually disagree — the same reasoning that rejected `secondary_company_id`
+> (`adr/0003` decision 6), `is_enabled` and `primary_role` (`adr/0003` decision 1), and
+> `hr_scope` (`adr/0003` decision 5). It survived only because it predates `system_access`
+> being defined. **Every "is this a Master Admin?" check reads `system_access = FULL`**, and
+> `BR-A13`'s 3/1 limits count on that column.
 
 **`employees.phone_no`** — string, **NOT NULL**, **unique**. This is the login username
 (BR-A1). HR cannot register an employee without one, and there is no placeholder path — a

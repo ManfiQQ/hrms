@@ -216,8 +216,9 @@ gives, both of which still hold. A Master Admin has **no employee record**, so i
 no `employee_roles` row — the rule "Master Admin never has an Employee record" stays
 **structurally impossible to violate** rather than test-enforced, now enforced by the
 absence of any pivot row rather than by the absence of an enum value. Master Admin is
-identified only at the `users` level (`is_master_admin` + null `employee_id`). `DIRECTOR`
-is absent because Director authority is exercised **off-system** (`adr/0001` decision 7).
+identified only at the `users` level, by **`system_access = FULL` with a null
+`employee_id`** (`adr/0004` decision 2). `DIRECTOR` is absent because Director authority is
+exercised **off-system** (`adr/0001` decision 7).
 
 **Rows are never deleted.** Revoking a role sets `revoked_date`; re-granting it later
 inserts a **new row**. This preserves the full cycle — held Jan–Aug, revoked Aug, re-granted
@@ -489,7 +490,7 @@ part of it) — see `business-rules.md` § Approval Hierarchy.
 
 ### `users`
 Standard Laravel `users` table + `company_id`, `role`, `employee_id` (FK → employees,
-**nullable**), `is_master_admin` (boolean), `system_access` (enum, **NOT NULL, default
+**nullable**), `system_access` (enum, **NOT NULL, default
 `STANDARD`**), `must_change_password` (boolean, **default true**), `password_changed_at` (timestamp,
 nullable), `activation_token` (string, unique, nullable), `activation_expires_at`
 (timestamp, nullable), `activation_downloaded_at` (timestamp, nullable),
@@ -545,6 +546,16 @@ group-wide reader — the same secure-by-omission reasoning that makes
 reached by omission; both are deliberate grants.
 
 #### Master Admin is a distinct account type
+
+> **⚠ `is_master_admin` withdrawn — 2026-08-11.** This table previously carried an
+> `is_master_admin` boolean, and `adr/0001` decision 2 identified Master Admin by it. **The
+> column does not exist and must not be added.** `system_access = FULL` says the same thing,
+> and two columns asserting one fact eventually disagree — the pattern already rejected for
+> `secondary_company_id` (`adr/0003` decision 6), `is_enabled` on `employee_roles` and
+> `primary_role` (`adr/0003` decision 1), and `hr_scope` (`adr/0003` decision 5).
+> `is_master_admin` survived only because it predates `system_access` being defined at all.
+> **Master Admin is `system_access = FULL` with a null `employee_id`** (`adr/0004`
+> decision 2).
 
 **Master Admin is not a permission flag on a normal staff login.** A Master Admin user has
 **no `employee_id` and no linked Employee record** — the FK is null and stays null. It
