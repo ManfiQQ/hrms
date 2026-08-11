@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Scopes\SharedTenantScope;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -20,6 +21,15 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Branch extends Model
 {
     use HasFactory;
+
+    /**
+     * Keeps rows where company_id IS NULL — those are SHARED, not missing
+     * (adr/0002 decision 1, adr/0005 decision 3).
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new SharedTenantScope());
+    }
 
     protected $fillable = [
         'company_id',

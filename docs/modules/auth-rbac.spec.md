@@ -408,6 +408,21 @@ Three carve-outs already exist and must be honoured (`conventions.md` §2):
    scope applies in full.
 3. **Master Admin context** — bypassed explicitly and audited (BR-A14).
 
+**The bypass is `App\Services\Auth\MasterAdminContext`, and it must be entered on purpose.**
+The scope lifts only inside `run()`, restores on exit, and refuses a bypass with no stated
+reason. Holding `system_access = FULL` does **not** lift it: such an account is scoped by the
+ordinary mechanism and simply resolves to every company, which is why a row belonging to a
+soft-deleted company is invisible to it outside the context and visible inside
+(`adr/0005` decision 5).
+
+> **⚠ Half implemented — the audit write is deferred.** `audit_logs` has no migration, so the
+> reason passed to `run()` is captured and goes nowhere. **That table is deliberately not
+> created by the tenant-scope work**: it has no spec, and it accepts writes from every module
+> — auth, approvals, attendance corrections, Director overrides, role grants — so its column
+> shape is not a decision for a scoping branch to make. Adding the write is a one-line change
+> to `run()` once the table exists. Until then, "explicit, never ambient" holds and "audited"
+> does not.
+
 ### 5.4 Read scope resolution
 
 ```

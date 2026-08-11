@@ -20,6 +20,21 @@ class EmployeeRole extends Model
 {
     use HasFactory;
 
+    /**
+     * Deliberately carries neither TenantScope nor SharedTenantScope.
+     *
+     * `company_id` here is a real reference to *which company the row is about* — not a
+     * tenant marker (adr/0003 decision 7). Scoping it to the reader's companies would filter
+     * authority records by who is looking, which is a different question from the one the
+     * column answers.
+     *
+     * This constant is what the architecture guard test reads. The exemption must be
+     * DECLARED, never expressed by silence, so that "deliberately unscoped" and "someone
+     * forgot" stay distinguishable — that distinction is the entire value of the test
+     * (adr/0005 decision 6).
+     */
+    public const TENANT_SCOPE_EXEMPT = 'company_id is a company reference, not a tenant marker (adr/0003 decision 7)';
+
     /** The six authority roles. STAFF, MASTER_ADMIN and DIRECTOR are deliberately absent. */
     public const ROLES = [
         'ASSISTANT_DIRECTOR',

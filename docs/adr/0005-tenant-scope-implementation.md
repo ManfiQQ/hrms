@@ -138,6 +138,31 @@ the one that leaves no trace.
 **`VIEW_ONLY` does not bypass.** It reads group-wide because its read scope *is* the whole
 group, through the ordinary path in decision 2. Only `FULL` skips the mechanism.
 
+**Nor does `FULL` bypass merely by being `FULL`.** A Master Admin account outside the
+context is scoped by the ordinary mechanism like anyone else. It happens to see every
+company, because its read scope resolves to every company — but it is *scoped*, not
+bypassed. The two come apart the moment read scope cannot express something: rows belonging
+to a soft-deleted company fall outside the resolved set and disappear for a `FULL` account,
+and reappear only inside the context. **That difference is what "explicit, not ambient"
+means in practice**, and it is testable today.
+
+> **⚠ Implemented in half — the audit write is deferred, deliberately.**
+>
+> `MasterAdminContext` exists and must be entered on purpose; the scope lifts only inside it
+> and restores on exit, and a bypass without a stated reason is refused. **The write to
+> `audit_logs` does not happen yet**, because that table has no migration.
+>
+> **`audit_logs` is deliberately not created here.** It has no spec of its own, and it
+> accepts writes from **every** module — auth, approvals, attendance corrections, Director
+> overrides, role grants. Its column shape is therefore not this branch's decision to make,
+> and settling it inside a tenant-scope PR would be exactly the code-before-spec pattern
+> Principle #1 exists to prevent.
+>
+> The seam is in place: `run()` already takes and holds the reason, so when `audit_logs`
+> lands, the write is added there and nothing else about the class changes. Until then this
+> decision is **half satisfied, and knowingly so** — "explicit, never ambient" holds;
+> "audited" does not.
+
 ### 6. An architecture test guards the choice
 
 A test asserts that **every Eloquent model backed by a table carrying a `company_id` column
@@ -210,6 +235,13 @@ entire value of the test.
 
 ## Still open
 
+- **The audit half of decision 5**, pending an `audit_logs` migration and the spec that must
+  precede it. Tracked in decision 5 above rather than only here, so it is visible where the
+  rule is stated.
+- **Unauthenticated and console contexts run unscoped.** Seeders, migrations, queue workers
+  and artisan commands have no user to resolve a scope from, and throwing there would break
+  every command. HTTP is protected by route middleware, not by this scope. Recorded because
+  it is a real hole if a route is ever left unauthenticated — the scope will not save it.
 - **Whether `TenantScope` applies to `users`.** An account belongs to no company —
   `users` has no `company_id` at all, and Master Admin and Director belong to no company by
   design. Nothing to scope today, but account listing screens will need *some* rule, and it

@@ -4,6 +4,8 @@ namespace App\Services\Auth;
 
 use App\Exceptions\Auth\OrphanedAccountException;
 use App\Models\Company;
+use App\Models\Employee;
+use App\Models\Scopes\TenantScope;
 use App\Models\User;
 
 /**
@@ -93,7 +95,16 @@ class ReadScopeResolver
             return $this->allCompanyIds();
         }
 
-        $employee = $user->employee;
+        // ⚠ Loaded WITHOUT TenantScope, and that is not an optimisation.
+        //
+        // Employee carries TenantScope, which asks this resolver for the account's scope,
+        // which would load the employee again — unbounded recursion. Resolving *who you
+        // are* must precede *what you may see*, so this one read sits outside the
+        // mechanism it feeds. It is safe because it is keyed on the account's own
+        // employee_id: it can return that account's employee and nothing else.
+        $employee = $user->employee_id === null
+            ? null
+            : Employee::withoutGlobalScope(TenantScope::class)->find($user->employee_id);
 
         // ⚠ Impossible under BR-A20, and therefore thrown rather than accommodated.
         //

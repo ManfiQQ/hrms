@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Scopes\TenantScope;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,6 +13,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Employee extends Model
 {
     use HasFactory, SoftDeletes;
+
+    /** Narrows every query to the account's read scope (adr/0005 decision 2). */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new TenantScope());
+    }
 
     /**
      * ⚠ `company_id` is deliberately absent from this list.
