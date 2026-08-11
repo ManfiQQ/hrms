@@ -15,6 +15,10 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        // The first account in the system (adr/0001 decision 5). Idempotent, so running
+        // db:seed more than once will not create a second Master Admin.
+        $this->call(MasterAdminSeeder::class);
+
         // User::factory(10)->create();
 
         User::factory()->create([

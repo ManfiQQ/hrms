@@ -8,7 +8,17 @@
 
 ## Status
 
-Draft — pre-implementation. No migrations have been written yet.
+**Pre-implementation, with one exception.** As of **2026-08-11** the `users`,
+`password_reset_tokens` and `sessions` tables are **migrated** —
+`0001_01_01_000000_create_users_table.php`, carrying the Phase 0 account columns the
+Auth & RBAC spec requires. Everything else on this page is still a draft with no migration
+behind it.
+
+The Laravel base migration was **edited in place** rather than patched by a later `ALTER`.
+That is deliberate and was only available because no migration had ever run against real
+data: `conventions.md` §7 asks that a table's design not be patched by a later "repair"
+migration where it can be avoided, and here it could. Once real data exists this option is
+gone, and changes become forward-only migrations.
 
 ---
 
