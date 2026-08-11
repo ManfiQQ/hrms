@@ -9,15 +9,18 @@ return [
     | Authentication Defaults
     |--------------------------------------------------------------------------
     |
-    | This option defines the default authentication "guard" and password
-    | reset "broker" for your application. You may change these values
-    | as required, but they're a perfect start for most applications.
+    | This option defines the default authentication "guard" for your
+    | application. You may change this value as required.
+    |
+    | There is no default password reset "broker" here: Laravel's email-based
+    | reset flow is not used. Password reset is performed by HR or Master Admin
+    | from the account management screen (auth-rbac.spec.md BR-A7), and most of
+    | this workforce has no email address to send a link to.
     |
     */
 
     'defaults' => [
         'guard' => env('AUTH_GUARD', 'web'),
-        'passwords' => env('AUTH_PASSWORD_BROKER', 'users'),
     ],
 
     /*
@@ -75,31 +78,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Resetting Passwords
+    | Resetting Passwords — deliberately absent
     |--------------------------------------------------------------------------
     |
-    | These configuration options specify the behavior of Laravel's password
-    | reset functionality, including the table utilized for token storage
-    | and the user provider that is invoked to actually retrieve users.
+    | Laravel's 'passwords' broker configuration has been removed, along with the
+    | password_reset_tokens table it pointed at. The email-based reset flow is
+    | not used in this system.
     |
-    | The expiry time is the number of minutes that each reset token will be
-    | considered valid. This security feature keeps tokens short-lived so
-    | they have less time to be guessed. You may change this as needed.
+    | Password reset is performed by HR or Master Admin from the account
+    | management screen (auth-rbac.spec.md BR-A7, §7). Most of this workforce —
+    | factory crew, studio staff, live hosts — has no email address, and the
+    | login identifier is employees.phone_no, not email (BR-A1).
     |
-    | The throttle setting is the number of seconds a user must wait before
-    | generating more password reset tokens. This prevents the user from
-    | quickly generating a very large amount of password reset tokens.
+    | Do not restore this block. A broker pointing at a table that does not exist
+    | reads as an unfinished feature rather than a decision.
     |
     */
-
-    'passwords' => [
-        'users' => [
-            'provider' => 'users',
-            'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
-            'expire' => 60,
-            'throttle' => 60,
-        ],
-    ],
 
     /*
     |--------------------------------------------------------------------------

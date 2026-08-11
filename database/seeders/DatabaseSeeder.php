@@ -2,7 +2,6 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -15,11 +14,13 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
+        // The first account in the system (adr/0001 decision 5). Idempotent, so running
+        // db:seed more than once will not create a second Master Admin.
+        $this->call(MasterAdminSeeder::class);
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        // No test/demo user is seeded. Every account other than Master Admin and Director
+        // belongs to an employee and is created in the same transaction as that employee's
+        // record (BR-A20). A standalone account with no employee record is a shape this
+        // system does not otherwise allow, and seeding one would make it look permitted.
     }
 }

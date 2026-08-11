@@ -104,6 +104,19 @@ row. The two taxonomies do not need to merge: `core_role` describes an *employee
 authority within the approval chain, and Master Admin is by design not in that chain
 (decision 4).
 
+> **⚠ `is_master_admin` superseded — 2026-08-11.** The identification rule above stands;
+> **only the column it names is withdrawn.** Master Admin is identified by
+> **`system_access = FULL` with a null `employee_id`** (`adr/0004` decision 2), still
+> entirely at the `users` level and still never by an authority value on an employee row.
+>
+> `is_master_admin` was written here before `system_access` existed as a defined field, so
+> at the time it was the only mechanism available. Once `adr/0004` defined `system_access`
+> with `FULL` meaning Master Admin, the two said the same thing — and **two ways to express
+> one fact eventually disagree**, the reasoning that already withdrew `secondary_company_id`
+> (`adr/0003` decision 6), `is_enabled` and `primary_role` (`adr/0003` decision 1), and
+> `hr_scope` (`adr/0003` decision 5). `adr/0004` should have withdrawn it and did not; this
+> note is that correction. Do not reintroduce the column.
+
 `DIRECTOR` is likewise absent, for a different reason — see decision 7.
 
 ### 3. HOD is optional per department
@@ -391,6 +404,10 @@ The Auth & RBAC spec must cover, at minimum:
   deliberately — a single enum containing an unusable value was the worse option, and the
   split mirrors a real distinction (Master Admin is not in the approval chain at all).
   Code must therefore not assume `core_role` alone answers "what is this account."
+  **Both column names here are superseded** — authority moved to the `employee_roles` pivot
+  (`adr/0003` decision 1) and Master Admin is now `users.system_access = FULL` (`adr/0004`
+  decision 2, and the note in decision 2 above). **The split itself still holds**, and so
+  does the warning: no single field answers "what is this account."
 
 **Open, not resolved by this ADR**
 

@@ -71,15 +71,38 @@ records only what a migration author needs beyond the column list.
 
 | Column | Note |
 |---|---|
+| `email` | string, **nullable**, unique retained. **Not a login credential** — see below. Changed from Laravel's NOT NULL default |
 | `employee_id` | FK, **nullable**. Null for Master Admin and Director (`adr/0001` decision 4, `adr/0004` decision 4) |
-| `system_access` | enum, **NOT NULL**, default `STANDARD` (`adr/0004` decision 2) |
-| `is_master_admin` | boolean |
+| `system_access` | enum, **NOT NULL**, default `STANDARD` (`adr/0004` decision 2). **`FULL` + null `employee_id` is what identifies a Master Admin** — see below |
 | `must_change_password` | boolean, **default true** |
 | `password_changed_at` | timestamp, nullable |
 | `activation_token` | string, unique, nullable |
 | `activation_expires_at` | timestamp, nullable |
 | `activation_downloaded_at` | timestamp, nullable — **null means HR has not fetched the image** |
 | `activation_used_at` | timestamp, nullable — **null means not yet redeemed** |
+
+**`email` is nullable, and that follows directly from BR-A1.** The login identifier is
+`employees.phone_no`; **email authenticates nothing in this system**. `employees.email` is
+already nullable because most field staff have none, and BR-A20 creates a `users` row for
+every employee — so a NOT NULL email would fail on the **second** employee without one.
+Certainty, not risk.
+
+A placeholder address is rejected for the same reason BR-A1 rejects a placeholder phone
+number: it occupies the unique index and manufactures data that is not true. The unique
+index is **kept**, because MySQL allows many `NULL` rows beneath it — so nullable + unique
+says precisely *optional, but unique where present*.
+
+Note this is the **inverse of `phone_no` below**, and the inversion is the point:
+`phone_no` is NOT NULL because it is the username, `email` is nullable because it is not.
+
+> **⚠ `is_master_admin` withdrawn — 2026-08-11.** This table previously listed an
+> `is_master_admin` boolean, carried over from `adr/0001` decision 2. **It does not exist
+> and must not be added.** `system_access = FULL` already says it, and two columns asserting
+> one fact eventually disagree — the same reasoning that rejected `secondary_company_id`
+> (`adr/0003` decision 6), `is_enabled` and `primary_role` (`adr/0003` decision 1), and
+> `hr_scope` (`adr/0003` decision 5). It survived only because it predates `system_access`
+> being defined. **Every "is this a Master Admin?" check reads `system_access = FULL`**, and
+> `BR-A13`'s 3/1 limits count on that column.
 
 **`employees.phone_no`** — string, **NOT NULL**, **unique**. This is the login username
 (BR-A1). HR cannot register an employee without one, and there is no placeholder path — a
@@ -90,8 +113,19 @@ the database session driver (BR-A5), which is what makes BR-A15 possible.
 
 **Migration rules**
 
-- `users` carries no `company_id` global scope. An account's scope is *derived* (§5.4), not
-  stored, and Master Admin and Director accounts belong to no company at all.
+- **`users` has no `company_id` column and no `company_id` global scope.** An account's
+  scope is *derived* (§5.4), never stored — a stored value would be the manual override
+  `adr/0004` decision 1 forbids — and Master Admin and Director accounts belong to no
+  company at all.
+- **`users` has no `role` column either.** Authority lives in `employee_roles`, per company,
+  and a person may hold several (`adr/0003` decision 1). A single column could express none
+  of it. `schema.md` listed both until 2026-08-11; neither ever reached a migration.
+- **`users` has no `remember_token`.** Laravel's default table creates one via
+  `rememberToken()`; **this migration must not**, and it may not be added later. BR-A4
+  removes remember-me entirely, and an unused column is read as "the feature exists, it just
+  isn't wired up" — which is how it gets wired up. Dropping it is what makes BR-A4 hold
+  structurally rather than by anyone remembering it. `UserFactory` and the `User` model's
+  hidden-attribute list reference the column today and must be updated with the migration.
 - `must_change_password` defaults to **true**, so an account created by a code path that
   forgets to set it lands in the safe state.
 - `system_access` defaults to `STANDARD`, the narrowest of the three, for the same reason.
@@ -448,6 +482,23 @@ of this.
 account with `employee_id` null, `system_access = FULL`, `must_change_password = true`.
 
 The seeder is **idempotent**: re-running it must not create a second Master Admin.
+
+**⚠ The credentials must be read through `config()`, never `env()` directly.** After
+`php artisan config:cache` — which production runs — `env()` returns **null** for
+everything outside the cached config. A seeder calling `env('MASTER_ADMIN_PASSWORD')` would
+therefore see nothing on a production install and abort with "must be set", while the
+variable is sitting correctly in `.env`.
+
+That failure is loud rather than silent, which is the only reason it is not worse. But
+**this seeder is the single first way into the system**: it creates the only account that
+exists, and until it succeeds there is no account to log in with and no way to create one.
+A first install that cannot proceed, with an error message pointing at a variable that is
+demonstrably present, is the worst place in the system to leave that trap.
+
+`adr/0001` decision 5's requirement is unchanged and is still met — the credentials come
+from environment variables and never from literals in the seeder file, which is what keeps
+them out of git history. `config()` reads those same variables; it only adds the indirection
+that survives caching.
 
 Subsequent Master Admins are created by an existing Master Admin, subject to BR-A13. Both
 limits are enforced in `App\Actions\Auth\CreateMasterAdmin` and

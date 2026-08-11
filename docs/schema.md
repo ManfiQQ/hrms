@@ -8,7 +8,22 @@
 
 ## Status
 
-Draft — pre-implementation. No migrations have been written yet.
+**Pre-implementation, with one exception.** As of **2026-08-11** the `users` and `sessions`
+tables are **migrated** — `0001_01_01_000000_create_users_table.php`, carrying the Phase 0
+account columns the Auth & RBAC spec requires. Everything else on this page is still a
+draft with no migration behind it.
+
+**`password_reset_tokens` is deliberately not created.** Laravel's default migration
+includes it; this one does not. Password reset is **not** self-service by email — it is
+performed by `HR` or Master Admin from the account management screen
+(`auth-rbac.spec.md` BR-A7) — and most of this workforce has no email address to send a
+link to. The table would never hold a row.
+
+The Laravel base migration was **edited in place** rather than patched by a later `ALTER`.
+That is deliberate and was only available because no migration had ever run against real
+data: `conventions.md` §7 asks that a table's design not be patched by a later "repair"
+migration where it can be avoided, and here it could. Once real data exists this option is
+gone, and changes become forward-only migrations.
 
 ---
 
@@ -216,8 +231,9 @@ gives, both of which still hold. A Master Admin has **no employee record**, so i
 no `employee_roles` row — the rule "Master Admin never has an Employee record" stays
 **structurally impossible to violate** rather than test-enforced, now enforced by the
 absence of any pivot row rather than by the absence of an enum value. Master Admin is
-identified only at the `users` level (`is_master_admin` + null `employee_id`). `DIRECTOR`
-is absent because Director authority is exercised **off-system** (`adr/0001` decision 7).
+identified only at the `users` level, by **`system_access = FULL` with a null
+`employee_id`** (`adr/0004` decision 2). `DIRECTOR` is absent because Director authority is
+exercised **off-system** (`adr/0001` decision 7).
 
 **Rows are never deleted.** Revoking a role sets `revoked_date`; re-granting it later
 inserts a **new row**. This preserves the full cycle — held Jan–Aug, revoked Aug, re-granted
@@ -488,12 +504,89 @@ part of it) — see `business-rules.md` § Approval Hierarchy.
 `new_values` (json), timestamps
 
 ### `users`
-Standard Laravel `users` table + `company_id`, `role`, `employee_id` (FK → employees,
-**nullable**), `is_master_admin` (boolean), `system_access` (enum, **NOT NULL, default
+Standard Laravel `users` table — **with `email` changed to nullable and `remember_token`
+dropped, both below** — plus `employee_id` (FK → employees,
+**nullable**), `system_access` (enum, **NOT NULL, default
 `STANDARD`**), `must_change_password` (boolean, **default true**), `password_changed_at` (timestamp,
 nullable), `activation_token` (string, unique, nullable), `activation_expires_at`
 (timestamp, nullable), `activation_downloaded_at` (timestamp, nullable),
 `activation_used_at` (timestamp, nullable).
+
+> **⚠ `role` and `company_id` withdrawn from `users` — 2026-08-11.** This list previously
+> carried both. **Neither exists, and neither may be added.** They were drafted before the
+> decisions that replaced them, were never written into a migration, and each is now a
+> second answer to a question something else answers better.
+>
+> **`role` is answered by `employee_roles`.** Authority is per company and a person holds
+> several — *"what authority does this person have?"* has **no answer until a company is
+> named** (`adr/0003` decision 1). A single column on `users` can express none of that, and
+> it is the same mistake `employees.core_role` was removed for. This is also why
+> `employee_roles` is a pivot rather than a field in the first place.
+>
+> **`company_id` is answered by derived read scope.** An account's scope comes from where
+> its **employer** sits in `companies.parent_company_id`, never from a value stored on the
+> account (`adr/0004` decision 1). A stored `users.company_id` would be exactly the manual
+> override that decision forbids, and it could not describe Master Admin or Director
+> accounts at all — they belong to **no** company and carry a null `employee_id`.
+>
+> Same reasoning as the withdrawals above and in `adr/0003`: two ways to state one fact
+> eventually disagree, and the stored one is the copy that goes stale.
+
+#### `employee_id` — the FK constraint arrives with the `employees` migration
+
+The column exists from the migration that creates `users`, as Principle #4 requires — that
+rule is about the **column**, not the constraint. The **foreign key constraint is not**,
+because `employees` does not exist yet: `users` is migrated and Employee Master's tables are
+not, and a constraint cannot reference a table that has not been created.
+
+**The constraint is added by the `employees` migration itself, not by a separate
+migration.** The table being pointed at is created there, so that is the first moment the
+constraint can exist — adding it in the same migration is **ordering**, not the later
+"repair migration" pattern `conventions.md` §7 warns against. A standalone
+`add_foreign_key_to_users` migration would be that pattern, and is not what happens here.
+
+Until then the column is a plain nullable `unsignedBigInteger`. It stays **nullable
+permanently** regardless — Master Admin and Director accounts have no employee record and
+carry null here for good (`adr/0001` decision 4, `adr/0004` decision 4).
+
+> **⚠ `remember_token` withdrawn — 2026-08-11.** Laravel's default `users` table creates it
+> via `rememberToken()`. **This migration does not, and it may not be added back.**
+> Remember-me is removed entirely — checkbox gone from the login form *and* the driver
+> disabled (`auth-rbac.spec.md` BR-A4).
+>
+> **The column is not merely unused; it is an invitation.** Left in place, the next person
+> reads it as "remember-me exists, it just isn't wired up yet" and wires it up. Its absence
+> is what makes BR-A4 hold without depending on anyone remembering the rule.
+>
+> The reasoning behind BR-A4 is worth keeping in view here: a persistent cookie
+> re-authenticates a user past the 2-hour inactivity window, which matters because much of
+> this workforce logs in from **shared terminals** at the factory, studio and galleria. It
+> is also a second credential that must be invalidated on password change and on freeze —
+> not having it removes something that can be forgotten.
+
+#### `email` — nullable, unique retained
+
+**`users.email` is `nullable` and keeps its unique index.** This is a deliberate change to
+Laravel's default, which declares it NOT NULL + unique.
+
+**Email is not a login credential here.** The username is `employees.phone_no`
+(`adr/0004` decision 6). `employees.email` is already nullable because most field staff —
+Operation Crew, Live Host, factory — have no company email, and a `users` row is created for
+**every** employee in the same transaction as their employee record. NOT NULL would
+therefore fail on the **second** employee without an email. That is not a risk; it is a
+certainty, and it would surface as a failed employee registration.
+
+**A placeholder address is not the workaround.** `AHS-0042@placeholder.local` is rejected for
+the same reason a placeholder phone number is (`auth-rbac.spec.md` BR-A1): it occupies the
+unique index and manufactures data that is not true.
+
+**Nullable + unique states exactly the intent.** MySQL permits many `NULL` rows under a
+unique index, so the pair reads as *email is optional, but where present it is unique*.
+
+> **This is the inverse of `phone_no`, and the difference carries the meaning.**
+> `employees.phone_no` is **NOT NULL** because it *is* the username. `users.email` is
+> **nullable** because it is not. Same unique index on both, opposite nullability, for one
+> reason: which of the two is a credential.
 
 #### `system_access` — three values
 
@@ -545,6 +638,16 @@ group-wide reader — the same secure-by-omission reasoning that makes
 reached by omission; both are deliberate grants.
 
 #### Master Admin is a distinct account type
+
+> **⚠ `is_master_admin` withdrawn — 2026-08-11.** This table previously carried an
+> `is_master_admin` boolean, and `adr/0001` decision 2 identified Master Admin by it. **The
+> column does not exist and must not be added.** `system_access = FULL` says the same thing,
+> and two columns asserting one fact eventually disagree — the pattern already rejected for
+> `secondary_company_id` (`adr/0003` decision 6), `is_enabled` on `employee_roles` and
+> `primary_role` (`adr/0003` decision 1), and `hr_scope` (`adr/0003` decision 5).
+> `is_master_admin` survived only because it predates `system_access` being defined at all.
+> **Master Admin is `system_access = FULL` with a null `employee_id`** (`adr/0004`
+> decision 2).
 
 **Master Admin is not a permission flag on a normal staff login.** A Master Admin user has
 **no `employee_id` and no linked Employee record** — the FK is null and stays null. It

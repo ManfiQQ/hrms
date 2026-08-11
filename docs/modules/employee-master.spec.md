@@ -381,8 +381,10 @@ over**:
 
 The old formulation — "`employees.core_role` has no `MASTER_ADMIN` value" — is **obsolete
 because the column itself is gone** (`adr/0003` decision 1), not because the rule
-weakened. Master Admin remains identified solely by `users.is_master_admin` with a null
-`employee_id`.
+weakened. Master Admin remains identified solely at the `users` level, by
+**`system_access = FULL` with a null `employee_id`** (`adr/0004` decision 2 — this replaced
+the `is_master_admin` column named here previously, which was withdrawn on 2026-08-11 as a
+second way to state a fact `system_access` already states).
 
 The migration must therefore define `employee_roles.role` with exactly the six values in
 §3 — adding `MASTER_ADMIN` "for completeness" would reintroduce the hole this closes.
