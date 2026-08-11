@@ -271,16 +271,32 @@ documents, family records, disciplinary history, or full leave history. Data vis
 governed by a **separate permission check**, evaluated independently of whether the user
 holds an approval stage on the request.
 
-⚠ **That visibility check is not yet defined — except for salary, which is settled
-below.** It belongs to the Auth & RBAC spec (`docs/modules/auth-rbac.spec.md`, not yet
-written). Until it exists, no code may treat "is an approver on this request" as an answer
-to "may read this employee's data." See `adr/0002` decision 5.
+**That visibility check is now defined — `adr/0004` decision 1.** Read scope comes from
+where the account's employer sits in `companies.parent_company_id`: employed by **AHS**
+(the parent) reads the **whole group**; employed by a **subsidiary** reads **that
+subsidiary only**. It is derived, never configured, and there is no manual override.
+
+**The two rules are independent, and they disagree by design.** A subsidiary-employed `HR`
+approves across the whole group (this rule) while reading **one company only**. No code may
+treat "is an approver on this request" as an answer to "may read this employee's data" —
+that remains true, and it is now testable rather than merely asserted. See `adr/0002`
+decision 5 and `adr/0004` decision 1.
+
+⚠ **The Auth & RBAC spec is still unwritten** (`docs/modules/auth-rbac.spec.md`). The
+decisions exist; the spec does not, and under `CLAUDE.md` Principle #1 **no Auth code may
+be written until it does**.
 
 > **Salary access is the `ACCOUNT` role, not an HR sub-scope.** Only an employee holding
 > the `ACCOUNT` role may read salary data, at the company where they hold that role.
-> **No `HR` account may, however many HR staff there are.** `ACCOUNT` is a hardcoded
-> restricted role that only Master Admin may grant, so it cannot be granted from inside
-> HR — the rule is structural, not merely declared. See `adr/0003` decisions 3 and 5.
+> **No `HR` account may, however many HR staff there are, and group-level employment does
+> not change it.** `ACCOUNT` is a hardcoded restricted role that only Master Admin may
+> grant, so it cannot be granted from inside HR — the rule is structural, not merely
+> declared. See `adr/0003` decisions 3 and 5.
+>
+> **Two account types read salary without holding any role**, because they hold no roles at
+> all: `system_access = FULL` (Master Admin) and `VIEW_ONLY` (`adr/0004` decision 3).
+> Neither was ever a target of this restriction — **what HR must not see is salary**, and
+> that line is unchanged.
 >
 > An earlier `hr_scope` (`PAYROLL | OPERATIONS`) split of HR into a Payroll scope and an
 > Operations scope is **withdrawn** — that distinction does not exist.

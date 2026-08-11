@@ -70,13 +70,14 @@ Draft — pre-implementation. No migrations have been written yet.
 | id | bigint PK | |
 | employee_no | string, unique | **Group-wide unique**, format `AHS-0001` — `AHS` prefix + sequential zero-padded number. ⚠ The prefix is **always `AHS`**, the parent company, **regardless of which subsidiary employs the person** — an AIM employee is still `AHS-0042`. Numbering is a single group-wide sequence, not per-company. |
 | previous_employee_id | FK → employees, self-referencing, nullable | Links a **rejoiner's** new record to their old one. `RESIGNED` and `TERMINATED` are terminal (`business-rules.md` BR-2), so a returning employee gets a **new record with a new `employee_no`** — never a reactivated one — and this column is the only thread back. BR-2 already required the reference; no column existed for it, leaving the rule unimplementable. Employee Master **stores** the link only: whether prior service counts toward leave entitlement is a Leave-spec decision, and it cannot be made at all unless the link is captured now. See `adr/0003` decision 9. |
-| full_name, nickname, phone_no, email | string, nullable | |
-| company_id | FK, **NOT NULL** | **The payroll and legal employer — that meaning only.** Determines which company's leave entitlement, policy config, payroll and statutory rules apply. Mandatory, scoped from creation. **It no longer answers "what authority does this person have"** — `employee_roles` does (`adr/0003` decision 6). Approval scope still reads this value: a `SUPERVISOR`, `MANAGER` or `HOD` approves only for employees sharing it, shared department or not (`adr/0002` decisions 4–5) — but *which* role they hold comes from the pivot. **No `secondary_company_id` column exists and none may be added**: a person's involvement with other companies is derived by querying `employee_roles`, never stored a second time. |
+| full_name, nickname, email | string, nullable | `email` is **nullable and frequently absent** — much of this workforce (factory crew, studio staff, live hosts) has no company email. That is precisely why login runs on `phone_no` and not on email (`adr/0004` decision 6). |
+| phone_no | string, **NOT NULL**, **unique** | **This is the login username** (`adr/0004` decision 6). `NOT NULL` **and** uniquely indexed — it previously had neither. Normalised, validated, and restricted to HR / Master Admin for edits — see the note below. |
+| company_id | FK, **NOT NULL** | **The payroll and legal employer — that meaning only.** Determines which company's leave entitlement, policy config, payroll and statutory rules apply. Mandatory, scoped from creation. **It no longer answers "what authority does this person have"** — `employee_roles` does (`adr/0003` decision 6). Approval scope still reads this value: a `SUPERVISOR`, `MANAGER` or `HOD` approves only for employees sharing it, shared department or not (`adr/0002` decisions 4–5) — but *which* role they hold comes from the pivot. **No `secondary_company_id` column exists and none may be added**: a person's involvement with other companies is derived by querying `employee_roles`, never stored a second time. **It additionally bounds read scope**, via the employer's position in `companies.parent_company_id` — see the read-scope note below (`adr/0004` decision 1). |
 | branch_id, department_id, position_id | FK | Org assignment. **Independent of `company_id` and not required to match it** — an employee may sit in a shared branch/department belonging to no single company, or to a different one. This is valid and must not be rejected by validation. See `adr/0002` decision 2. |
 | fingerprint_id | string, unique, nullable | Matches NGTime attendance export ID. **HR-managed on this record; current value only.** Phase 1 keeps no enrolment history — a re-enrolment overwrites the value in place. If historical punch-to-employee resolution later proves necessary, that is a Phase 2 Attendance decision, not a Phase 1 table. |
 | level | enum: STAFF, SUPERVISOR, MANAGER, HOD | **Display field only** — org chart, directory grouping, seniority tier. Never drives an authorization or routing decision. `ADMIN` deliberately excluded: it conflated a system permission with an org-seniority tier — see `adr/0001`. Where a single headline value is needed for display, this is it — which is why no `primary_role` column exists on `employees` (`adr/0003` decision 1). |
 | employment_type | enum: FULL-TIME, PART-TIME, CONTRACT, INTERN, FREELANCE | |
-| staff_status | enum: PROBATION, ACTIVE, CONFIRMED, SUSPENDED, RESIGNED, TERMINATED | |
+| staff_status | enum: PROBATION, ACTIVE, CONFIRMED, SUSPENDED, RESIGNED, TERMINATED | **Setting `RESIGNED` or `TERMINATED` has an immediate effect on the user account and on `employee_roles`, in the same transaction** — see § Account lifecycle under `users` (`adr/0004` decision 5). |
 | join_date, probation_end_date, confirmation_date | date, nullable | |
 | direct_supervisor_id, manager_id | FK → employees, self-referencing, nullable | Two-tier reporting confirmed from legacy Staff Master template |
 | attendance_type | enum: FIXED, FLEXIBLE | FIXED = late after configured start time; FLEXIBLE = OT applied manually |
@@ -86,6 +87,70 @@ Draft — pre-implementation. No migrations have been written yet.
 | hours_enabled | boolean | Whether Saturday accumulated-hours banking applies to this employee |
 | created_by, updated_by | FK → users, nullable | |
 | timestamps, soft deletes | | |
+
+> ### Read scope comes from the employer's position in the hierarchy — and `company_id` bounds it, never grants it
+>
+> An account's **read scope** — *which companies' employees it may see at all* — is derived
+> from where its employer sits in `companies.parent_company_id` (`adr/0004` decision 1):
+>
+> | Employed by | Reads |
+> |---|---|
+> | **AHS** — the parent | The **whole group** |
+> | A **subsidiary** | That **subsidiary only** |
+>
+> This applies uniformly and is **not** read off the role. `HR`, `ASSISTANT_DIRECTOR` and
+> `ACCOUNT` see the whole group because they are employed by AHS, not because of the role
+> they hold; an HR hired by a single subsidiary would see that subsidiary only, with no code
+> change. A seventh entity added under AHS becomes visible to group-level staff
+> automatically — nothing is provisioned, so nothing can be forgotten.
+>
+> **⚠ Word this precisely, because the inverted reading is the bug.** `company_id` does
+> **not grant** visibility — **roles grant it**. `company_id` **bounds** the visibility a
+> role has already granted. Scope answers *which companies*; role answers *what data within
+> them*. Collapsing the two axes into one is exactly what made `employee-master.spec.md` §6
+> wrong.
+>
+> **There is no manual scope override, and none may be added.** Scope is derived, never
+> configured per account. A stored override would be a second answer to a question the
+> hierarchy already answers, and the two would eventually disagree — the same reasoning that
+> rejected `secondary_company_id` (`adr/0003` decision 6) and the `is_enabled` flag on
+> `employee_roles` (`adr/0003` decision 1). Where a narrower scope is genuinely wanted, the
+> answer is to employ the person at the subsidiary, not to add a switch.
+>
+> **Scope depends on the hierarchy being seeded correctly** — a subsidiary mis-parented
+> under AHS grants its staff group-wide reads. The hierarchy is small and rarely changes,
+> but it is now load-bearing and **must be covered by a test**.
+
+> ### `employees.phone_no` is the login username — read before touching it
+>
+> Login runs on the phone number, not on email (`adr/0004` decision 6). `email` is nullable
+> and much of this workforce has none; a phone number is something every employee has and
+> remembers. Four consequences are binding on the schema and on any code that writes this
+> column:
+>
+> - **Unique index, required.** It previously had none. Two employees sharing a number — a
+>   married couple at the same workplace, or a typo — makes login ambiguous.
+> - **The value is normalised before storing and before comparing**: strip spaces, dashes,
+>   and a leading `+60` or `60`. `012-345 6789`, `0123456789` and `+60123456789` are one
+>   number and must all resolve to the same stored value.
+> - **Validation: 9–12 digits after normalisation.** Malaysian landlines run 9–10, mobiles
+>   10, and `011` numbers 11.
+> - **Only `HR` and Master Admin may change it.** An employee changing their own username
+>   could take over another person's identifier or lock themselves out.
+>
+> **`NOT NULL`, decided 2026-08-11.** `adr/0004` requires the unique index but did not state
+> nullability. It is **NOT NULL**: the column is the login username, and decision 7 requires
+> **every** employee to hold an account in order to verify their own attendance data. An
+> employee with no phone number is an employee with no account, and that **blocks payroll**,
+> which cannot proceed on unverified attendance. Nullable-plus-unique would not have
+> expressed the rule either — MySQL permits many `NULL` rows under a unique index, so it
+> cannot say "every employee has a distinct username."
+>
+> **⚠ Operational implication — HR cannot register an employee without a phone number.**
+> The registration form must require it, and there is no "add it later" path: the record
+> cannot be created without it. This is the intended cost, not an oversight to work around
+> with a placeholder value — a dummy number would occupy the unique index and hand one
+> employee's username to another.
 
 > ### Two different things are called `company_id` below `employees` — do not conflate them
 >
@@ -424,22 +489,66 @@ part of it) — see `business-rules.md` § Approval Hierarchy.
 
 ### `users`
 Standard Laravel `users` table + `company_id`, `role`, `employee_id` (FK → employees,
-**nullable**), `is_master_admin` (boolean), `must_change_password` (boolean, **default
-true**), `password_changed_at` (timestamp, nullable).
+**nullable**), `is_master_admin` (boolean), `system_access` (enum, **NOT NULL, default
+`STANDARD`**), `must_change_password` (boolean, **default true**), `password_changed_at` (timestamp,
+nullable), `activation_token` (string, unique, nullable), `activation_expires_at`
+(timestamp, nullable), `activation_used_at` (timestamp, nullable).
 
-`must_change_password` defaults to **true** so that a new account is secure by omission —
-an account created by a code path that forgets to set the flag is gated, not exposed.
-It is set on every provisioned account (Master Admin creating a Director, HR creating
-staff, and the seeded Master Admin account itself) and cleared only on a successful
-password change, which stamps `password_changed_at`. While the flag is true, a logged-in
-user is forced to the password-change screen before any other access — enforced by global
-middleware, not per-controller checks. See `adr/0001` decision 5.
+#### `system_access` — three values
 
-**Master Admin is a distinct account type, not a permission flag on a normal staff
-login.** A Master Admin user has **no `employee_id` and no linked Employee record** —
-the FK is null and stays null. It submits nothing (no Employee profile means no
-entitlements and no requests), approves nothing in the normal chain, and exists solely
-for oversight and data-repair access.
+```
+FULL       Master Admin. Reads and writes everything, bypasses tenant scope.
+VIEW_ONLY  Read-only across the group. Writes nothing, approves nothing.
+STANDARD   Everyone else. Permissions come entirely from employee_roles + read scope.
+```
+
+| Value | Employee record | Scope | Salary |
+|---|---|---|---|
+| `FULL` | **None** — `employee_id` is null | Whole group, **tenant scope bypassed** | Yes |
+| `VIEW_ONLY` | **None** — `employee_id` is null | Whole group, **read-only** | Yes |
+| `STANDARD` | Yes | From the employer's hierarchy position (see § Read scope) | Only via the `ACCOUNT` role |
+
+**This is an account dimension, not an authority role** (`adr/0001` decision 5,
+`adr/0004` decision 2). It answers **"what kind of account is this"** — a question roles
+**cannot** answer for accounts that have no employee record at all, and therefore no
+`employee_roles` row to read. Do not merge it with `employee_roles.role`; they are
+orthogonal, exactly as `level` and authority are.
+
+**`STANDARD` deliberately covers everyone from an intern to an Assistant Director.** They
+differ by *role*, not by *account type*, and this field is not the place to express that.
+Their permissions come **entirely** from `employee_roles` plus the read scope derived from
+their employer's position in the hierarchy — this column adds nothing on top.
+
+**`VIEW_ONLY` currently has no holder, and that must be documented rather than corrected.**
+The Director — its intended user — holds a **Master Admin account** instead
+(`adr/0004` decision 4). The value is retained rather than removed because `adr/0001`
+decisions 5 and 7 both name it and a genuine use is foreseeable: an external auditor, or a
+second Director who should not hold write access. It is **defined but unused** — so nobody
+searches for the Director's `VIEW_ONLY` account and concludes data is missing.
+
+**A fourth value for ordinary employees was rejected.** An employee with no
+`employee_roles` row *already* has exactly self-service access; a `SELF_SERVICE` value would
+restate a state the absence of rows already expresses, and the two would eventually
+disagree.
+
+**`NOT NULL`, default `STANDARD` — decided 2026-08-11.** The three values above cover every
+account, so a nullable column would admit a fourth, undefined state: exactly the "two ways
+to express one fact" pattern `adr/0003` rejects for `is_enabled` on `employee_roles` and for
+`secondary_company_id`. There is no account this column cannot describe, so there is nothing
+for `NULL` to mean.
+
+**`STANDARD` is the default because it is the narrowest of the three.** An account created
+by a code path that forgets to set the column gets the *least* privileged type, not a
+group-wide reader — the same secure-by-omission reasoning that makes
+`must_change_password` default to **true**. Neither `FULL` nor `VIEW_ONLY` may ever be
+reached by omission; both are deliberate grants.
+
+#### Master Admin is a distinct account type
+
+**Master Admin is not a permission flag on a normal staff login.** A Master Admin user has
+**no `employee_id` and no linked Employee record** — the FK is null and stays null. It
+submits nothing (no Employee profile means no entitlements and no requests), approves
+nothing in the normal chain, and exists solely for oversight and data-repair access.
 
 This is structural, not a policy check. The rule "no user may approve their own request"
 holds for Master Admin because the account has nothing of its own to approve — there is
@@ -453,11 +562,153 @@ no code path to forget to guard. See `adr/0001` decision 4.
 > Audit trails for such a person are split across two user IDs by design, which records
 > which capacity each action was taken in.
 
+#### Master Admin account limits — enforced by the system, not by policy
+
+| Rule | Value |
+|---|---|
+| First account | Created by `MasterAdminSeeder`, credentials from `.env` (`adr/0001` decision 5) |
+| Subsequent accounts | Created by an existing Master Admin |
+| **Maximum** | **3** — an attempt to create a fourth is **rejected** |
+| **Minimum** | **1** — an attempt to delete or disable the last one is **rejected** |
+
+Both limits are **enforced by the system**, not left to policy (`adr/0004` decision 4). A
+single Master Admin is a single point of failure: lose that credential and nobody can grant
+the `ACCOUNT` role, repair data, or manage job functions. Unlimited Master Admins is
+unbounded full access.
+
+**The Director holds a Master Admin account (`FULL`), not a `VIEW_ONLY` one**, and has **no
+employee record** — `employee_id` null, the same structural shape as Master Admin
+(`adr/0001` decision 4). Giving `VIEW_ONLY` the power to create accounts was **rejected
+outright**: an account that can create a full-access account *is* a full-access account with
+one extra step. `VIEW_ONLY` stays strictly read-only.
+
+#### Activation — single-use QR, not a temporary password
+
+`activation_token`, `activation_expires_at` and `activation_used_at` implement
+`adr/0004` decision 7.
+
+| Column | Meaning |
+|---|---|
+| `activation_token` | The single-use activation secret encoded into the QR image. Unique. |
+| `activation_expires_at` | **48 hours** from issue. Past this, HR regenerates. |
+| `activation_used_at` | **`NULL` = not yet scanned.** Stamped on first scan, after which the token is dead. |
+
+**The account is created in the same transaction as the employee record**, not as a separate
+step HR must remember. This is an operational requirement, not a convenience: the client
+requires every employee to verify their own attendance data, and payroll is blocked on
+incomplete attendance — an employee without an account cannot verify.
+
+**No temporary password is issued, and none may be reintroduced.** On creation the system
+generates an image containing a **QR code, the employee's full name, and the validity
+period**; HR forwards it by WhatsApp or shows it in person. The employee scans it, lands in
+the system already authenticated, and is **forced to set their own password** before
+anything else — which is what `must_change_password` gates. **HR is notified when the code
+is used.**
+
+A temporary password is a secret HR knows and the employee also knows, and it stays valid
+until changed, so a saved WhatsApp message stays usable. A single-use token is dead after
+first scan: even if the image is kept, it opens nothing, and there is no window in which HR
+holds working credentials to someone else's account. The 48-hour window bounds the one
+remaining exposure — a forwarded image scanned before the real employee gets to it.
+
+**Using the employee's IC number as a first password was proposed and rejected**
+(`adr/0004` decision 7): an IC number is not a secret and, unlike a password, can never be
+changed.
+
+#### Account lifecycle — `staff_status` freezes the account, then expires it
+
+Setting `employees.staff_status` to `RESIGNED` or `TERMINATED` triggers the following **in
+the same transaction** (`adr/0004` decision 5). Without it, a resigned employee's login
+keeps working — if they held `HR` they can still create accounts, if they held `ACCOUNT`
+they can still read every salary in the group.
+
+| Stage | When | Effect |
+|---|---|---|
+| **1 — Freeze** | **Immediately** | The account may read **its own data only**. No writes, no approvals, no account creation, no role grants. **All `employee_roles` rows are revoked** (`revoked_date` set) — the rows remain, for history. |
+| **2 — Expire** | **10 days after `effective_date`** | **No access at all.** All data remains in the system. |
+
+The 10 days run from **`effective_date`** — the person's actual last working day — not from
+the date HR typed the change. `employee_status_history.effective_date` already exists for
+exactly this (`adr/0003` decision 8), so a departure can be recorded in advance without
+cutting the person off early.
+
+**Freezing writes while allowing self-reads is the point.** The dangerous act is writing,
+not reading: cutting writes immediately closes the leak, while leaving self-reads open lets
+the person retrieve their own final payslip or letters during handover.
+
+**Revocation goes through `revoked_date`, not deletion** — consistent with `employee_roles`
+having no soft deletes and no `is_enabled` flag (`adr/0003` decision 1). The history of what
+the person held stays intact.
+
+**No account may be reactivated after `RESIGNED` or `TERMINATED` — by anyone, including
+Master Admin.** A rejoining employee gets a **new employee record, a new `employee_no`, and
+a new account**, linked back through `employees.previous_employee_id` (`adr/0003`
+decision 9, `business-rules.md` BR-2). Pay and allowances on return are frequently different
+from before, and a new record keeps that clean rather than overwriting history.
+
+**Resignation and termination differ in who approves and when the clock starts:**
+
+| | `RESIGNED` | `TERMINATED` |
+|---|---|---|
+| Initiated by | **The employee** — one month's notice | **HR** |
+| Manager / Supervisor | Reviews and **approves** | Reviews — **non-blocking** |
+| Countdown starts | On the last working day | **Immediately** |
+
+Termination does not wait for approval because it may follow serious misconduct, and waiting
+would leave full access in the hands of the person being dismissed.
+
+**The countdown is a UI requirement on five dashboards** — the employee's own, HR's,
+Account's, Master Admin's, and the employee's manager or supervisor's. It is the **only**
+correction mechanism for a status set in error, since there is no cancel path and no
+reactivation.
+
+#### Password change gate
+
+`must_change_password` defaults to **true** so that a new account is secure by omission —
+an account created by a code path that forgets to set the flag is gated, not exposed.
+It is set on every provisioned account (Master Admin creating a Director, HR creating
+staff, and the seeded Master Admin account itself) and cleared only on a successful
+password change, which stamps `password_changed_at`. While the flag is true, a logged-in
+user is forced to the password-change screen before any other access — enforced by global
+middleware, not per-controller checks. See `adr/0001` decision 5.
+
+The **QR activation flow above is what triggers this gate in practice** for staff accounts:
+the employee arrives already authenticated by the token and is stopped at the
+password-change screen before reaching anything else.
+
 ### `policy_configurations`
 `id`, `company_id` (FK), `key`, `value`, `effective_from`, timestamps
 
 Holds every configurable HR policy number per company (annual leave days, OT rate,
 EPF base, sick leave tiers, etc.) — see `conventions.md` §5 "Config Over Hardcode."
+
+**Authentication numbers live here too, never hardcoded** (`adr/0004` decision 6):
+
+| Setting | Value |
+|---|---|
+| Password minimum length | **6 characters, no composition rules** — no forced uppercase, digits or symbols |
+| Failed-login throttle | **3** failures → locked 5 min · **6** → 10 min · **9** → 15 min · **12** → **locked permanently**, HR or Master Admin must unlock |
+| Failed-attempt counter | **Resets on successful login** |
+| Session | Expires after **2 hours of inactivity** — inactivity, not time since login |
+| Activation validity | **48 hours** (see § Activation under `users`) |
+
+**Complexity rules were rejected deliberately.** They produce `Abcd1234!` and passwords
+written on paper; a memorable phrase is stronger than a short complex string kept on a
+sticky note.
+
+**⚠ The throttle tiers are load-bearing, not defence in depth.** Six characters was chosen
+by the client over the recommended eight, and **the username is not secret** — it is the
+employee's phone number. Password length is therefore not carrying the security here; the
+throttling is. If the tiers are relaxed, or the counter is not enforced server-side, brute
+force becomes practical. **Failed attempts are written to `audit_logs`**, so a hundred
+overnight failures against the `ACCOUNT` holder's login is visible.
+
+**Password reset is `HR` and Master Admin only** — not self-service by email (most employees
+have none), and **not `ACCOUNT`**, who reads everything but administers nothing. Seeing data
+and controlling access are different jobs.
+
+The 2-hour inactivity window matters most for field staff, who may use a shared terminal at
+the factory or studio: a session left open there is the next person's session.
 
 ---
 

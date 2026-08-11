@@ -47,9 +47,28 @@ validation must not require it. Full reasoning: `adr/0002`.
 own `employees.company_id`**, inside a shared department as much as anywhere else
 (`adr/0002` decision 4). The only `employee_roles.role` values that approve across companies are
 `HR` and `ASSISTANT_DIRECTOR` — and even they gain **no data visibility** by doing so;
-that runs through a separate permission check owned by the Auth & RBAC spec
+that runs through a **separate permission check, decided in `adr/0004` decision 1**
 (`adr/0002` decision 5). Do not infer authority scope from structure scope; that
 inference is exactly the error corrected on 2026-08-08.
+
+**Read scope is a third thing again, and it is derived — not from the role, and not from
+the org structure.** It comes from where the account's employer sits in
+`companies.parent_company_id`: employed by **AHS** (the parent) reads the **whole group**;
+employed by a **subsidiary** reads **that subsidiary only**. It is never stored per account
+and there is no manual override — a stored override would be a second answer to a question
+the hierarchy already answers (`adr/0004` decision 1).
+
+So three scopes coexist and must not be collapsed into each other:
+
+| Scope | Answers | Comes from |
+|---|---|---|
+| **Structure** | Where does this person work | `branches` / `departments`, shared or dedicated |
+| **Approval** | Whose requests may they act on | `employee_roles.role` + `employees.company_id` |
+| **Read** | Which companies' employees may they see | The employer's position in `companies.parent_company_id` |
+
+They disagree by design: a **subsidiary-employed `HR` approves across the whole group while
+reading one company only**. An implementation in which any two of these always agree has
+merged them, and the merge is a silent widening of access, not a simplification.
 
 ### Carve-out — event tables freeze `company_id`, and release tenant scope through an employee
 
