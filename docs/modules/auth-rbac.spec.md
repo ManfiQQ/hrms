@@ -483,6 +483,23 @@ account with `employee_id` null, `system_access = FULL`, `must_change_password =
 
 The seeder is **idempotent**: re-running it must not create a second Master Admin.
 
+**⚠ The credentials must be read through `config()`, never `env()` directly.** After
+`php artisan config:cache` — which production runs — `env()` returns **null** for
+everything outside the cached config. A seeder calling `env('MASTER_ADMIN_PASSWORD')` would
+therefore see nothing on a production install and abort with "must be set", while the
+variable is sitting correctly in `.env`.
+
+That failure is loud rather than silent, which is the only reason it is not worse. But
+**this seeder is the single first way into the system**: it creates the only account that
+exists, and until it succeeds there is no account to log in with and no way to create one.
+A first install that cannot proceed, with an error message pointing at a variable that is
+demonstrably present, is the worst place in the system to leave that trap.
+
+`adr/0001` decision 5's requirement is unchanged and is still met — the credentials come
+from environment variables and never from literals in the seeder file, which is what keeps
+them out of git history. `config()` reads those same variables; it only adds the indirection
+that survives caching.
+
 Subsequent Master Admins are created by an existing Master Admin, subject to BR-A13. Both
 limits are enforced in `App\Actions\Auth\CreateMasterAdmin` and
 `App\Actions\Auth\RemoveMasterAdmin`, not in a controller and not in the UI.
