@@ -2,7 +2,8 @@
 
 - **Phase:** 2 — Operational
 - **Status:** **Not a spec.** Scratch notes captured early so they aren't lost.
-- **Date captured:** 2026-08-07
+- **Date captured:** 2026-08-07 — extended 2026-08-11 with the HR / Account split and the
+  salary-gate correction from `adr/0004`
 
 > These are structural facts learned while speccing Employee Master (Phase 1) that will
 > shape the Payroll schema. Recorded now because they were confirmed now — waiting until
@@ -81,6 +82,52 @@ rather than group-wide, since `conventions.md` §5 already treats HR policy numb
 per-company config. Worth confirming with HR when Payroll is speced — if types turn out
 to be group-wide, this becomes a shared reference table like `branches` (`adr/0002`).
 
+⚠ **The shape above places `amount` on `employee_allowances`, and that is not yet
+decided** — see §3 and open question 6. It is written that way here because per-employee
+values were what §2's original fact established, not because the location is settled.
+**Who may set the rate is settled regardless: only `ACCOUNT`.**
+
+---
+
+## 3. HR submits quantities; Account produces money
+
+**Fact (`adr/0004`, § Confirmed but not yet specced):** the payroll split between HR and
+`ACCOUNT` is not a matter of screen layout — it is the mechanism that keeps salary out of
+HR's reach while still letting HR run payroll operations. Recorded here because a Payroll
+schema that ignores it cannot enforce it afterwards.
+
+**HR enters or confirms quantities and counts, never currency:**
+
+```
+overtime hours · late instances · hours banked and carried forward
+Saturday hours · leave and half-days taken · which allowances apply
+```
+
+**HR does not type a currency value at any point in payroll.** `ACCOUNT` turns those
+quantities into money.
+
+**Consequences the Payroll schema and forms must carry:**
+
+- **Statutory formulas (EPF, SOCSO, EIS) are entered by `ACCOUNT`** and computed by the
+  system. **HR neither enters nor sees them** — a statutory figure exposed to HR would
+  allow basic salary to be **derived** from it, which defeats the salary restriction
+  without ever showing a salary field. This is the subtle one: the leak is arithmetic, not
+  access.
+- **Allowance *names* may be created by `HR`, Master Admin, or `ACCOUNT`. Only `ACCOUNT`
+  sets the *rate*.** The HR payroll form shows allowance names **without amounts**. Note
+  this widens §2's "HR-managed types" — creation is shared, pricing is not.
+- **The payroll form pre-fills from attendance data.** HR selects an employee, hours
+  populate from the imported attendance record, and HR ticks which allowances apply.
+- **Payroll cannot proceed on incomplete attendance data.** The system **blocks and flags**
+  — to HR *and* to the employee concerned, who is expected to verify their own record.
+  This is why `adr/0004` decision 7 provisions an account for **every** employee: without
+  one they cannot verify, and payroll stalls. Employee self-service is a module of its own
+  and is not yet designed (`CLAUDE.md` §10).
+
+**Approval Engine note, repeated because payroll is its third instance:** *manager endorses
+or reports, HR decides.* It already holds for leave, for termination, and for disciplinary
+warnings (`adr/0003`, `adr/0004` decision 10).
+
 ---
 
 ## Open for the Payroll spec
@@ -104,3 +151,22 @@ to be group-wide, this becomes a shared reference table like `branches` (`adr/00
    split does not exist and the field is **withdrawn** — do not model it, and do not wait
    on Auth & RBAC for this question. Payroll still must not invent its own answer: gate
    salary reads on the `ACCOUNT` role.
+
+   ⚠ **The gate has two more inputs than "the `ACCOUNT` role", and a check written from
+   the paragraph above alone will lock out the Director.** `system_access = FULL` (Master
+   Admin) and `VIEW_ONLY` also read salary — not as an exception, but because they hold
+   **no `employee_roles` rows at all**, so a role-only check can never pass for them
+   (`adr/0004` decision 3). The full rule: `ACCOUNT` within its scope, `VIEW_ONLY`
+   group-wide read-only, `FULL` unrestricted. **`HR` never, at any scope** — that is the
+   line the rule exists to draw, and it is unchanged.
+
+6. **Where does an allowance rate live — `allowance_types` (one rate for everyone) or
+   `employee_allowances` (per person)?** Undecided (`adr/0004`). **Access is unaffected
+   either way** — only `ACCOUNT` sets it, wherever it sits (§3) — so this is a data-shape
+   question, not a permission one. §2's draft shape assumes per-person; do not read that as
+   the answer.
+
+7. **How does the form block on incomplete attendance (§3)?** Which conditions count as
+   incomplete, and what the employee sees when they are flagged, depends on the Attendance
+   import's own statuses (`attendance_import_rows.status` in `schema.md`) and on the
+   unbuilt self-service module. Payroll must not invent its own definition of "complete."
