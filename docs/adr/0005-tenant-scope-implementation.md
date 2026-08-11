@@ -1,6 +1,7 @@
 # ADR 0005 — Tenant Scope Implementation
 
-- **Status:** Draft — awaiting approval
+- **Status:** **Accepted** — 2026-08-11. Implemented in PR #10, with decision 5's audit
+  write knowingly deferred — see the note there.
 - **Date:** 2026-08-11
 - **Implements:** `adr/0002` decision 3 (shared org structure query scope), `adr/0003`
   decision 7 (event tables release the scope), `adr/0004` decision 1 (read scope derives
