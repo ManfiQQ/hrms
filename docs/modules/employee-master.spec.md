@@ -6,10 +6,12 @@
 - **Branch:** `feat/employee-master`
 - **Depends on:** `companies`, `branches`, `departments`, `positions`, `users`,
   `sequences` (Phase 0); `adr/0001` (taxonomy — partly superseded), `adr/0002` (shared org
-  structure — resolved), `adr/0003` (multi-role authority — resolved)
+  structure — resolved), `adr/0003` (multi-role authority — resolved), `adr/0004` (account
+  access and read scope — **resolves §6**)
 - **Date:** 2026-08-07 — approval-scope rules corrected 2026-08-08 (BR-10, BR-14);
   realigned to `adr/0003` on 2026-08-10 (multi-role authority pivot, job functions,
-  `employee_no` lifecycle)
+  `employee_no` lifecycle); §6 read scope resolved by `adr/0004` on 2026-08-11 — the ⚠
+  known-wrong `own company only` rows are corrected and §6 is implementable
 
 ---
 
@@ -284,14 +286,23 @@ authority crosses `company_id`; `SUPERVISOR`, `MANAGER` and `HOD` are all confin
 own company, an employee with **no `employee_roles` row holds no approval authority at
 all**, and `ACCOUNT` is not a routing tier in either direction (BR-9). Approving a
 cross-company request **does not** confer read access to that
-employee's sensitive data — a separate visibility permission check governs that, and it
-belongs to the Auth & RBAC spec, which does not exist yet (`adr/0002` decision 5). Employee
-Master must not implement, imply, or anticipate that check; §6's permission table stays
-company-scoped as written.
+employee's sensitive data — a separate visibility check governs that, and **holding an
+approval stage is never an input to it** (`adr/0002` decision 5).
 
-**Salary is the one part already answered:** only the `ACCOUNT` role may read salary data,
-and no `HR` may (`adr/0003` decision 5). The rest of the check — personal documents, family
-records, disciplinary history, full leave history — remains undefined.
+**The visibility check is now defined, and it is not this rule.** `adr/0004` decision 1
+derives read scope from the **employer's position in `companies.parent_company_id`** —
+independently of every role and every approval stage. §6.1 carries it. The two axes produce
+visibly different answers for the same person: an `HR` employed by a subsidiary approves
+across the whole group (this rule) while reading **one company only** (§6.1). If an
+implementation ever makes those two agree by construction, it has merged the axes and is
+wrong.
+
+**Salary is separate again and was answered first:** only the `ACCOUNT` role may read salary
+data, and no `HR` may, at any scope (`adr/0003` decision 5). Group-level employment does not
+change it — Employee Master holds no salary data regardless (§10 decision 3). The remaining
+categories are answered by `adr/0004`: documents, family, education, employment history and
+status history in decisions 8–9 (§6.2, §6.3); disciplinary records in decision 10 and leave
+history in decision 11, both belonging to modules not yet built.
 
 **BR-12 — Org assignment is independent of employing company.** `employees.company_id`
 (NOT NULL) is the payroll/legal employer. `branch_id` and `department_id` may point at
@@ -567,23 +578,103 @@ is the normal case, not an edge case.
 |---|---|
 | View own record | any employee |
 | View department employees | `SUPERVISOR`, `MANAGER`, `HOD` — own department **and own `company_id`** |
-| View all in company | `HR`, `ASSISTANT_DIRECTOR` — **own company only** |
-| Create / edit / archive | `HR`, `ASSISTANT_DIRECTOR` — own company only |
-| Grant / revoke `MANAGER`, `SUPERVISOR` | `HR` — own company only |
+| View all in **read scope** | `HR`, `ASSISTANT_DIRECTOR` — scope **derived from the employer's hierarchy position**, see below |
+| Create / edit / archive | `HR`, `ASSISTANT_DIRECTOR` — within their read scope |
+| Grant / revoke `MANAGER`, `SUPERVISOR` | `HR` — within their read scope |
 | Grant / revoke `ACCOUNT`, `HR`, `ASSISTANT_DIRECTOR`, `HOD` | **Master Admin only** (BR-16) |
 | Create / deactivate `job_functions` types | **Master Admin only** (BR-15) |
-| Assign `job_functions` to an employee | `HR` — own company only |
+| Assign `job_functions` to an employee | `HR` — within their read scope |
 | Edit `employee_no` | **Master Admin only**, audited (BR-13) |
 | Transfer employee between companies | `HR` **or** Master Admin — either, directly; always audited with the actor's identity (§5.7) |
-| Cross-tenant view | Master Admin only, explicit, audited |
+| Cross-tenant view | `system_access = FULL` (Master Admin) — explicit, audited |
+
+### 6.1 Read scope — derived, never configured
+
+**An account's read scope comes from where its employer sits in
+`companies.parent_company_id`** (`adr/0004` decision 1), not from the role it holds:
+
+| Employed by | Reads |
+|---|---|
+| **AHS** — the parent | The **whole group** |
+| A **subsidiary** | That **subsidiary only** |
+
+This applies uniformly. `HR` and `ASSISTANT_DIRECTOR` read across the group **because they
+are employed by AHS**, not because of their role — the client has confirmed they sit under
+AHS/HQ and administer every entity. An HR hired by a single subsidiary would read that
+subsidiary only, with no code change, and a seventh entity added under AHS becomes visible
+to group-level staff automatically.
+
+**⚠ Scope and data type are separate axes, and conflating them is what made the previous
+version of this table wrong.** Scope answers *which companies*; role answers *what data
+within them*. `HR` and `ACCOUNT` employed at AHS have the **same** scope — the whole group
+— and different data rights: only `ACCOUNT` reads salary (BR-9), and Employee Master holds
+no salary anyway.
+
+**There is no manual scope override, and none may be added.** Scope is derived, never
+stored per account — the same reasoning that rejected `secondary_company_id` (`adr/0003`
+decision 6). Where a narrower scope is wanted, employ the person at the subsidiary.
+
+**A permission function without a `company_id` argument is a bug** (`adr/0003` decision 1),
+and every read of `employee_roles` filters `revoked_date IS NULL`. Scope narrows *which*
+companies may be named; it never removes the need to name one.
+
+### 6.2 Tab-level read access on the employee detail view
+
+Access differs **per tab, not per record** (`adr/0004` decision 8). The detail view's tabs
+(§7) resolve as:
+
+| Tab | Supervisor / Manager / HOD | HR / Asst Director / Account | Master Admin / Director | The employee |
+|---|---|---|---|---|
+| Employment | **Yes** | Yes | Yes | Own |
+| Personal | **Yes** | Yes | Yes | Own |
+| Family | No | Yes | Yes | Own |
+| Education | No | Yes | Yes | Own |
+| Employment History | No | Yes | Yes | Own |
+| Documents | No | Yes | Yes | Own — see §6.3 |
+| Status History | No | Yes | Yes | Own |
+
+Supervisors, Managers and HODs read **within their own department and their own company** —
+the existing double bound (BR-10, `adr/0002` decision 4) is unchanged by any of this.
+
+**Why Employment and Personal, and nothing else.** A supervisor needs to know *who reports
+to me* and *how do I reach them*. They do not need a copy of someone's IC, their spouse's
+identity card number, or where they went to school — none of it bears on supervision.
+Restricting them to Employment alone was rejected as too tight: a supervisor who cannot
+find a phone number in the system will find it on WhatsApp instead, and the organisation
+loses the control entirely.
+
+**Emergency contact is the deliberate exception.** Name and phone number only, surfaced on
+the **Employment** tab rather than behind Family — `employee_family_members` already carries
+`is_emergency_contact` (§3). If there is an accident at work the supervisor is likely the
+first person present; they need that number without being handed the whole family record.
+
+### 6.3 Documents — the employee may retrieve their own
+
+An employee may **view and download their own documents** for six of the seven types
+(`adr/0004` decision 9):
+
+```
+IC · PASSPORT · EDUCATION_CERTIFICATE
+OFFER_LETTER · CONFIRMATION_LETTER · RESIGNATION_LETTER
+```
+
+These are already theirs in any real sense — they submitted the identity documents, and the
+letters are addressed to them. Withholding the scans protects nothing and turns every
+routine request (a confirmation letter for a bank loan) into an HR errand.
+
+**`OTHER` is not visible to the employee.** It is the escape hatch for documents that do not
+fit the fixed types (§10 decision 4), which makes it the natural place for internal notes
+and investigation material. Hiding it gives it a defined purpose rather than leaving it an
+undifferentiated bucket.
 
 **Approval authority is not on this table, and that is deliberate.** `HR` and
-`ASSISTANT_DIRECTOR` may *approve* across companies (BR-14) — that grants them no read
-access here, so "View all in company" stays company-scoped. An HOD's read access is
-bounded twice over: own department **and** own company, since a shared department can
-contain other companies' staff (BR-10). The separate visibility check that would ever
-widen any of this is an Auth & RBAC concern and is not yet defined; Employee Master
-implements the table above as written.
+`ASSISTANT_DIRECTOR` may *approve* across companies (BR-14); that grants them **no** read
+access here. Their group-wide reads come from §6.1 — **being employed by AHS** — and an
+`HR` employed by a subsidiary approves across the group while reading one company only.
+The two axes never meet: **holding an approval stage is never an input to a visibility
+check** (`adr/0004` decision 1, `adr/0002` decision 5). An HOD's read access is bounded
+twice over: own department **and** own company, since a shared department can contain other
+companies' staff (BR-10).
 
 **`ACCOUNT` grants nothing in this module.** It is the only role that may read salary
 (BR-9), but Employee Master holds no salary data (§10 decision 3), so `ACCOUNT` confers no
@@ -596,20 +687,25 @@ mechanism for BR-9: HR may appoint Managers and Supervisors, but `ACCOUNT`, `HR`
 grant any role, with the restriction enforced only by hiding options in the UI, defeats
 BR-16 entirely.
 
-⚠ **The `own company only` scope on HR's rows does not yet match how this group operates,
-and must be resolved before §6 is implemented in code.** Confirmed with the client:
-**`HR` and `ASSISTANT_DIRECTOR` work at group level — under AHS/HQ, across all entities —
-not for a single company.** They are not "an HR of TURSENIA"; the question *which* HR has
-no answer here, because the premise the table's scoping assumes does not hold.
+**✅ The `own company only` scope is resolved and corrected — 2026-08-11.** This section
+previously carried a ⚠ flag: its HR rows read `own company only`, which was **known-wrong,
+not merely unconfirmed**, because `HR` and `ASSISTANT_DIRECTOR` work at group level under
+AHS/HQ and administer every entity. Shipping it would have blocked HR on the system's first
+day.
 
-This covers **cross-company transfers too** (§5.7): a group-level HR moving an employee
-from AIM to TURSENIA is the ordinary case, not an exception to be carved out.
+It was deliberately left as written until the answer arrived from the right place, so that
+the scope would be decided **once**, in Auth & RBAC, rather than twice in two documents.
+`adr/0004` decision 1 is that answer, and §6.1 above now carries it. **The flag is
+discharged; §6 is implementable.**
 
-Left as written deliberately — the **correct** scope is an **Auth & RBAC decision, not an
-Employee Master one**, and guessing it here would put a second answer in a second document.
-But it is now a **known-wrong row, not an open question**: shipping §6 as written would
-block HR on the system's first day. Auth & RBAC must resolve it before any permission code
-is written against this table.
+Note what the fix actually was: not "HR is group-level," but **"scope is derived from the
+employer's position in the hierarchy."** The first would have hardcoded today's staffing
+into the permission layer; the second produces the same result today and still works when a
+subsidiary hires its own HR.
+
+This also disposes of the question raised against **cross-company transfers** (§5.7): there
+is no "source HR vs destination HR", because HR is not a per-company role in this group. A
+group-level HR moving an employee from AIM to TURSENIA is the ordinary case.
 
 ## 7. UI
 
@@ -679,6 +775,29 @@ non-trivial and everything downstream depends on it:
     (BR-14). Both halves must be asserted; testing only the permission turns the narrow
     exception into an open door. *(The approval half exercises the Approval engine —
     assert here only what Employee Master owns: that the read stays denied.)*
+
+    ⚠ **This test must use an HR employed by a *subsidiary*, not by AHS.** An AHS-employed
+    HR reads the whole group legitimately (§6.1), so writing the test with one asserts
+    nothing — it would pass or fail for the wrong reason and would hide a merged-axes bug.
+    The subsidiary-employed HR is the only case where "approves across, reads one" is
+    observable.
+
+**Read scope derived from the hierarchy (`adr/0004` decision 1) — required by the ADR:**
+
+1g. An `HR` employed by **AHS** (the parent) lists employees of **every** group company.
+    This is the row that was known-wrong before 2026-08-11 and the one that blocks HR on
+    day one if it regresses.
+
+1h. An `HR` employed by a **subsidiary** lists that subsidiary's employees **only** — and
+    the scope is read from `companies.parent_company_id`, not from the role. Assert by
+    moving the same HR's `employees.company_id` and re-reading, with **no other change**.
+
+1i. **A subsidiary mis-parented under AHS grants its staff group-wide reads.** The
+    hierarchy is small and rarely changes, but it is load-bearing — `adr/0004` requires
+    this covered by a test rather than left to seeding discipline.
+
+1j. Scope is **derived, never stored**: no column, request field, or config value can widen
+    or narrow it (mass-assignment probe, as in test 2).
 3. Status history row written on every qualifying change; none written on a no-op save.
 4. Status history rows cannot be updated or deleted.
 5. Status transitions — permitted ones succeed, forbidden ones rejected; terminal
@@ -838,17 +957,20 @@ across companies. Shared org structure and approval scope are separate questions
 was wrongly inferred from the other. See BR-10, BR-14, and `adr/0002` decision 4's
 amendment note.
 
-**Not blocking this module** — all Auth & RBAC concerns, which Employee Master does not
-depend on:
+**The two Auth & RBAC concerns previously listed here as not-blocking are now closed** by
+`adr/0004`, and both landed in §6:
 
-- the `system_access` value-set question (`CLAUDE.md` §10);
-- the **data-visibility permission check** that must sit separate from cross-company
-  approval authority (BR-14) — for everything except salary.
+- the `system_access` value-set question — **closed**, three values, `NOT NULL` defaulting
+  to `STANDARD` (`adr/0004` decision 2, `schema.md` `users`);
+- the **data-visibility permission check** that had to sit separate from cross-company
+  approval authority (BR-14) — **closed**, read scope derives from the employer's position
+  in `companies.parent_company_id` (`adr/0004` decision 1, §6.1), and approval is still
+  never an input to it.
 
-Salary visibility is **no longer open**: it is the `ACCOUNT` role, and no `HR` holds it
-(`adr/0003` decision 5). The `hr_scope` (`PAYROLL | OPERATIONS`) distinction previously
-listed here is **withdrawn**, not deferred — the Payroll HR / Operations HR split it
-modeled does not exist.
+Salary visibility was answered earlier and is unchanged: it is the `ACCOUNT` role, and no
+`HR` holds it at any scope (`adr/0003` decision 5). The `hr_scope`
+(`PAYROLL | OPERATIONS`) distinction previously listed here is **withdrawn**, not deferred
+— the Payroll HR / Operations HR split it modeled does not exist.
 
 **6. Multi-role authority — RESOLVED by `adr/0003`, and it superseded a decision this
 spec had already built on.** `adr/0001` decision 2 modeled authority as a single
