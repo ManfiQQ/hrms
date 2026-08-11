@@ -18,6 +18,11 @@ class DatabaseSeeder extends Seeder
         // db:seed more than once will not create a second Master Admin.
         $this->call(MasterAdminSeeder::class);
 
+        // Order matters: policy configurations are per company, so the companies must
+        // exist first. Both are idempotent (updateOrCreate).
+        $this->call(CompanySeeder::class);
+        $this->call(PolicyConfigurationSeeder::class);
+
         // No test/demo user is seeded. Every account other than Master Admin and Director
         // belongs to an employee and is created in the same transaction as that employee's
         // record (BR-A20). A standalone account with no employee record is a shape this
