@@ -673,21 +673,50 @@ The order matters: the salary filter runs **last and unconditionally** for those
 roles, so no query path, export, count, or aggregate can reach a salary row by taking a
 different route into the table.
 
+> **⚠ Dependency: `RoleChecker` (`auth-rbac.spec.md` §5.5) must exist first.** Step 1 asks
+> "does this account hold `ACCOUNT` / `HR` / `ASSISTANT_DIRECTOR` at this company", which is
+> a read of `employee_roles` — and that spec is explicit that **no caller may query
+> `employee_roles` directly**, because a raw query is the one place the
+> `revoked_date IS NULL` filter gets omitted, which returns revoked authority as current.
+>
+> That service is specified and Accepted but was not written when the Auth module's own code
+> was deferred, so **this module builds it**. It is `auth-rbac.spec.md`'s to own; it lands
+> here only because this is the first reader that needs it. A revoked `ACCOUNT` role must
+> not read salary rows, and nothing else would enforce that.
+
 ### 5.4 The salary filter
 
 A model holding salary-bearing fields declares them:
 
 ```php
-protected array $salaryFields = ['basic_salary', 'allowance_amount'];
+public const SALARY_FIELDS = ['basic_salary', 'allowance_amount'];
 ```
+
+> **⚠ Changed from `protected array $salaryFields` — 2026-08-12.** A public constant, for
+> two reasons. It matches the declaration pattern the guard tests already read —
+> `TENANT_SCOPE_EXEMPT` on `EmployeeRole` and `SecurityEvent`, `AUDITS` on an Action — so
+> there is one way to say "this model declares something the architecture checks". And a
+> `protected` property is unreadable without reflection, which would put the salary filter's
+> correctness behind the most fragile mechanism available to it.
 
 `AuditLogReader` excludes, for `HR` and `ASSISTANT_DIRECTOR`, every row whose
 `(auditable_type, field)` pair appears in the declared set. The `(auditable_type, field)`
 index exists for this query.
 
+**The filter is implemented once and called nowhere else.** It lives in
+`App\Support\Audit\SalaryFields` and is applied by `AuditLogReader` — the same shape as
+`RoleChecker::canReadSalary()` in `auth-rbac.spec.md` §5.5, and for the same reason: a rule
+repeated per caller is a rule one caller will get wrong, silently. No other class may test a
+field for salariness.
+
 **An architecture test asserts the declaration exists** — every model over a table
 carrying a money column either declares its salary fields or declares, explicitly, that it
-has none. A model that declares neither fails the suite.
+has none (`SALARY_FIELDS = []`). A model that declares neither fails the suite.
+
+⚠ **No table carries a money column today**, because Payroll is Phase 2. The test would
+therefore check nothing, so it **fails unless `SalaryFields` declares that emptiness and
+says which module ends it** — the same guard `AuditedFields` carries for BR-AT13, for the
+same reason: an architecture test over an empty set passes forever while checking nothing.
 
 This is `adr/0005` decision 6's pattern, adopted deliberately rather than by analogy. That
 ADR chose a guard test over review because **omission is the likely error and it gets
@@ -738,6 +767,31 @@ that accepts a `--where` is a delete capability with extra steps.
 
 Each run logs the number of rows removed, so a sweep that suddenly deletes far more than
 usual is visible.
+
+**The value is read from the parent company's row**, key
+`audit.security_events.unattributed_retention_days`.
+
+> **⚠ This one setting is not per-company, and `policy_configurations.company_id` is
+> NOT NULL.** The rows being pruned are precisely those with **no company** — an attempt
+> against a number that is in no account has no employer to inherit a policy from — so
+> "per company" has nothing to attach to. Reading the **parent** (`parent_company_id IS
+> NULL`) is the group-level answer the schema can express today, and it keeps the number out
+> of code as `conventions.md` §5 requires.
+>
+> A subsidiary row for this key is **ignored, not merged**: two answers to a group-wide
+> question is the drift this project rejects everywhere else. If the group ever needs
+> genuinely global settings, that is a `policy_configurations` change and an ADR — not a
+> second lookup path bolted on here.
+
+**The command refuses to run rather than guess.** If the key is missing, or is not a
+positive integer, it **aborts with a non-zero exit and deletes nothing**. A default
+compiled into the command would be a second source for a number `conventions.md` §5 says
+must live in configuration — and the failure mode of guessing here is deleting rows that
+should have been kept.
+
+**Scheduled, never run on demand from a request.** Registered in `routes/console.php`
+(Laravel 12 has no `Kernel::schedule`), and it is the only process permitted to remove a
+row from either table (BR-AT6).
 
 ## 6. Permissions
 
