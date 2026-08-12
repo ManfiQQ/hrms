@@ -23,10 +23,11 @@
 | `audit_logs` | `2026_08_12_100000_create_audit_logs_table.php` |
 | `security_events` | `2026_08_12_100100_create_security_events_table.php` |
 | `users` — throttle columns | `2026_08_12_100200_add_login_throttle_to_users_table.php` |
+| `employee_status_history` | `2026_08_12_100300_create_employee_status_history_table.php` |
 
 **Still draft, with no migration behind them:** the Employee Master satellite tables
 (`employee_family_members`, `employee_education_history`, `employee_employment_history`,
-`employee_documents`, `employee_status_history`), `job_functions`,
+`employee_documents`), `job_functions`,
 `employee_job_functions`, `sequences`, `approval_requests`, and everything under Phase 2.
 
 ⚠ **Both audit tables exist without models, and that is deliberate.**
@@ -380,9 +381,28 @@ fields.
 `end_date` (nullable), `created_by`, `updated_by`, timestamps, soft deletes
 
 ### `employee_status_history`
-`id`, `company_id` (FK), `employee_id` (FK), `change_type` (enum), `old_value`,
-`old_label`, `new_value`, `new_label`, `effective_date`, `reason`,
-`changed_by` (FK → users), `created_at`
+`id`, `company_id` (FK), `employee_id` (FK), `change_type` (enum), `old_value` (nullable),
+`old_label` (nullable), `new_value`, `new_label`, `effective_date`, `reason` (nullable),
+`changed_by` (FK → users, nullable), `created_at`
+
+**Migrated 2026-08-12.** `old_value` / `old_label` are nullable because the first row for a
+field has no previous value; `new_value` / `new_label` are not.
+
+Indexes: `(employee_id, effective_date)` — the employee's own history tab, the primary read;
+`(company_id, effective_date)` — the scoped reporting read; `(change_type, effective_date)`.
+
+> **⚠ `TenantScope` on the model, released through `Employee::statusHistory()`** — the
+> `conventions.md` §2 second carve-out, in code. Read through the employee, the scope lifts,
+> because permission was already decided one level up: *if the caller may read this employee,
+> they may read this employee's history.* Queried **directly**, it applies in full.
+>
+> **Both directions are covered by tests, and each fails on its own.** Removing the release
+> from the relationship fails the pre-transfer-history test; removing the scope from the
+> model fails the reporting test. Testing one without the other turns a narrow carve-out into
+> a blanket bypass in one direction, or leaves the silent-missing-rows failure in the other.
+>
+> The release is bounded by the employee, not merely by the absence of a scope — asserted
+> separately, since a release that returned everyone's rows would satisfy the first test.
 
 `change_type` enum — **four** values, and only four:
 

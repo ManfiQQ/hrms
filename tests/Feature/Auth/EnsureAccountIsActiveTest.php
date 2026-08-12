@@ -104,17 +104,27 @@ it('ignores unauthenticated requests', function () {
 });
 
 /**
- * ⚠ Expiry is specified but not implementable, and the gap is asserted rather than left to
- * be discovered.
+ * ⚠ BR-A17 EXPIRY IS NOW UNBLOCKED AND STILL NOT IMPLEMENTED — this test records that, and
+ * it is the next commit's work.
  *
- * BR-A17 counts ten days from effective_date — the last working day — which lives on
- * employee_status_history, a table with no migration. This test pins the CURRENT behaviour
- * so the day that column arrives, it fails and points at the work.
+ * This assertion used to read `Schema::hasTable('employee_status_history')->toBeFalse()`,
+ * with a message telling whoever tripped it to go and implement expiry. **It fired**: the
+ * table landed with the status-history migration, the suite went red, and the failure
+ * message was the instruction. That is the tripwire working exactly as intended.
+ *
+ * What it cannot do is make the work happen in the same breath. BR-A17 counts ten days from
+ * `effective_date` — the last working day — and reading it means resolving the employee's
+ * most recent terminal-status row through the ledger, inside `EnsureAccountIsActive`. That
+ * is a change to the authentication gate and it earns its own commit and its own tests
+ * (§8 test 24, and BR-A19's countdown, which needs the same date).
+ *
+ * ⚠ Until then the failure direction stays safe: a terminal status freezes the account and
+ * the freeze NEVER LIFTS, so access is narrower than the rule requires, never wider. What is
+ * missing is the account ever going fully dark on day ten.
  */
-it('cannot expire an account yet, because there is no effective_date to count from', function () {
-    expect(Illuminate\Support\Facades\Schema::hasTable('employee_status_history'))->toBeFalse(
-        'employee_status_history now exists — BR-A17 expiry can and must be implemented in '.
-        'EnsureAccountIsActive, and §8 test 24 written (auth-rbac.spec.md §5.2).'
+it('still does not expire an account, though the ledger it needs now exists', function () {
+    expect(Illuminate\Support\Facades\Schema::hasTable('employee_status_history'))->toBeTrue(
+        'The ledger BR-A17 needs is gone again — expiry has lost its date source a second time.'
     );
 
     $user = accountWithStatus('TERMINATED', $this->aim);
