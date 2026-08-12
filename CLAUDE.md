@@ -53,14 +53,32 @@ skipping steps.
 
 | Layer | Choice |
 |---|---|
-| Framework | Laravel 12 |
-| Frontend | Blade + Livewire 3 + Alpine.js |
+| Framework | **Laravel 13** — see `adr/0007` |
+| Frontend | Blade + Livewire 3 + Alpine.js — ⚠ Livewire is **not installed yet**, see below |
 | Styling | Tailwind CSS + Vite |
 | Database | MySQL 8 |
 | Local dev | Docker + Laravel Sail, via WSL2 on Windows |
 | Deployment | Vultr VPS (Singapore), native LEMP, Deployer |
 | Version control | Git + GitHub CLI (`gh`) — terminal only, no GitHub web UI |
 | Docs | Obsidian vault, stored in-repo at `/docs` |
+
+**The Framework row said `Laravel 12` until 2026-08-12, while `composer.json` required
+`^13.8` and the lock file resolved 13.24.0.** The contradiction survived 22 pull requests
+because neither statement was wrong on its own — the same shape as `adr/0006`, where no
+single document contained the error either.
+
+**`adr/0007` resolves it in favour of 13**, which is what `laravel new` installed and what
+every migration, module and test has been written against. **No technical reason for 12 was
+ever recorded** — it was an assumption, not a decision, which is why this row could be
+amended under the "unless a decision has genuinely changed" clause above rather than by
+changing the code to match. That clause is narrow on purpose; `adr/0007` is the argument that
+it applies.
+
+⚠ **Livewire 3 is listed above and is not in `composer.json`.** The same drift, deliberately
+not resolved yet: it becomes a real decision when the account-management screen needs it
+(`auth-rbac.spec.md` §7), and installing a dependency purely to make this table true would be
+the wrong direction again. Three auth screens were built without it because they are plain
+form posts (PR #18).
 
 ### Deployment constraints
 
