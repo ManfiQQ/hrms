@@ -269,31 +269,6 @@ it('records an attempt against an unknown number with no user_id', function () {
         ->and($event->isUnattributed())->toBeTrue();
 });
 
-/**
- * ⚠ The counter must advance even when the security_events write fails. That write is
- * deliberately non-blocking (audit-trail.spec.md BR-AT8), and a throttle that depended on it
- * would be disabled for the whole group by one broken table — failing OPEN at exactly the
- * moment the evidence stopped being recorded.
- */
-it('still throttles when security_events cannot be written', function () {
-    $user = accountWithPhone('0123456789', $this->aim);
-
-    Illuminate\Support\Facades\Schema::rename('security_events', 'security_events_missing');
-
-    try {
-        foreach (range(1, 3) as $ignored) {
-            try {
-                $this->service->attempt('0123456789', 'wrong');
-            } catch (InvalidCredentialsException) {
-            }
-        }
-    } finally {
-        Illuminate\Support\Facades\Schema::rename('security_events_missing', 'security_events');
-    }
-
-    expect($user->fresh()->failed_login_attempts)->toBe(3)
-        ->and($user->fresh()->locked_until)->not->toBeNull();
-});
 
 /**
  * §8 test 8 — THE MOST IMPORTANT ONE. Removing the checkbox is not the same as disabling

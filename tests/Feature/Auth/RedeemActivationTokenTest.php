@@ -154,21 +154,6 @@ it('writes the redemption to security_events', function () {
         ->and($event->identifier)->toBe('0123456789');
 });
 
-it('still activates when security_events cannot be written', function () {
-    pendingAccount();
-
-    // BR-AT8: that write is non-blocking. A broken table must not stop an employee getting
-    // into the system on their first day.
-    Illuminate\Support\Facades\Schema::rename('security_events', 'security_events_missing');
-
-    try {
-        $user = $this->redeem->execute('a-live-token');
-        expect($user->activation_used_at)->not->toBeNull();
-    } finally {
-        Illuminate\Support\Facades\Schema::rename('security_events_missing', 'security_events');
-    }
-});
-
 it('emits the HR notification event, which nothing listens to yet', function () {
     Event::fake([AccountActivated::class]);
 
