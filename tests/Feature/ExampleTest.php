@@ -2,18 +2,19 @@
 
 namespace Tests\Feature;
 
-// use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
+/**
+ * Laravel's placeholder test, kept and corrected rather than deleted.
+ *
+ * It asserted that `/` returns 200, which was true while the welcome page lived there. The
+ * root now redirects to the login screen: this system has no public page, and every route
+ * behind it is authenticated.
+ */
 class ExampleTest extends TestCase
 {
-    /**
-     * A basic test example.
-     */
-    public function test_the_application_returns_a_successful_response(): void
+    public function test_the_root_path_sends_a_visitor_to_the_login_screen(): void
     {
-        $response = $this->get('/');
-
-        $response->assertStatus(200);
+        $this->get('/')->assertRedirect('/login');
     }
 }
