@@ -994,9 +994,12 @@ Plus, specific to this module:
 - **The BR-AT13 architecture test fails on an empty registry** unless the registry declares
   itself intentionally empty and says until when
 - The retention window resolves from `policy_configurations`
-- **`MasterAdminContext::run()` now writes its reason**, closing the deferred half of
-  `adr/0005` decision 5, and `auth-rbac.spec.md` §5.3's ⚠ note is discharged in the same
-  commit
+- ✅ **`MasterAdminContext::run()` writes its reason** — done 2026-08-12, closing the
+  deferred half of `adr/0005` decision 5. That ADR's decision-5 note, its § Still open entry,
+  and `auth-rbac.spec.md` §5.3's ⚠ note were all discharged in the same commit
+- **The salary filter has exactly one implementation** — `SalaryFields` for *is this field
+  salary*, `RoleChecker::canReadSalary` for *may this account read it*. Grep and verify no
+  second copy of either question
 - No `updated_at`, `updated_by`, or `deleted_at` on either table
 
 ## 10. Resolved Decisions
@@ -1094,11 +1097,17 @@ BR-AT13.
 
 ### What this spec closes elsewhere
 
-**`adr/0005` decision 5 is implemented in half, and this spec closes the other half.**
-`MasterAdminContext` already exists, must be entered on purpose, lifts the scope only
-inside `run()`, restores on exit, and refuses a bypass with no stated reason. The **audit
-write does not happen**, because `audit_logs` has no migration — so today
-*"explicit, never ambient"* holds and *"audited"* does not.
+**✅ `adr/0005` decision 5 is now satisfied in full — closed 2026-08-12.**
+`MasterAdminContext` must be entered on purpose, lifts the scope only inside `run()`,
+restores on exit, refuses a bypass with no stated reason — and **now writes the bypass to
+`audit_logs`**: the actor, the reason, and a `tenant_scope: scoped → bypassed` row against
+the acting account. *"Explicit, never ambient"* and *"audited"* both hold.
+
+The write happens **before** the callback and in its own transaction, because the bypass
+happened whether or not the work inside it succeeded, and **`run()` now requires an
+authenticated account** — a bypass nobody can be attributed to is the ambient bypass that
+decision rejects. The paragraphs below record why the gap existed, since the reasoning is
+worth keeping.
 
 That table was **deliberately not created by the tenant-scope work**, and the reason is
 this document: `audit_logs` accepts writes from every module — auth, approvals, attendance
