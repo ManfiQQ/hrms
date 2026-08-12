@@ -22,6 +22,7 @@
 | `policy_configurations` | `2026_08_11_100600_create_policy_configurations_table.php` |
 | `audit_logs` | `2026_08_12_100000_create_audit_logs_table.php` |
 | `security_events` | `2026_08_12_100100_create_security_events_table.php` |
+| `users` — throttle columns | `2026_08_12_100200_add_login_throttle_to_users_table.php` |
 
 **Still draft, with no migration behind them:** the Employee Master satellite tables
 (`employee_family_members`, `employee_education_history`, `employee_employment_history`,
@@ -723,7 +724,27 @@ dropped, both below** — plus `employee_id` (FK → employees,
 `STANDARD`**), `must_change_password` (boolean, **default true**), `password_changed_at` (timestamp,
 nullable), `activation_token` (string, unique, nullable), `activation_expires_at`
 (timestamp, nullable), `activation_downloaded_at` (timestamp, nullable),
-`activation_used_at` (timestamp, nullable).
+`activation_used_at` (timestamp, nullable), `failed_login_attempts` (unsigned integer,
+**NOT NULL, default 0**), `locked_until` (timestamp, nullable).
+
+> **BR-A3's throttle state — added 2026-08-12**
+> (`2026_08_12_100200_add_login_throttle_to_users_table.php`). The spec described four tiers
+> and a counter that resets on success, and gave them nowhere to live.
+>
+> **Database columns, not cache entries.** The fourth tier is a **permanent** lock only `HR`
+> or Master Admin may lift, and a counter in the cache would be erased by
+> `php artisan cache:clear` — a routine deploy step — silently unlocking every permanently
+> locked account in the group, with no trace that it happened. The username is not secret
+> and the password minimum is six characters, so throttling is not defence in depth; it is
+> the defence.
+>
+> **No `locked_permanently` flag exists and none may be added.** A permanent lock is
+> `failed_login_attempts` having reached the fourth tier's threshold — one fact, read one
+> way. A boolean beside the counter would mean every unlock path had to clear both, and the
+> path that clears only one is a silent hole (`adr/0003` decision 1's reasoning).
+>
+> **⚠ `locked_until` null does not mean "not locked."** It means no *timed* lock is in
+> force. Both columns are read through `App\Services\Auth\LoginThrottle`, never by hand.
 
 > **⚠ `role` and `company_id` withdrawn from `users` — 2026-08-11.** This list previously
 > carried both. **Neither exists, and neither may be added.** They were drafted before the
