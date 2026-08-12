@@ -54,7 +54,7 @@ skipping steps.
 | Layer | Choice |
 |---|---|
 | Framework | **Laravel 13** — see `adr/0007` |
-| Frontend | Blade + Livewire 3 + Alpine.js — ⚠ Livewire is **not installed yet**, see below |
+| Frontend | Blade + Livewire 3 + Alpine.js |
 | Styling | Tailwind CSS + Vite |
 | Database | MySQL 8 |
 | Local dev | Docker + Laravel Sail, via WSL2 on Windows |
@@ -74,11 +74,10 @@ amended under the "unless a decision has genuinely changed" clause above rather 
 changing the code to match. That clause is narrow on purpose; `adr/0007` is the argument that
 it applies.
 
-⚠ **Livewire 3 is listed above and is not in `composer.json`.** The same drift, deliberately
-not resolved yet: it becomes a real decision when the account-management screen needs it
-(`auth-rbac.spec.md` §7), and installing a dependency purely to make this table true would be
-the wrong direction again. Three auth screens were built without it because they are plain
-form posts (PR #18).
+**Livewire 3 was listed here and uninstalled until 2026-08-12.** It landed with the account
+management screen (`auth-rbac.spec.md` §7) — its first genuine requirement, and the point at
+which installing it stopped being a dependency added to make a table true. The three auth
+screens before it are plain form posts and were built without it deliberately (PR #18).
 
 ### Deployment constraints
 

@@ -771,6 +771,31 @@ Blade + Livewire 3. Screens: login, forced password change, activation landing (
 QR), account management for HR (reset, unlock, regenerate QR, **change `phone_no`**), Master
 Admin management.
 
+**Account management implemented 2026-08-12** — `App\Livewire\Accounts\ManageAccount`, at
+`GET /accounts/{user}`. **Livewire arrived with it**, its first genuine requirement; the
+three screens before it are plain form posts and were built without it deliberately.
+
+⚠ **Authorisation is re-checked on every action, not once at mount.** A Livewire action is
+its own HTTP request naming the component and the method, so a mount-time check would
+authorise for the life of the page — and a role whose grant is revoked mid-session would keep
+working. Tested by revoking the role after mount and calling each operation.
+
+⚠ **Livewire converts an `AuthorizationException` into a 403 response rather than propagating
+it.** Tests assert `assertForbidden()` **and** that nothing about the account moved: a 403
+returned *after* the work was done — refused on the way out, performed on the way in — is the
+outcome worth guarding against.
+
+⚠ **No credential value ever reaches `audit_logs`.** The password hash and the activation
+token are never written there; the audited fields are `password_changed_at` and
+`activation_expires_at`. `audit_logs` is readable by `HR` and `ASSISTANT_DIRECTOR` within
+their read scope (BR-AT9), so auditing a secret's value would hand it to every reader of that
+screen — including the role deliberately barred from the activation image itself.
+`phone_no` **is** recorded in full, because the username is not a secret and recording the
+change is the entire point.
+
+**Master Admin management (create/remove) is not built** — BR-A13's 3/1 limits belong to
+their own screen and their own branch.
+
 The login form carries **no remember-me checkbox** (BR-A4).
 
 **Changing `phone_no` lives on the account management screen, not on the employee form.**

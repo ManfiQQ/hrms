@@ -34,6 +34,27 @@ class UserPolicy
      */
     public function viewActivationImage(User $actor, User $target): bool
     {
+        // The image is one of the account operations, governed by the same rule. Kept as a
+        // separate ability because the route reads better for it, but there is deliberately
+        // only ONE implementation — two copies of this rule would drift, and the drift would
+        // be somebody gaining an operation nobody granted them.
+        return $this->manageAccount($actor, $target);
+    }
+
+    /**
+     * May this account perform account operations on another — reset the password, unlock it,
+     * reissue the activation QR, change the login username (auth-rbac.spec.md §7)?
+     *
+     * ⚠ `HR` and Master Admin only. `ASSISTANT_DIRECTOR` is excluded from ALL FIVE, and that
+     * is not a demotion: it may create, edit and archive employee records, because those are
+     * PROFILE operations. Handing out an activation, or changing somebody's username, is
+     * taking possession of their account — and an account holder who could change a USERNAME
+     * but not reset a PASSWORD is a combination that makes sense from no direction
+     * (`adr/0004` decision 6). `ACCOUNT` reads the most data in the system and administers
+     * none of it.
+     */
+    public function manageAccount(User $actor, User $target): bool
+    {
         if ($actor->isMasterAdmin()) {
             return true;
         }
