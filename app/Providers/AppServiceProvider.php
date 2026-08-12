@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\Audit\AuditLogger;
 use App\Services\Auth\MasterAdminContext;
 use App\Services\Auth\ReadScopeResolver;
 use Illuminate\Support\ServiceProvider;
@@ -23,6 +24,18 @@ class AppServiceProvider extends ServiceProvider
         // instance per resolution would always answer "no", which fails safe but makes the
         // bypass silently inoperative (adr/0005 decision 5).
         $this->app->singleton(MasterAdminContext::class);
+
+        // Singleton because it holds the batch id for the life of the current transaction
+        // (BR-AT12). A fresh instance per resolution would mint a new batch_id on every
+        // call, so a three-field save would render as three unrelated changes — each row
+        // individually correct, the grouping silently wrong, and nothing erroring.
+        //
+        // The constructor also registers the commit/rollback listeners that release the
+        // batch, which must happen exactly once.
+        $this->app->singleton(AuditLogger::class);
+
+        // SecurityEventLogger is deliberately NOT a singleton: it holds no state, and
+        // binding it would suggest it does.
     }
 
     /**

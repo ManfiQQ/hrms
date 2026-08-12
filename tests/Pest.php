@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -17,6 +18,26 @@ use Tests\TestCase;
 pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Feature');
+
+/*
+ * ⚠ Integration tests run WITHOUT a wrapping transaction, and that is the whole reason the
+ * suite exists.
+ *
+ * RefreshDatabase wraps each test in a transaction and rolls it back afterwards, so
+ * DB::transactionLevel() is already 1 before the test body runs. Anything whose behaviour is
+ * defined against transaction level — AuditLogger, whose batch_id is bound to the
+ * transaction and released when it reaches level 0 (audit-trail.spec.md BR-AT12) — cannot be
+ * observed truthfully under it: an inner DB::transaction() would be a savepoint, the level
+ * would never reach 0, and the batch would never be released. The test would pass while the
+ * production semantics went unexercised.
+ *
+ * DatabaseTruncation empties the tables between tests instead, leaving transaction handling
+ * to the code under test. It is slower, so put a test here only when it genuinely needs real
+ * transaction boundaries or DDL.
+ */
+pest()->extend(TestCase::class)
+    ->use(DatabaseTruncation::class)
+    ->in('Integration');
 
 /*
 |--------------------------------------------------------------------------
