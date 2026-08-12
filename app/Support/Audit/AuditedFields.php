@@ -33,7 +33,7 @@ class AuditedFields
         // Written by App\Actions\Employee\ChangeEmployeeStatus, which declares the matching
         // AUDITS constant. The architecture test fails in both directions: an entry here
         // with no Action behind it, and an Action auditing a field absent from this list.
-        \App\Models\Employee::class => ['staff_status'],
+        \App\Models\Employee::class => ['staff_status', 'employee_no'],
     ];
 
     /**

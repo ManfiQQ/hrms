@@ -24,11 +24,12 @@
 | `security_events` | `2026_08_12_100100_create_security_events_table.php` |
 | `users` — throttle columns | `2026_08_12_100200_add_login_throttle_to_users_table.php` |
 | `employee_status_history` | `2026_08_12_100300_create_employee_status_history_table.php` |
+| `sequences` | `2026_08_12_100400_create_sequences_table.php` |
 
 **Still draft, with no migration behind them:** the Employee Master satellite tables
 (`employee_family_members`, `employee_education_history`, `employee_employment_history`,
 `employee_documents`), `job_functions`,
-`employee_job_functions`, `sequences`, `approval_requests`, and everything under Phase 2.
+`employee_job_functions`, `approval_requests`, and everything under Phase 2.
 
 ⚠ **Both audit tables exist without models, and that is deliberate.**
 `audit-trail.spec.md` requires `AuditLog` to declare

@@ -29,13 +29,19 @@ beforeEach(function () {
     $this->ahs = Company::factory()->create(['code' => 'AHS']);
     $this->aim = Company::factory()->subsidiary($this->ahs)->create(['code' => 'AIM']);
 
-    foreach (['auth.password.min_length' => '6', 'auth.throttle.tier_4.attempts' => '12'] as $key => $value) {
-        PolicyConfiguration::create([
-            'company_id' => $this->ahs->id,
-            'key' => $key,
-            'value' => $value,
-            'effective_from' => now()->toDateString(),
-        ]);
+    foreach ([$this->ahs, $this->aim] as $company) {
+        foreach ([
+            'auth.password.min_length' => '6',
+            'auth.throttle.tier_4.attempts' => '12',
+            'auth.activation.validity_hours' => '48',
+        ] as $key => $value) {
+            PolicyConfiguration::create([
+                'company_id' => $company->id,
+                'key' => $key,
+                'value' => $value,
+                'effective_from' => now()->toDateString(),
+            ]);
+        }
     }
 });
 
@@ -77,25 +83,42 @@ it('leaves an employee with no account unable to authenticate at all', function 
 });
 
 /**
- * ⚠ Pins the gap so it cannot be forgotten. When the employee-CREATION Action lands, this
- * test fails and points at the requirement: BR-A20 must be enforced there, in the same
- * transaction, and this file should then assert it directly.
+ * ⚠ THE TRIPWIRE IS RETIRED — its work is done, and this is what replaced it.
  *
- * ⚠ RETARGETED 2026-08-12. It used to assert that `app/Actions/Employee` did not exist —
- * which fired the moment ChangeEmployeeStatus landed in that directory, for a change that
- * has nothing to do with BR-A20. A guard pointed at the wrong subject fires on unrelated
- * work, and a guard that cries wolf gets deleted rather than fixed.
+ * It asserted that no employee-creation Action existed, carrying the instruction to enforce
+ * BR-A20 the day one did. `App\Actions\Employee\CreateEmployee` now exists, so the rule is
+ * asserted directly instead of anticipated.
  *
- * ⚠ Its weak point is now the class NAME, and that is worth stating rather than hiding: an
- * employee-creation Action called something else slips past. `employee-master.spec.md` §5.1
- * names `App\Actions\Employee\*` as the home for these, and creation is the obvious one to
- * call CreateEmployee — but if it arrives as `RegisterEmployee` or `ProvisionEmployee`, this
- * guard is silent. It narrows the window; it does not close it.
+ * ⚠ BR-A20 is structural rather than a rule somebody follows: the Action is the only way to
+ * create an employee, and it creates the account in the SAME TRANSACTION. There is no order
+ * of operations in which an employee exists without one.
  */
-it('has no employee-creation Action yet, so BR-A20 is not structurally enforced', function () {
-    expect(class_exists(App\Actions\Employee\CreateEmployee::class))->toBeFalse(
-        'An employee-creation Action now exists. BR-A20 must be enforced in it — the account '.
-        'created in the same transaction as the employee — and this test replaced with one '.
-        'asserting that an employee cannot be created without an account (adr/0006 item 6).'
+it('creates the account in the same transaction as the employee', function () {
+    $result = app(App\Actions\Employee\CreateEmployee::class)->execute(
+        Employee::factory()->raw(),
+        '0123456789',
+        $this->aim,
     );
+
+    expect($result['user']->employee_id)->toBe($result['employee']->id)
+        ->and($result['user']->phone_no)->toBe('0123456789')
+        ->and(User::query()->count())->toBe(1)
+        ->and(Employee::query()->count())->toBe(1);
+});
+
+it('leaves no employee behind when the account cannot be created', function () {
+    // A username already taken by another account. The employee insert has already
+    // succeeded by the time this fails, so only the transaction stops a person existing
+    // with no way into the system.
+    $existing = Employee::factory()->forCompany($this->aim)->create();
+    User::factory()->forEmployee($existing)->create(['phone_no' => '0123456789']);
+
+    expect(fn () => app(App\Actions\Employee\CreateEmployee::class)->execute(
+        Employee::factory()->raw(),
+        '0123456789',
+        $this->aim,
+    ))->toThrow(Illuminate\Database\QueryException::class);
+
+    expect(Employee::query()->count())->toBe(1)      // only the pre-existing one
+        ->and(User::query()->count())->toBe(1);
 });

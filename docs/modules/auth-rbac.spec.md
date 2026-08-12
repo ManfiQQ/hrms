@@ -369,7 +369,10 @@ correction mechanism for a status set in error; there is no cancel path.
 
 ### Provisioning
 
-**BR-A20 — The account is created in the same transaction as the employee record.** Not a
+**BR-A20 — The account is created in the same transaction as the employee record.**
+**Implemented 2026-08-12: `App\Actions\Employee\CreateEmployee`**, which is the only way an
+employee is created — the employee, the `employee_no` claimed from the locked sequence, the
+account and the activation token land together or not at all. Not a
 separate step. Every employee needs an account to verify their own attendance, and payroll
 blocks on incomplete attendance (`payroll-notes.md` §3).
 
