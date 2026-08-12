@@ -49,6 +49,37 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Remember Me — disabled (BR-A4)
+    |--------------------------------------------------------------------------
+    |
+    | ⚠ NOT BUILT, AND NOT TO BE ENABLED WITHOUT AN ADR.
+    |
+    | Removing the checkbox from the login form is not the same as disabling the
+    | feature, because the field can be posted directly. The capability is
+    | therefore absent from AuthenticationService::attempt(), which takes no
+    | $remember parameter, and `users` has no `remember_token` column for a
+    | recaller to be minted against.
+    |
+    | A persistent cookie would re-authenticate someone past BR-A6's two-hour
+    | inactivity window, which is what that window is for. It matters more here
+    | than in most systems: much of this workforce logs in from SHARED
+    | TERMINALS at the factory, studio and galleria, where a remembered login
+    | means the account is never really logged out. It is also a second
+    | credential that would have to be invalidated on password change and on
+    | freeze — and not having it removes a thing that can be forgotten.
+    |
+    | This flag exists so the rule is visible in configuration rather than only
+    | in a service signature. Nothing reads it to decide whether to remember;
+    | there is no code path to switch on.
+    |
+    */
+
+    'remember_me' => [
+        'enabled' => false,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | User Providers
     |--------------------------------------------------------------------------
     |
