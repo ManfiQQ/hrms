@@ -32,6 +32,24 @@ class UserPolicy
      * but could not reset a password is a combination that makes sense from no direction.
      * `ACCOUNT` reads the most data in the system and administers none of it.
      */
+    /**
+     * May this account create or remove another Master Admin? (BR-A13, §5.8.)
+     *
+     * ⚠ Master Admin ALONE — not `HR`, who may reset a password and unlock an account but may
+     * not mint an account that bypasses tenant scope and reads every salary in the group.
+     * This ability is deliberately separate from `manageAccount`: an HR who could create a
+     * Master Admin could grant themselves everything `adr/0003` decision 3 hardcodes them out
+     * of, through the front door.
+     *
+     * ⚠ No target argument. The question is "may you administer the Master Admin set", not
+     * "may you act on this person" — the limits are properties of the set, and the Actions
+     * enforce them.
+     */
+    public function administerMasterAdmins(User $actor): bool
+    {
+        return $actor->isMasterAdmin();
+    }
+
     public function viewActivationImage(User $actor, User $target): bool
     {
         // The image is one of the account operations, governed by the same rule. Kept as a
