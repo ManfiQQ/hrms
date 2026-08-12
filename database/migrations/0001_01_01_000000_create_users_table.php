@@ -15,11 +15,32 @@ return new class extends Migration
             $table->id();
             $table->string('name');
 
+            // ⚠ THE LOGIN USERNAME (adr/0006, auth-rbac.spec.md BR-A1). NOT NULL and UNIQUE:
+            // an account without one cannot authenticate, and two accounts sharing one would
+            // hand a login to the wrong person. There is no placeholder path — a dummy number
+            // occupies the unique index and hands one person's username to another.
+            //
+            // ⚠ IT LIVES HERE, NOT ON employees, AND THAT IS LOAD-BEARING. It was on
+            // `employees` until 2026-08-12, which made the Master Admin account
+            // unreachable: BR-A1 makes the number the username and adr/0001 decision 4 gives
+            // Master Admin no employee record, so the account had nowhere to keep its own.
+            // Reproduced with the correct password — refused on the number, the email, the
+            // id and an empty string. It is the first account and the only one, so that was
+            // not one broken login but a system nobody could enter.
+            //
+            // The account is the thing that authenticates, so the username belongs to the
+            // account. That is what lets an account with no person still have one.
+            //
+            // The value is normalised before storing and before comparing (strip spaces,
+            // dashes, leading +60 or 60) and validated at 9-12 digits. That belongs to
+            // App\Support\Auth\PhoneNumber, not to the schema.
+            $table->string('phone_no')->unique();
+
             // Nullable, unique retained. Email is NOT a login credential here — the
-            // username is employees.phone_no (auth-rbac.spec.md BR-A1). Most field staff
-            // have no company email, and a users row is created for every employee
-            // (BR-A20), so NOT NULL would fail on the second such employee. MySQL allows
-            // many NULLs under a unique index: optional, but unique where present.
+            // username is phone_no above (auth-rbac.spec.md BR-A1). Most field staff have no
+            // company email, and a users row is created for every employee (BR-A20), so NOT
+            // NULL would fail on the second such employee. MySQL allows many NULLs under a
+            // unique index: optional, but unique where present.
             $table->string('email')->nullable()->unique();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');

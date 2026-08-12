@@ -23,7 +23,8 @@ class UserFactory extends Factory
      * Three departures from Laravel's scaffolding, each matching a decision:
      *
      *   - email is NULL, not a generated address. Email is not a login credential here —
-     *     the username is employees.phone_no (BR-A1) — and most of this workforce has none.
+     *     the username is phone_no on this table (BR-A1, adr/0006) — and most of this
+     *     workforce has no email at all.
      *     Generating one for every user makes the empty case the unusual one in tests,
      *     which is backwards.
      *   - email_verified_at is NULL. There is no email verification flow in this system, so
@@ -38,6 +39,13 @@ class UserFactory extends Factory
     {
         return [
             'name' => fake()->name(),
+
+            // ⚠ THE LOGIN USERNAME (adr/0006). Unique because two accounts sharing a number
+            // would hand a login to the wrong person, and NOT NULL because an account
+            // without one cannot be logged into at all — which is exactly the defect that
+            // ADR closed. 10 digits, inside BR-A1's 9-12 range and already normalised.
+            'phone_no' => '01'.fake()->unique()->numerify('########'),
+
             'email' => null,
             'email_verified_at' => null,
             'password' => static::$password ??= Hash::make('password'),

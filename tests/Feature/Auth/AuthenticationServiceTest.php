@@ -56,9 +56,15 @@ function seedAuthPolicies(Company $company): void
 
 function accountWithPhone(string $phone, Company $company, string $password = 'secret123'): User
 {
-    $employee = Employee::factory()->forCompany($company)->create(['phone_no' => $phone]);
+    // ⚠ The number goes on the ACCOUNT, not the employee record (adr/0006). An employee has
+    // no username of its own — which is what lets Master Admin, who has no employee record
+    // at all, still have one.
+    $employee = Employee::factory()->forCompany($company)->create();
 
-    return User::factory()->forEmployee($employee)->create(['password' => $password]);
+    return User::factory()->forEmployee($employee)->create([
+        'phone_no' => $phone,
+        'password' => $password,
+    ]);
 }
 
 /** §8 test 1 — all three formats are one number. */

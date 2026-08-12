@@ -41,9 +41,10 @@ beforeEach(function () {
 
 function loginAccount(string $phone = '0123456789', array $attributes = []): User
 {
-    $employee = Employee::factory()->forCompany(test()->aim)->create(['phone_no' => $phone]);
+    $employee = Employee::factory()->forCompany(test()->aim)->create();
 
     return User::factory()->forEmployee($employee)->create(array_merge([
+        'phone_no' => $phone,
         'password' => 'secret123',
         'must_change_password' => false,
     ], $attributes));
