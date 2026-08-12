@@ -8,7 +8,7 @@
 
 ## Status
 
-**Partly implemented.** As of **2026-08-11** the following tables are **migrated**:
+**Partly implemented.** As of **2026-08-12** the following tables are **migrated**:
 
 | Table | Migration |
 |---|---|
@@ -20,12 +20,20 @@
 | `employees` | `2026_08_11_100400_create_employees_table.php` |
 | `employee_roles` | `2026_08_11_100500_create_employee_roles_table.php` |
 | `policy_configurations` | `2026_08_11_100600_create_policy_configurations_table.php` |
+| `audit_logs` | `2026_08_12_100000_create_audit_logs_table.php` |
 
 **Still draft, with no migration behind them:** the Employee Master satellite tables
 (`employee_family_members`, `employee_education_history`, `employee_employment_history`,
 `employee_documents`, `employee_status_history`), `job_functions`,
-`employee_job_functions`, `sequences`, `approval_requests`, `audit_logs`,
-`security_events`, and everything under Phase 2.
+`employee_job_functions`, `sequences`, `approval_requests`, `security_events`, and
+everything under Phase 2.
+
+⚠ **`audit_logs` has a table but no `AuditLog` model yet, and that is deliberate.**
+`audit-trail.spec.md` requires the model to declare `App\Models\Scopes\SystemTenantScope`,
+a class that does not exist — and `adr/0005` decision 6's guard test must be taught to
+recognise it before a model declaring it can pass. The table is created first so the
+migration is reviewable on its own; **the model, the scope class, and the guard-test change
+land together, or the suite fails.**
 
 **The `users.employee_id` foreign key is added by the `employees` migration**, in the same
 file that creates the table it references — not by a separate migration. See
