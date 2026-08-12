@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Console\Commands\PruneSecurityEvents;
 use App\Models\Company;
 use App\Models\PolicyConfiguration;
 use Illuminate\Database\Seeder;
@@ -86,5 +87,42 @@ class PolicyConfigurationSeeder extends Seeder
 
         $count = $companies->count() * count($this->authPolicies());
         $this->command?->info("Seeded {$count} auth policy values across {$companies->count()} companies.");
+
+        $this->seedGroupLevelPolicies($effectiveFrom);
+    }
+
+    /**
+     * Settings that are group-level, not per-company, seeded on the PARENT row only.
+     *
+     * ⚠ Deliberately not written to all six companies like everything above.
+     * `policy_configurations.company_id` is NOT NULL, so a group-wide setting has to live
+     * somewhere, and the parent is the only row that means "the group". Seeding it six times
+     * would create six answers to one question, and the five that nothing reads are the ones
+     * that quietly go stale (audit-trail.spec.md §5.6).
+     *
+     * The retention window governs `security_events` rows with a null `user_id` — attempts
+     * against a phone number that is in no account. Those rows have no company, so there is
+     * no per-company value that could apply to them. Attempts against a real account are
+     * kept forever and this number never touches them (BR-AT11).
+     */
+    private function seedGroupLevelPolicies(string $effectiveFrom): void
+    {
+        $parent = Company::query()->whereNull('parent_company_id')->first();
+
+        if ($parent === null) {
+            $this->command?->warn(
+                'No parent company found — group-level policies not seeded. '
+                .'security-events:prune will refuse to run until this exists.'
+            );
+
+            return;
+        }
+
+        PolicyConfiguration::updateOrCreate(
+            ['company_id' => $parent->id, 'key' => PruneSecurityEvents::RETENTION_KEY],
+            ['value' => '90', 'effective_from' => $effectiveFrom]
+        );
+
+        $this->command?->info("Seeded 1 group-level policy value on {$parent->code} (the parent).");
     }
 }
