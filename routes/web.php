@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Auth\ActivationController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\PasswordChangeController;
 use App\Http\Controllers\DashboardController;
@@ -8,6 +9,21 @@ use App\Http\Middleware\EnsurePasswordIsChanged;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/login');
+
+/*
+ * ⚠ The activation landing sits OUTSIDE every gate, and outside `guest` too.
+ *
+ * Outside the authenticated groups because the visitor has no session yet. Outside `guest`
+ * because much of this workforce activates on a SHARED TERMINAL: a scan arriving while
+ * somebody else's session is open must replace it, not be refused. RedeemActivationToken
+ * regenerates the session for exactly that reason.
+ *
+ * ⚠ It is the highest-value unauthenticated route in the system — redeeming authenticates
+ * the holder and lets them set the account's first password. Its protection is that the
+ * token is 64 random characters, single-use, and dead after 48 hours; there is nothing here
+ * to rate-limit that would not also lock out the employee it belongs to.
+ */
+Route::get('/activate/{token}', ActivationController::class)->name('activation.redeem');
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', [LoginController::class, 'show'])->name('login');
