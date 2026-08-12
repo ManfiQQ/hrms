@@ -525,7 +525,8 @@ part of it) — see `business-rules.md` § Approval Hierarchy.
 > to the Approval Engine spec, which has not been written.
 
 ### `audit_logs`
-`id`, `batch_id` (uuid), `company_id` (FK), `user_id` (FK → users, nullable), `action`,
+`id`, `batch_id` (uuid), `company_id` (FK, **nullable**), `user_id` (FK → users, nullable),
+`action`,
 `auditable_type`, `auditable_id`, `field`, `old_value` (text, nullable), `new_value`
 (text, nullable), `old_label` (text, nullable), `new_label` (text, nullable), `reason`
 (text, nullable), `created_at`
@@ -563,18 +564,53 @@ anyone noticing, buying only cosmetic formatting (`audit-trail.spec.md` §10 dec
 
 **No `created_by`** — `user_id` is the actor, and `created_by` would record the same person
 twice. **Append-only:** no `updated_at`, no `updated_by`, no soft deletes — a deliberate
-exception to `conventions.md` §3, recorded there. `TenantScope` applies.
+exception to `conventions.md` §3, recorded there.
 
 **Kept forever.** No retention window, no archival, no prune path.
 
-Indexes: `batch_id`; `(auditable_type, auditable_id)`; `(auditable_type, field)` — the
-salary filter; `(company_id, created_at)`; `user_id`.
+> ### `company_id` is nullable here, and this table takes a **third** scope class
+>
+> `NULL` is a **meaningful value meaning "a system-level event"**, not missing data — the
+> same status it carries on `branches.company_id` (`adr/0002` decision 1), though **not the
+> same meaning**, and that difference is the whole point below.
+>
+> The subject is polymorphic, and some subjects belong to no company: a Master Admin
+> changing another Master Admin's `system_access` (`auth-rbac.spec.md` §6), or a Master
+> Admin tenant-scope bypass (`adr/0005` decision 5). Both are audited actions against
+> accounts with a null `employee_id`. `NOT NULL` cannot hold either without inventing an
+> attribution that is not true.
+>
+> **Both existing scope classes are wrong for this table, in opposite directions:**
+>
+> | Scope | On a `NULL` row | Why wrong |
+> |---|---|---|
+> | `TenantScope` | Hidden from everyone, Master Admin included | Hides exactly the rows that exist to hold the most powerful account to account |
+> | `SharedTenantScope` | Visible to everyone in any scope | A subsidiary-employed `HR` would read every group-level administrative action |
+>
+> On `branches`, `NULL` means **available to all companies**. Here it means **attributable
+> to no company** — the opposite. Reusing `SharedTenantScope` because both columns are
+> nullable would be reading the type and ignoring the meaning.
+>
+> ```
+> App\Models\Scopes\SystemTenantScope
+>
+>     company_id IN (:read_scope)
+>     OR (company_id IS NULL AND the account has system_access = FULL)
+> ```
+>
+> **The `FULL` check cannot go through read scope**, and `adr/0005` decision 5 already names
+> why: read scope resolves to a set of **companies**, and a `NULL` row belongs to none, so
+> no set however complete contains it. Inside `MasterAdminContext` the scope lifts entirely,
+> as for every other model.
+>
+> **`adr/0005` decision 6's guard test must recognise this third class** — see the amendment
+> note there. `AuditLog` fails the suite until it does. Applied to this table only; another
+> table wanting it needs an ADR, exactly as `SharedTenantScope` is restricted to `branches`
+> and `departments` (`adr/0005` decision 3). Full reasoning: `audit-trail.spec.md` §11.
 
-⚠ **One question must be answered before this migration is written:** what `company_id` an
-audit row carries when its subject belongs to **no** company — a Master Admin changing
-another Master Admin's `system_access` is an audited action against an account with a null
-`employee_id`. It decides the column's nullability, which Principle #4 will not let anyone
-soften later. See `audit-trail.spec.md` § Still open.
+Indexes: `batch_id`; `(auditable_type, auditable_id)`; `(auditable_type, field)` — the
+salary filter; `(company_id, created_at)`, which must serve `IS NULL` lookups as well as
+equality; `user_id`.
 
 ### `security_events`
 `id`, `user_id` (FK → users, **nullable**), `event_type` (enum), `identifier` (string, the
@@ -604,8 +640,8 @@ written — that write must sit **inside** the freeze transaction, which the non
 `security_events` holds what the subject did or attempted; `audit_logs` holds what was
 done to the account.
 
-> **⚠ This is the tenant-scope exception. It carries no scope class, and `company_id`
-> cannot be `NOT NULL`.**
+> **⚠ This is the tenant-scope exception. It carries no scope class at all — including not
+> the `SystemTenantScope` above — and `company_id` cannot be `NOT NULL`.**
 >
 > A security event happens **before authentication**. There is no authenticated user from
 > whom to resolve a read scope, and in the failed-attempt case there may be **no account at
@@ -619,6 +655,11 @@ done to the account.
 >
 > `company_id` is filled where knowable and left null where it is not. It is a **reporting
 > convenience, never an access control.**
+>
+> **`SystemTenantScope` does not fit either**, for the same reason: it reads the account's
+> `system_access`, and when a failed login is written there may be no account. Two nullable
+> `company_id` columns in one module, two different answers — which is why the choice is
+> made per table and declared on the model.
 
 **`user_id` is the retention discriminator, and the split is deliberate**
 (`audit-trail.spec.md` BR-AT11):

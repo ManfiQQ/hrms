@@ -103,8 +103,20 @@ records only what a migration author needs beyond the column list.
 | Values | `old_value` / `new_value`, **`TEXT`, nullable** |
 | Display text | `old_label` / `new_label`, a snapshot of how the value read **at the time** |
 | Actor | `user_id` |
-| Tenancy | `company_id`, with `TenantScope` |
+| Tenancy | `company_id`, **nullable**, with `SystemTenantScope` — a **third** scope class, see below |
 | Mutability | Append-only: `created_at` only — no `updated_at`, no `updated_by`, no soft deletes |
+
+**`company_id` is nullable, `NULL` means "a system-level event", and neither existing scope
+class is correct for it.** `TenantScope` would hide those rows from everyone including
+Master Admin — whose own actions they mostly are. `SharedTenantScope` would show them to
+everyone including a subsidiary `HR`. The table therefore gets `SystemTenantScope`:
+
+```
+company_id IN (:read_scope)
+OR (company_id IS NULL AND the account has system_access = FULL)
+```
+
+Full reasoning, and the `adr/0005` decision 6 guard test this obliges, in §11.
 
 **`reason` is nullable and it is not decoration.** `MasterAdminContext::run()` already
 takes a reason and refuses a bypass without one (`adr/0005` decision 5), and the
@@ -171,8 +183,9 @@ what the *subject* did or attempted, `audit_logs` holds what was *done to* the a
 
 > **⚠ `security_events` is the tenant-scope exception, and it must declare itself as one.**
 >
-> **It carries no `TenantScope` and no `SharedTenantScope`, and `company_id` cannot be
-> `NOT NULL`.** A security event happens **before authentication**: there is no
+> **It carries no scope class at all — not `TenantScope`, not `SharedTenantScope`, and not
+> the `SystemTenantScope` `audit_logs` uses — and `company_id` cannot be `NOT NULL`.** A
+> security event happens **before authentication**: there is no
 > authenticated user from whom to resolve a read scope, and in the failed-attempt case
 > there may be **no account at all** — an attempt against a phone number that has never
 > existed in this system has no subject, so it has no employer, so it has no company.
@@ -187,6 +200,11 @@ what the *subject* did or attempted, `audit_logs` holds what was *done to* the a
 > an employee, the employee has an employer — and left null where it is not. It is a
 > **reporting convenience, never an access control**. Access control for this table is
 > BR-AT9.
+>
+> **`SystemTenantScope` does not apply here either**, and the reason is the same one: it
+> reads the account's `system_access`, and at the moment a failed login is written there may
+> be no account. Two nullable `company_id` columns in this module, two different answers
+> (§11).
 
 **Indexes**
 
@@ -199,9 +217,13 @@ what the *subject* did or attempted, `audit_logs` holds what was *done to* the a
 
 - Two migrations, timestamps spaced one minute apart. Verify with
   `ls database/migrations | sort` before committing (`conventions.md` §6).
-- `audit_logs.company_id` is present from the creating migration, per Principle #4 — but
-  see § Still open, which must be answered **before** the migration is written, because it
-  decides that column's nullability.
+- **`audit_logs.company_id` is present from the creating migration and is nullable** (§11).
+  Principle #4 is about the **column**, not its nullability — the same reading that lets
+  `branches.company_id` be nullable and still satisfy the rule (`schema.md` § Notes Carried
+  From AHS Audit).
+- **`SystemTenantScope` must exist and be recognised by the `adr/0005` decision 6 guard
+  test before the `AuditLog` model lands**, or the model fails the suite. It is a new class
+  in `App\Models\Scopes`, not a variant of an existing one (§11).
 - Neither table gets `updated_at`, `updated_by`, or soft deletes. This is a **deliberate
   exception to `conventions.md` §3**, recorded there and on the tables in `schema.md`.
   A migration author adding them back for consistency's sake is making the change this
@@ -508,10 +530,15 @@ Every read goes through it. It applies, in order:
 1. **Authorization** — the BR-AT9 table, via a Policy. `ACCOUNT`, `HR` and
    `ASSISTANT_DIRECTOR` are role checks and therefore need a `company_id`
    (`adr/0003` decision 1); Master Admin is `system_access = FULL`.
-2. **Read scope** — `TenantScope` on `audit_logs` resolves to the account's read scope
-   already; `security_events` carries no scope and is filtered here instead, explicitly,
-   against the same resolver.
+2. **Read scope** — `SystemTenantScope` on `audit_logs` resolves it already, including the
+   `NULL` rows Master Admin alone may see (§11); `security_events` carries **no** scope and
+   is filtered here instead, explicitly, against the same resolver, with null-`user_id`
+   rows restricted to Master Admin (BR-AT9).
 3. **The salary filter** (§5.4) — for `HR` and `ASSISTANT_DIRECTOR` only.
+
+The two tables reaching the same place by different routes is deliberate and is the reason
+this service exists: one is enforced by a global scope, the other cannot be, and a caller
+querying either model directly would get one of them wrong.
 
 The order matters: the salary filter runs **last and unconditionally** for those two
 roles, so no query path, export, count, or aggregate can reach a salary row by taking a
@@ -701,9 +728,22 @@ forgot the transaction.
 **Scope**
 
 23. `audit_logs` is tenant-scoped: a reader of company A cannot reach company B's rows.
-24. `SecurityEvent` **declares its scope opt-out** and passes `adr/0005` decision 6's guard
+24. **`SystemTenantScope`, all three of its behaviours, in one test** (§11): a row whose
+    `company_id` is in the reader's scope is visible; a row belonging to another company is
+    not; and a **`company_id IS NULL` row is visible to Master Admin and to nobody else** —
+    asserted against an AHS-employed `HR`, whose read scope is the whole group and who must
+    still not see it. Testing only the first two passes against plain `TenantScope`, and
+    testing only the third passes against `SharedTenantScope`.
+25. A Master Admin's own tenant-scope bypass (`adr/0005` decision 5) writes a `NULL`-company
+    row **that the Master Admin can then read outside `MasterAdminContext`**. The point of
+    the write is accountability; a row nobody can read afterwards satisfies the letter of
+    "audited" and none of its purpose.
+26. `SecurityEvent` **declares its scope opt-out** and passes `adr/0005` decision 6's guard
     test on that basis. Removing the declaration must fail the suite — the distinction
     between "deliberately unscoped" and "someone forgot" is the entire value of that test.
+27. **`AuditLog` declaring `SystemTenantScope` passes the guard test**, and a model
+    declaring no scope at all still fails it. The third class must be **recognised** by that
+    test, not exempted from it (§11).
 
 ## 9. Definition of Done
 
@@ -714,6 +754,9 @@ sensitive-file check.
 Plus, specific to this module:
 
 - `schema.md` updated in the same commit as each migration; no timestamp collisions
+- **`App\Models\Scopes\SystemTenantScope` exists, `AuditLog` declares it, and the
+  `adr/0005` decision 6 guard test recognises it as a third valid declaration** — not as an
+  exemption. `conventions.md` §2 and `adr/0005` decision 6 updated to match (§11)
 - **No direct write to either table outside `AuditLogger` / `SecurityEventLogger`** — grep
   and verify, as with `RoleChecker`
 - **No read of `audit_logs` outside `AuditLogReader`** — the salary filter is only as good
@@ -806,29 +849,88 @@ The seam is already in place. `run()` takes and holds the reason; when the migra
 the write is added there and nothing else about the class changes. `adr/0005` § Still open
 stays accurate until then — the spec now exists, the migration does not.
 
-## 11. Still open
+## 11. Resolved here, and what is still open
 
-Two questions this spec does not answer. Neither blocks approval of the rules above;
-**the first blocks the `audit_logs` migration** and must be answered before it is written.
+### Closed — `audit_logs.company_id` is nullable, and it needs a **third** scope class
 
-**1. What `company_id` does an audit row carry when its subject belongs to no company?**
-⚠ **Blocks the migration** — it decides that column's nullability, and Principle #4 means
-it cannot be softened later.
+**Decided 2026-08-12.** This question was flagged as blocking the migration, because it
+decides the column's nullability and Principle #4 will not let anyone soften it later. It
+is answered.
 
-`audit_logs` is a business table with `TenantScope`, so `company_id` would ordinarily be
-`NOT NULL`. But BR-AT3's polymorphic subject includes `users` rows, and **Master Admin and
-Director accounts belong to no company by design** (`adr/0004` decision 4,
-`auth-rbac.spec.md` §3) — a Master Admin changing another Master Admin's `system_access` is
-an audited action (`auth-rbac.spec.md` §6) with no company to attribute it to.
+**`audit_logs.company_id` is nullable, and `NULL` means "a system-level event".** It is a
+meaningful value, not missing data — the same status `NULL` carries on
+`branches.company_id` (`adr/0002` decision 1), and for the same reason: there is a real
+thing it says.
 
-The candidate answers are a nullable `company_id` where null means group-level and is
-Master-Admin-only to read, or an actor-derived value, or `NOT NULL` with a designated
-parent-company attribution. Each has a different failure mode under BR-AT9, and choosing
-between them is a decision, not a detail — so it is recorded here rather than guessed at.
-Related: `adr/0005` § Still open already asks whether `TenantScope` applies to `users` at
-all, and the two questions should probably be answered together.
+BR-AT3's polymorphic subject includes `users` rows, and **Master Admin and Director
+accounts belong to no company by design** (`adr/0004` decision 4, `auth-rbac.spec.md` §3).
+A Master Admin changing another Master Admin's `system_access` is an audited action
+(`auth-rbac.spec.md` §6) with no company to attribute it to. So is a tenant-scope bypass
+entered from `MasterAdminContext` (`adr/0005` decision 5) — the very write §1 says this
+spec exists to make possible. `NOT NULL` cannot represent either without inventing an
+attribution that is not true.
 
-**2. Does `security_events` record the request IP address and user agent?**
+**Both existing scope classes are wrong for this table, in opposite directions:**
+
+| Scope | On a `NULL` row | Why that is wrong here |
+|---|---|---|
+| `TenantScope` | Hidden from **everyone**, Master Admin included | Master Admin's own actions are the ones that most need to be visible. The scope would hide exactly the rows that exist to hold power to account |
+| `SharedTenantScope` | Visible to **everyone** in any scope | A subsidiary-employed `HR` would read every group-level administrative action. `NULL` means shared on `branches` because a department is a name and a place; here it means *nobody's company*, which is the opposite of *everybody's* |
+
+`SharedTenantScope` failing here is worth stating plainly: **the two tables use `NULL` for
+two different things.** On `branches` it means *available to all companies*. On
+`audit_logs` it means *attributable to no company*. Reusing the class because the column
+is nullable in both places would be reading the type and ignoring the meaning.
+
+**The required behaviour:**
+
+```
+App\Models\Scopes\SystemTenantScope
+
+    company_id IN (:read_scope)
+    OR (company_id IS NULL AND the account has system_access = FULL)
+```
+
+- A row with a `company_id` **inside the account's read scope** behaves exactly as under
+  `TenantScope` — including the salary filter, which is a separate pass and is not affected
+  (BR-AT10, §5.3).
+- A row with `company_id IS NULL` is visible to **Master Admin only**.
+
+**The `FULL` check is deliberately not routed through read scope**, and this is the case
+`adr/0005` decision 5 already anticipates: *"the two come apart the moment read scope
+cannot express something."* A `FULL` account's read scope resolves to every **company**,
+and a `NULL` row belongs to none — so no set of company ids, however complete, can include
+it. The condition has to name `system_access = FULL` directly.
+
+Inside `MasterAdminContext` the scope lifts entirely, as it does for every other model, and
+every row is visible. Outside it, a Master Admin sees all companies **and** the system-level
+rows, by the ordinary mechanism. That remains *scoped*, not bypassed.
+
+**Consequences, all of which land in the same commit as the migration:**
+
+- `adr/0005` decision 6's guard test asserts that every model over a `company_id` column
+  declares `TenantScope`, `SharedTenantScope`, **or a documented opt-out**. `AuditLog`
+  declares none of those, so **it fails the suite until the third class is recognised.**
+  `adr/0005` decision 6 carries an amendment note for this, added in the same commit as
+  this decision.
+- `conventions.md` §2 lists the scope classes and their carve-outs and gains a fourth entry.
+- The third class is for **this table**. `SharedTenantScope` was restricted to `branches`
+  and `departments` "and to nothing else without an ADR" (`adr/0005` decision 3); the same
+  restriction applies here — another table wanting `SystemTenantScope` needs an ADR, not a
+  precedent.
+
+⚠ **`security_events` does not use this class.** Its `company_id` is nullable too, and it
+still carries **no scope at all** (§3): a security event may be written before there is an
+authenticated account, so there is no account whose `system_access` the scope could read.
+Its access control stays a read-time permission check (BR-AT9), and its model keeps the
+declared opt-out. **Two nullable `company_id` columns in one module, two different
+answers** — and neither of them is `SharedTenantScope`, which is exactly why the choice is
+made per table, on the meaning of the value, and declared on the model.
+
+### Still open
+
+**Does `security_events` record the request IP address and user agent?** Does not block the
+migration — the answer adds columns to `security_events` and changes nothing decided above.
 
 Not decided, and deliberately not assumed. `auth-rbac.spec.md` BR-A3 makes a point of
 throttling on the **account** rather than the IP — "an attacker changing IP must not get a
