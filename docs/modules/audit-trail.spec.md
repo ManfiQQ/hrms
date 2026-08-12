@@ -149,6 +149,7 @@ met by `user_id` and by the table being append-only; the exception is recorded i
 | Subject | `user_id`, **nullable** — the account, when there is one |
 | Identifier | The submitted login identifier, normalised per BR-A1, **always present** |
 | Event | `event_type`, a fixed enum — see below |
+| Origin | `ip_address` and `user_agent`, both **nullable** — see §11 |
 | Tenancy | `company_id`, **nullable**, and **no scope class at all** |
 | Mutability | Append-only, as above |
 | Retention | Split by `user_id` nullness — BR-AT11 |
@@ -514,6 +515,9 @@ App\Services\Audit\SecurityEventLogger
   placeholder would silently convert a 90-day row into a permanent one.
 - `company_id` is filled where resolvable and left null otherwise. It is never used to
   decide access.
+- `ip_address` and `user_agent` are taken from the request and stored **verbatim, unparsed**
+  (§11). Null outside an HTTP context. **Neither is ever read back into a decision** — not
+  by the throttle, not by a policy, not by a lockout check.
 
 ⚠ **The failure path must be tested with the table actually broken**, not with a mocked
 exception on the happy path. The rule this implements is "a database problem must not lock
@@ -693,6 +697,11 @@ forgot the transaction.
     administrator out of the repair.
 12. **Throttling fires correctly while `security_events` is unwritable** — the BR-A3 tiers
     are unaffected, proving the counter does not read this table.
+12a. **`ip_address` and `user_agent` are recorded on a failed login and stored verbatim**,
+    including a hostile or absent user agent, which must persist rather than be rejected or
+    normalised (§11). Assert also that **changing the IP between attempts does not reset the
+    throttle** (BR-A3) — the columns are recorded and never consulted, and that is the whole
+    of their contract.
 
 **Reading and the salary filter — the highest-risk area**
 
@@ -849,7 +858,7 @@ The seam is already in place. `run()` takes and holds the reason; when the migra
 the write is added there and nothing else about the class changes. `adr/0005` § Still open
 stays accurate until then — the spec now exists, the migration does not.
 
-## 11. Resolved here, and what is still open
+## 11. Resolved After Drafting
 
 ### Closed — `audit_logs.company_id` is nullable, and it needs a **third** scope class
 
@@ -927,16 +936,52 @@ declared opt-out. **Two nullable `company_id` columns in one module, two differe
 answers** — and neither of them is `SharedTenantScope`, which is exactly why the choice is
 made per table, on the meaning of the value, and declared on the model.
 
+### Closed — `security_events` records both `ip_address` and `user_agent`
+
+**Decided 2026-08-12.** Both columns exist from the creating migration, both nullable.
+
+**The reason is BR-AT11, which is already decided and depends on these columns.** Attempts
+against an account that exists are kept **forever**, and the justification given for keeping
+them is that **an attack pattern is evidence**. A pattern with no origin is barely a pattern:
+*"forty-one failed attempts against this account over three nights"* answers almost nothing
+on its own — one person mistyping a new password looks the same as a distributed attempt —
+while the same rows with an origin attached separate those two cases immediately.
+
+Deciding to keep the rows forever and then storing nothing worth keeping would have been the
+worse of both outcomes: the retention cost paid, the forensic value not received. And these
+columns **cannot be retrofitted onto events that have already passed** — an `ALTER` adds the
+column, never the data, so every attempt recorded before it lands is permanently
+originless.
+
+**`user_agent` is included because it is cheap and it separates a person from a script**, in
+the ordinary case with no analysis required: a browser string against a `curl` or an empty
+one. That is usually the first question asked of a run of failures.
+
+> ⚠ **`user_agent` is an attacker-controlled string. It is a hint, never evidence.**
+>
+> Anyone can send any value, so a *legitimate-looking* agent proves nothing whatever. Only
+> the awkward direction carries information — a client that declares itself a script
+> probably is one. This is recorded here because the column reads like a fact and is not
+> one, and the mistake is made when someone reaches for it months from now to support a
+> conclusion.
+>
+> Two rules follow, and they are structural rather than advisory: **`user_agent` is never an
+> input to an authorization, throttling, or lockout decision**, and it is never rendered as
+> confirmation of who someone was. `ip_address` is weak in the same way — trivially changed,
+> shared behind NAT, and `auth-rbac.spec.md` BR-A3 deliberately throttles on the **account**
+> and not the IP for exactly that reason. Neither column changes any rule in this spec;
+> both are recorded so a question asked later has something to look at.
+
+Both are **nullable**, because a console or queue context has neither and a placeholder
+would be a fabricated fact — the same reasoning that keeps `email` nullable rather than
+seeded with a dummy address (`auth-rbac.spec.md` §3).
+
+They fall under BR-AT11 unchanged: on a row with a null `user_id` they expire with the row
+at 90 days. That is the correct interaction and not an accident of it — the rows holding an
+origin for **an account that does not exist** are exactly the ones with no subject to keep
+it for.
+
 ### Still open
 
-**Does `security_events` record the request IP address and user agent?** Does not block the
-migration — the answer adds columns to `security_events` and changes nothing decided above.
-
-Not decided, and deliberately not assumed. `auth-rbac.spec.md` BR-A3 makes a point of
-throttling on the **account** rather than the IP — "an attacker changing IP must not get a
-fresh allowance" — so nothing in the throttle needs it. But *"a hundred overnight failures
-against the `ACCOUNT` holder's login"* (`schema.md` § `policy_configurations`) is a great
-deal more actionable with an origin attached than without, and these columns cannot be
-retrofitted onto events that have already passed. Personal-data retention cuts the other
-way, and interacts with BR-AT11's 90-day rule for exactly the unattributed rows an IP would
-matter most on.
+**Nothing.** Both questions this section opened are answered above. The `audit_logs`
+migration is unblocked.

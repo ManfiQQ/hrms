@@ -8,7 +8,7 @@
 
 ## Status
 
-**Partly implemented.** As of **2026-08-11** the following tables are **migrated**:
+**Partly implemented.** As of **2026-08-12** the following tables are **migrated**:
 
 | Table | Migration |
 |---|---|
@@ -20,12 +20,21 @@
 | `employees` | `2026_08_11_100400_create_employees_table.php` |
 | `employee_roles` | `2026_08_11_100500_create_employee_roles_table.php` |
 | `policy_configurations` | `2026_08_11_100600_create_policy_configurations_table.php` |
+| `audit_logs` | `2026_08_12_100000_create_audit_logs_table.php` |
+| `security_events` | `2026_08_12_100100_create_security_events_table.php` |
 
 **Still draft, with no migration behind them:** the Employee Master satellite tables
 (`employee_family_members`, `employee_education_history`, `employee_employment_history`,
 `employee_documents`, `employee_status_history`), `job_functions`,
-`employee_job_functions`, `sequences`, `approval_requests`, `audit_logs`,
-`security_events`, and everything under Phase 2.
+`employee_job_functions`, `sequences`, `approval_requests`, and everything under Phase 2.
+
+⚠ **Both audit tables exist without models, and that is deliberate.**
+`audit-trail.spec.md` requires `AuditLog` to declare
+`App\Models\Scopes\SystemTenantScope` — a class that does not exist — and `adr/0005`
+decision 6's guard test must be taught to recognise it before a model declaring it can
+pass. `SecurityEvent` must declare the documented scope opt-out under that same test. The
+tables are created first so each migration is reviewable on its own; **the models, the
+scope class, and the guard-test change land together, or the suite fails.**
 
 **The `users.employee_id` foreign key is added by the `employees` migration**, in the same
 file that creates the table it references — not by a separate migration. See
@@ -614,7 +623,8 @@ equality; `user_id`.
 
 ### `security_events`
 `id`, `user_id` (FK → users, **nullable**), `event_type` (enum), `identifier` (string, the
-normalised login identifier), `company_id` (FK, **nullable**), `created_at`
+normalised login identifier), `ip_address` (string, nullable), `user_agent` (text,
+nullable), `company_id` (FK, **nullable**), `created_at`
 
 **Who tried to get in** — login success and failure, lockout, unlock, password change,
 activation redemption, session termination. **Not a variant of an `audit_logs` row:** a
@@ -674,6 +684,28 @@ here is deleted to make anything faster; the line is between a record and noise.
 against a number that never existed has no subject and therefore no statutory retention
 period, because there is nobody it is about. Setting `user_id` defensively to a placeholder
 would silently convert a 90-day row into a permanent one.
+
+> **`ip_address` and `user_agent` are recorded, and neither is evidence.**
+>
+> They exist because **BR-AT11 already decided to keep attempts against real accounts
+> forever, on the ground that an attack pattern is evidence** — and a pattern with no origin
+> is barely a pattern. Storing the rows forever while storing nothing worth keeping would
+> pay the retention cost and receive none of the value, and these columns **cannot be
+> retrofitted**: an `ALTER` adds the column, never the data for events already past.
+> `user_agent` is included because it is cheap and separates a person from a script in the
+> ordinary case.
+>
+> ⚠ **`user_agent` is an attacker-controlled string — a hint, never proof.** Anyone can send
+> any value, so a legitimate-looking agent proves nothing; only a client declaring itself a
+> script carries information. `ip_address` is weak in the same way — trivially changed and
+> shared behind NAT, which is why `auth-rbac.spec.md` BR-A3 throttles on the **account** and
+> not the IP.
+>
+> **Neither column is ever an input to an authorization, throttling, or lockout decision**,
+> and neither is rendered as confirmation of who someone was. Both nullable — a console
+> context has neither, and a placeholder would be a fabricated fact. Both expire with their
+> row under BR-AT11's 90-day rule when `user_id` is null. Full reasoning:
+> `audit-trail.spec.md` §11.
 
 **The write is non-blocking and lives outside any transaction** (BR-AT8). A failure is
 written to the application file log and the request continues — **authentication must not
