@@ -430,17 +430,19 @@ ordinary mechanism and simply resolves to every company, which is why a row belo
 soft-deleted company is invisible to it outside the context and visible inside
 (`adr/0005` decision 5).
 
-> **⚠ Half implemented — the audit write is still deferred.** `audit_logs` has no migration,
-> so the reason passed to `run()` is captured and goes nowhere. **That table was deliberately
-> not created by the tenant-scope work**: it accepts writes from every module — auth,
-> approvals, attendance corrections, Director overrides, role grants — so its column shape
-> was not a decision for a scoping branch to make. Adding the write is a one-line change to
-> `run()` once the table exists. Until then, "explicit, never ambient" holds and "audited"
-> does not.
+> **✅ Complete — 2026-08-12.** This note previously recorded a deliberate half: `audit_logs`
+> had no migration, so the reason passed to `run()` was captured and went nowhere.
 >
-> **Updated 2026-08-12 — the missing spec now exists.** `docs/modules/audit-trail.spec.md`
-> settles the column shape and states this write as a Definition-of-Done item. What remains
-> is the migration; the deferral is unchanged until it lands.
+> `docs/modules/audit-trail.spec.md` settled the column shape, the migration landed, and
+> `run()` now writes the bypass — actor, reason, and a `tenant_scope: scoped → bypassed` row
+> against the acting account. **"Explicit, never ambient" and "audited" both hold**, so
+> `adr/0005` decision 5 is satisfied in full.
+>
+> **One consequence for callers: `run()` now requires an authenticated account.** A bypass
+> nobody can be attributed to is the ambient bypass that decision rejects, and `audit_logs`
+> has no nullable subject to record one against. Console, queue and seeder contexts are
+> unaffected — with no authenticated user the tenant scopes already run unscoped, so there is
+> nothing there for the context to lift.
 
 ### 5.4 Read scope resolution
 

@@ -1,9 +1,9 @@
 # ADR 0005 — Tenant Scope Implementation
 
-- **Status:** **Accepted** — 2026-08-11. Implemented in PR #10, with decision 5's audit
-  write knowingly deferred — see the note there. **Decision 6 amended 2026-08-12** — a
-  third scope class, `SystemTenantScope`, which the guard test must recognise; see the
-  amendment note there.
+- **Status:** **Accepted** — 2026-08-11. **Fully implemented 2026-08-12**: decision 5's
+  audit write, knowingly deferred in PR #10, now lands — see the note there.
+  **Decision 6 amended 2026-08-12** — a third scope class, `SystemTenantScope`, which the
+  guard test must recognise; see the amendment note there.
 - **Date:** 2026-08-11
 - **Implements:** `adr/0002` decision 3 (shared org structure query scope), `adr/0003`
   decision 7 (event tables release the scope), `adr/0004` decision 1 (read scope derives
@@ -149,22 +149,27 @@ to a soft-deleted company fall outside the resolved set and disappear for a `FUL
 and reappear only inside the context. **That difference is what "explicit, not ambient"
 means in practice**, and it is testable today.
 
-> **⚠ Implemented in half — the audit write is deferred, deliberately.**
+> **✅ Complete since 2026-08-12. This note previously recorded a deliberate half.**
 >
-> `MasterAdminContext` exists and must be entered on purpose; the scope lifts only inside it
-> and restores on exit, and a bypass without a stated reason is refused. **The write to
-> `audit_logs` does not happen yet**, because that table has no migration.
+> For the record of how it went: `audit_logs` was **deliberately not created by the
+> tenant-scope work**. It had no spec of its own, and it accepts writes from **every** module
+> — auth, approvals, attendance corrections, Director overrides, role grants — so its column
+> shape was not that branch's decision to make. Settling it inside a tenant-scope PR would
+> have been exactly the code-before-spec pattern Principle #1 exists to prevent. The seam was
+> left in place instead: `run()` took and held the reason, and went nowhere with it.
 >
-> **`audit_logs` is deliberately not created here.** It has no spec of its own, and it
-> accepts writes from **every** module — auth, approvals, attendance corrections, Director
-> overrides, role grants. Its column shape is therefore not this branch's decision to make,
-> and settling it inside a tenant-scope PR would be exactly the code-before-spec pattern
-> Principle #1 exists to prevent.
+> `docs/modules/audit-trail.spec.md` settled the shape, the migration landed, and
+> `MasterAdminContext` now **writes the bypass to `audit_logs`** — actor, reason, and a
+> `tenant_scope: scoped → bypassed` row against the acting account. **Both halves of this
+> decision now hold:** "explicit, never ambient" *and* "audited".
 >
-> The seam is in place: `run()` already takes and holds the reason, so when `audit_logs`
-> lands, the write is added there and nothing else about the class changes. Until then this
-> decision is **half satisfied, and knowingly so** — "explicit, never ambient" holds;
-> "audited" does not.
+> Two consequences worth knowing, both decided by the audit requirement rather than added to
+> it. The write happens **before** the callback and in its own transaction, because the
+> bypass happened whether or not the work inside it succeeded — and the failed one is the
+> more interesting to review. And **an authenticated account is now required** to enter the
+> context: a bypass nobody can be attributed to is the ambient bypass this decision rejects,
+> and `audit_logs` has no nullable subject to record one against. Console contexts lose
+> nothing, since the scopes already run unscoped with no user.
 
 ### 6. An architecture test guards the choice
 
@@ -285,11 +290,10 @@ entire value of the test.
 
 ## Still open
 
-- **The audit half of decision 5**, pending an `audit_logs` migration. **The spec that had to
-  precede it now exists** — `docs/modules/audit-trail.spec.md`, 2026-08-12 — and settles the
-  column shape, the transaction rule, and this write as a Definition-of-Done item. Only the
-  migration is outstanding. Tracked in decision 5 above rather than only here, so it is
-  visible where the rule is stated.
+- ~~**The audit half of decision 5.**~~ **CLOSED 2026-08-12.** The spec landed, the migration
+  landed, and `MasterAdminContext` writes the bypass. See the note on decision 5 — recorded
+  as closed rather than deleted, so a reader who remembers the gap does not go looking for a
+  decision that has already been made.
 - **Unauthenticated and console contexts run unscoped.** Seeders, migrations, queue workers
   and artisan commands have no user to resolve a scope from, and throwing there would break
   every command. HTTP is protected by route middleware, not by this scope. Recorded because
