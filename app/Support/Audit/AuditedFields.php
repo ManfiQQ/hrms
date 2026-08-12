@@ -34,6 +34,13 @@ class AuditedFields
         // AUDITS constant. The architecture test fails in both directions: an entry here
         // with no Action behind it, and an Action auditing a field absent from this list.
         \App\Models\Employee::class => ['staff_status', 'employee_no'],
+
+        // ⚠ Account operations, and note what is NOT here: `password` and
+        // `activation_token`. audit_logs is readable by HR and ASSISTANT_DIRECTOR within
+        // their read scope (BR-AT9), so auditing a credential's VALUE would hand it to every
+        // reader of that screen. The derived facts below record that the operation happened,
+        // which is the accountable part; the secret is not.
+        \App\Models\User::class => ['phone_no', 'password_changed_at', 'locked_until', 'activation_expires_at'],
     ];
 
     /**

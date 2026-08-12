@@ -60,6 +60,15 @@ Route::middleware(['auth', EnsureAccountIsActive::class, EnsurePasswordIsChanged
     Route::get('/accounts/{user}/activation.png', ActivationImageController::class)
         ->name('activation.image');
 
+    /*
+     * The account management screen (§7) — HR and Master Admin only, enforced by
+     * UserPolicy::manageAccount inside the Livewire component rather than by route
+     * middleware, because every Livewire action is its own request and a mount-time check
+     * would authorise once for the life of the page.
+     */
+    Route::get('/accounts/{user}', fn (App\Models\User $user) => view('accounts.manage', ['user' => $user]))
+        ->name('accounts.manage');
+
     Route::get('/password/change', [PasswordChangeController::class, 'show'])->name('password.change');
     Route::post('/password/change', [PasswordChangeController::class, 'update'])->name('password.change.update');
 

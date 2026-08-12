@@ -6,8 +6,10 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@yield('title', 'AHS HR')</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+    @livewireStyles
 </head>
 <body class="h-full bg-slate-100 text-slate-900 antialiased">
     @yield('body')
+    @livewireScripts
 </body>
 </html>
