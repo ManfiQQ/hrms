@@ -33,6 +33,12 @@ class User extends Authenticatable
             'activation_downloaded_at' => 'datetime',
             'activation_used_at' => 'datetime',
             'must_change_password' => 'boolean',
+
+            // BR-A3's throttle state. locked_until null does NOT mean "not locked" — it
+            // means no TIMED lock is in force; the permanent lock is the counter having
+            // reached the fourth tier. Both are read through LoginThrottle, never by hand.
+            'locked_until' => 'datetime',
+            'failed_login_attempts' => 'integer',
         ];
     }
 

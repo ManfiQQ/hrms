@@ -34,7 +34,15 @@
         <env name="DB_URL" value=""/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
-        <env name="SESSION_DRIVER" value="array"/>
+        <!--
+            ⚠ database, not Laravel's default "array" for tests.
+
+            BR-A5 is not a performance choice: database sessions are what make BR-A15's
+            immediate session kill possible (DELETE FROM sessions WHERE user_id = ?). An
+            array driver would leave that rule, the two-hour inactivity window, and the
+            prune command all unexercised while the suite stayed green.
+        -->
+        <env name="SESSION_DRIVER" value="database"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>

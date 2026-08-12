@@ -81,6 +81,31 @@ records only what a migration author needs beyond the column list.
 | `activation_expires_at` | timestamp, nullable |
 | `activation_downloaded_at` | timestamp, nullable — **null means HR has not fetched the image** |
 | `activation_used_at` | timestamp, nullable — **null means not yet redeemed** |
+| `failed_login_attempts` | unsigned integer, **NOT NULL, default 0** — the BR-A3 counter. Added 2026-08-12 |
+| `locked_until` | timestamp, nullable — the current tier lock. **Null does not mean unlocked**, see below. Added 2026-08-12 |
+
+> **⚠ The throttle columns were missing — added 2026-08-12.** This list specified BR-A3's
+> four tiers and a counter that resets on success, and gave them **nowhere to live**. The
+> rule was unimplementable as written.
+>
+> **They are database columns, not cache entries, and that is the whole point.** BR-A3's
+> fourth tier is a **permanent** lock that only `HR` or Master Admin may lift. A counter in
+> the cache would be erased by `php artisan cache:clear` — a routine deploy step — which
+> would **silently unlock every permanently locked account in the group**, leave no trace
+> that it had happened, and look exactly like nothing happening. Throttling is what carries
+> the security BR-A2's six-character minimum does not, so the state it depends on has to be
+> as durable as the account itself.
+>
+> **There is no separate `locked_permanently` flag, and none may be added.** A permanent
+> lock is `failed_login_attempts` having reached the fourth tier's threshold — one fact,
+> read one way. A boolean beside the counter would be a second way to say "locked", and
+> every unlock path would then have to clear both; the path that clears only one is a
+> silent hole. Same reasoning as `is_enabled` on `employee_roles` (`adr/0003` decision 1)
+> and `is_master_admin` on this table.
+>
+> **`locked_until` null therefore does not mean "not locked".** It means no *timed* lock is
+> in force. The permanent check is read first, and both are read through
+> `LoginThrottle`, never by hand.
 
 **`email` is nullable, and that follows directly from BR-A1.** The login identifier is
 `employees.phone_no`; **email authenticates nothing in this system**. `employees.email` is
@@ -396,6 +421,26 @@ App\Http\Middleware\EnsureAccountIsActive
 - **Frozen** (terminal status, within the window) → reads of own data permitted, all
   writes rejected.
 - **Permanently locked** (BR-A3) → logged out.
+
+> **⚠ Expiry is specified but not yet implementable — 2026-08-12.** Frozen and permanently
+> locked are built; **expired is not**, and the middleware says so in a comment rather than
+> approximating it.
+>
+> BR-A17 counts ten days from the **`effective_date`** — the last working day, not the date
+> HR typed the change. That date lives on `employee_status_history`, which **has no
+> migration**: `employees` carries `staff_status` and no date for when it took effect. There
+> is nothing to count from.
+>
+> **The missing column is not this module's to add.** `employee_status_history` belongs to
+> Employee Master, and designing its shape from an Auth branch is the code-before-spec
+> pattern Principle #1 exists to prevent — the same reason `audit_logs` was deliberately not
+> created by the tenant-scope PR (`adr/0005` decision 5).
+>
+> **What holds today and what does not.** A terminal status freezes the account immediately
+> and the freeze never lifts, so access is *narrower* than the rule requires, not wider —
+> the failure is safe in direction. What is missing is the account ever becoming fully
+> inaccessible, and the BR-A19 countdown that depends on the same date. Both land with
+> Employee Master. §8 test 24 cannot pass until then.
 
 Freeze is enforced **here**, not in each policy. A policy-by-policy freeze check is one
 that gets forgotten in the twentieth policy.
