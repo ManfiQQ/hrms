@@ -61,6 +61,13 @@ class PolicyConfigurationSeeder extends Seeder
             // can be forwarded: anyone holding it before the employee scans it can activate
             // the account. HR regenerates freely if the employee misses it.
             'auth.activation.validity_hours' => '48',
+
+            // BR-A17 — the post-employment access window, counted from the LAST WORKING DAY
+            // (employee_status_history.effective_date), never from the day HR typed the
+            // change. Ten days is long enough for a departing employee to retrieve their own
+            // documents and short enough that access does not drift on indefinitely. All
+            // data remains in the system afterwards; only the account closes.
+            'auth.account.expiry_days' => '10',
         ];
     }
 

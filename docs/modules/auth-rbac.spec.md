@@ -353,6 +353,13 @@ freezing an account must emit the event.
 **BR-A17 — Expiry 10 days after `effective_date`** — the last working day, not the date HR
 typed the change. All data remains in the system.
 
+The number is a `policy_configurations` lookup (`auth.account.expiry_days`), never a
+literal, and `AccountExpiry` **throws rather than defaulting** when it is missing — a
+compiled-in fallback would be a second source for a number that must live in configuration.
+The `effective_date` comes from the most recent terminal row on `employee_status_history`,
+read through the employee relationship so a row frozen under a former employer is still
+found. Implemented 2026-08-12; see §5.2.
+
 **BR-A18 — No reactivation after a terminal status, by anyone, including Master Admin.**
 A rejoining employee gets a new employee record, a new `employee_no`, and a new account.
 
@@ -437,25 +444,44 @@ App\Http\Middleware\EnsureAccountIsActive
   writes rejected.
 - **Permanently locked** (BR-A3) → logged out.
 
-> **⚠ Expiry is specified but not yet implementable — 2026-08-12.** Frozen and permanently
-> locked are built; **expired is not**, and the middleware says so in a comment rather than
-> approximating it.
+> **✅ Expiry implemented — 2026-08-12.** All three states are now enforced. This note
+> previously recorded expiry as unimplementable, because `employee_status_history` had no
+> migration and there was nothing to count from. That table now exists, and
+> `App\Services\Auth\AccountExpiry` owns the arithmetic.
 >
-> BR-A17 counts ten days from the **`effective_date`** — the last working day, not the date
-> HR typed the change. That date lives on `employee_status_history`, which **has no
-> migration**: `employees` carries `staff_status` and no date for when it took effect. There
-> is nothing to count from.
+> **⚠ The order of the three checks is part of the rule.** Expiry is asked about **before**
+> the freeze, because an expired account is also frozen — it holds a terminal status either
+> way — so a freeze check reached first would grant it read access forever and the countdown
+> would never end anything.
 >
-> **The missing column is not this module's to add.** `employee_status_history` belongs to
-> Employee Master, and designing its shape from an Auth branch is the code-before-spec
-> pattern Principle #1 exists to prevent — the same reason `audit_logs` was deliberately not
-> created by the tenant-scope PR (`adr/0005` decision 5).
+> **The window is inclusive of its last day.** A last working day of the 1st, with a ten-day
+> window, means the account works through the 11th and is gone on the 12th — ten whole days
+> of access after the employment ended, which is what "ten days after" means to the person
+> living it. §8 test 24 asserts day 9, the last day, and day 11, because an off-by-one here
+> either cuts somebody off while they are still entitled to fetch their own confirmation
+> letter, or leaves an ex-employee reading records a day too long. Neither raises anything.
 >
-> **What holds today and what does not.** A terminal status freezes the account immediately
-> and the freeze never lifts, so access is *narrower* than the rule requires, not wider —
-> the failure is safe in direction. What is missing is the account ever becoming fully
-> inaccessible, and the BR-A19 countdown that depends on the same date. Both land with
-> Employee Master. §8 test 24 cannot pass until then.
+> **The most recent terminal row wins.** The ledger is append-only, so a status set in error
+> and corrected is a *new row*; counting from the first would expire an account on a status
+> that has been superseded.
+>
+> **The countdown survives a company transfer.** The terminal row is frozen under the former
+> employer, so it is read through `Employee::statusHistory()`, which releases the tenant
+> scope (`conventions.md` §2's second carve-out). A scoped read would miss the row entirely
+> and report the account as never expiring — wider than the rule, with nothing to notice.
+>
+> ⚠ **A terminal status with no ledger row behind it never expires** — there is nothing to
+> count from, so the account stays frozen and readable instead. That is *wider* than BR-A17
+> allows, and it is a real dependency rather than an oversight:
+> `employee-master.spec.md` §5.3 makes the status-change service write the ledger row in the
+> same transaction as the change, so the two cannot come apart. Until that Action exists, no
+> terminal status can be set through the application at all. Asserted by test so it is a
+> known state rather than a surprise.
+>
+> **Still not built here, deliberately:** the freeze *action* itself (BR-A15 — revoking
+> roles, killing sessions on `TERMINATED`, emitting the BR-A16 event) belongs to that same
+> status-change Action, and **BR-A19's five-dashboard countdown is UI work**. `AccountExpiry`
+> exposes `expiresAfter()` so that screen reads the date rather than recomputing the rule.
 
 Freeze is enforced **here**, not in each policy. A policy-by-policy freeze check is one
 that gets forgotten in the twentieth policy.
@@ -765,7 +791,12 @@ its failures are silent.
     that session is read-only.
 23. Freezing emits the Approval Engine event (BR-A16).
 24. The account is inaccessible after the window, counted from `effective_date` — **not**
-    from the date the status was set.
+    from the date the status was set. ⚠ **Asserted on both sides of the boundary and on the
+    edge itself**: day 9 and the window's last day still work, day 11 does not. An
+    off-by-one cuts somebody off a day early or lets an ex-employee read a day too long, and
+    neither raises anything. Also asserted: the most recent terminal row wins, a row frozen
+    under a former employer is still found, and a terminal status with no ledger row behind
+    it does not expire (a known dependency on `employee-master.spec.md` §5.3).
 25. No reactivation path exists, including for Master Admin.
 
 **Provisioning**
