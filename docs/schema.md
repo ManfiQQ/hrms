@@ -614,7 +614,8 @@ equality; `user_id`.
 
 ### `security_events`
 `id`, `user_id` (FK → users, **nullable**), `event_type` (enum), `identifier` (string, the
-normalised login identifier), `company_id` (FK, **nullable**), `created_at`
+normalised login identifier), `ip_address` (string, nullable), `user_agent` (text,
+nullable), `company_id` (FK, **nullable**), `created_at`
 
 **Who tried to get in** — login success and failure, lockout, unlock, password change,
 activation redemption, session termination. **Not a variant of an `audit_logs` row:** a
@@ -674,6 +675,28 @@ here is deleted to make anything faster; the line is between a record and noise.
 against a number that never existed has no subject and therefore no statutory retention
 period, because there is nobody it is about. Setting `user_id` defensively to a placeholder
 would silently convert a 90-day row into a permanent one.
+
+> **`ip_address` and `user_agent` are recorded, and neither is evidence.**
+>
+> They exist because **BR-AT11 already decided to keep attempts against real accounts
+> forever, on the ground that an attack pattern is evidence** — and a pattern with no origin
+> is barely a pattern. Storing the rows forever while storing nothing worth keeping would
+> pay the retention cost and receive none of the value, and these columns **cannot be
+> retrofitted**: an `ALTER` adds the column, never the data for events already past.
+> `user_agent` is included because it is cheap and separates a person from a script in the
+> ordinary case.
+>
+> ⚠ **`user_agent` is an attacker-controlled string — a hint, never proof.** Anyone can send
+> any value, so a legitimate-looking agent proves nothing; only a client declaring itself a
+> script carries information. `ip_address` is weak in the same way — trivially changed and
+> shared behind NAT, which is why `auth-rbac.spec.md` BR-A3 throttles on the **account** and
+> not the IP.
+>
+> **Neither column is ever an input to an authorization, throttling, or lockout decision**,
+> and neither is rendered as confirmation of who someone was. Both nullable — a console
+> context has neither, and a placeholder would be a fabricated fact. Both expire with their
+> row under BR-AT11's 90-day rule when `user_id` is null. Full reasoning:
+> `audit-trail.spec.md` §11.
 
 **The write is non-blocking and lives outside any transaction** (BR-AT8). A failure is
 written to the application file log and the request continues — **authentication must not
