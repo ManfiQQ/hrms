@@ -482,8 +482,23 @@ Hard deletion is not exposed in the UI at all.
 Any change to `staff_status`, `position_id`, `department_id`, or `level` writes a new
 `employee_status_history` row inside the same transaction as the update — the caller
 cannot forget to write it, because the service does it, not the controller. Rows are
-never edited or deleted; a correction is a new row. Also mirrored to `audit_logs`
-(Phase 0).
+never edited or deleted; a correction is a new row.
+
+**It is not mirrored to `audit_logs`, and a service that writes both is wrong.**
+
+> **⚠ Corrected 2026-08-12.** This paragraph previously ended *"Also mirrored to
+> `audit_logs` (Phase 0)."* That contradicted `adr/0003` decision 8, which rejects
+> duplication on the ground that **two records of one fact will eventually disagree** — the
+> same reasoning that keeps `CORE_ROLE` out of the `change_type` set below, and that
+> rejected `secondary_company_id`, `is_enabled`, `primary_role` and `hr_scope`. A mirror is
+> that mistake under another name, and here the stale copy would sit **inside the record
+> whose entire value is being trustworthy**.
+>
+> **The audit report reads both tables and merges them on display**
+> (`audit-trail.spec.md` BR-AT5, §5.5) — the same read-side merge §7 already performs for
+> `employee_status_history` and `employee_roles`, carrying the same warning: the merge
+> exists **so the data need not be stored twice**, and must not tempt a writer into
+> recording the event in both places to make a query simpler.
 
 **Those four are the complete `change_type` set. `CORE_ROLE` is deliberately not among
 them** (`adr/0003` decision 8). Role grants and revocations are **not** written here:

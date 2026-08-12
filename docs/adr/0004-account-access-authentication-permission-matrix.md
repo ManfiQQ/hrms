@@ -1,6 +1,7 @@
 # ADR 0004 — Account Access, Authentication, and the Permission Matrix
 
-- **Status:** Accepted
+- **Status:** Accepted — **decision 6 amended 2026-08-12** (failed attempts are written to
+  `security_events`, not `audit_logs`; see the amendment note there)
 - **Date:** 2026-08-11
 - **Extends:** `adr/0001` decision 5 (account provisioning) and decision 7 (Director
   authority is off-system); `adr/0003` decision 5 (salary visibility is the `ACCOUNT`
@@ -265,8 +266,24 @@ controlling access are different jobs, and this separation is deliberate.
 
 - The counter **resets on successful login**. Without this, three typos spread over months
   would eventually lock someone out.
-- **Failed attempts are written to `audit_logs`.** A hundred failures against the `ACCOUNT`
-  holder's login overnight is something the group needs to be able to see.
+- **Failed attempts are written to `security_events`.** A hundred failures against the
+  `ACCOUNT` holder's login overnight is something the group needs to be able to see.
+
+> **⚠ Amended 2026-08-12 — this said `audit_logs`.** The requirement is unchanged: failed
+> attempts are recorded, and a hundred overnight failures must be visible. Only the
+> destination moved.
+>
+> `docs/modules/audit-trail.spec.md` decision 1 splits the trail in two — `audit_logs` for
+> changes to data, `security_events` for authentication events — because a failed login has
+> **no `old_value` and never will**, and one table holding both would need a rule about
+> which columns are meaningful for which event type that nothing would ever write down.
+>
+> **Two consequences for this decision.** The `security_events` write is **non-blocking**
+> (that spec's BR-AT8): authentication must not depend on a table write, or one database
+> fault locks everyone out, Master Admin included. So the **throttle counter above is not
+> derived from the log** — it is the Auth module's own, keyed on the account, and the four
+> tiers must hold with the table unwritable. Every document stating the old destination was
+> corrected in the same commit as this amendment.
 
 **Session: expires after 2 hours of inactivity** — inactivity, not time since login. Someone
 working all day is never interrupted; what expires is a session left open. This matters most
