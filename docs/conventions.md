@@ -314,6 +314,42 @@ Pest. **Mandatory** for anything touching money or statutory entitlement:
 
 Optional elsewhere, but encouraged for anything with non-trivial branching logic.
 
+### Every guard test must be watched failing before it is trusted
+
+A **guard test** is one that protects a rule rather than exercising a feature: an
+architecture test, a registry check, a "this column must not exist" assertion, a tripwire
+that fires when a blocker is lifted.
+
+**The rule: break the thing it guards, watch the test fail, then restore.** Record in the
+commit message or the PR that you did, and which test failed. A guard that has never been
+observed failing has not been shown to guard anything.
+
+⚠ **This is written down because it happened three times in one session, and every time the
+suite was green.**
+
+| The guard | Why it was empty |
+|---|---|
+| "every registry entry has a non-empty field list" | Looped over an **empty array**. Zero iterations, zero assertions, permanent pass |
+| "the seeder never calls `env()`" | Matched the seeder's own **docblock**, which explains why `env()` is wrong — using the string it searches for |
+| "the config declares no fallback value" | Matched a **comment** containing `env('MASTER_ADMIN_PASSWORD')`, and passed against a real fallback on the line below it |
+
+None of the three was a wrong assertion. Each was a *correct* assertion pointed at nothing:
+an empty set, or prose that happened to contain the pattern. **A guard test that checks
+nothing and a guard test that passes look identical from the outside**, which is the whole
+problem — there is no failure to notice, and the green tick is indistinguishable either way.
+
+Two habits follow, both cheap:
+
+- **A guard over a collection must assert the collection is not empty**, or must fail
+  explicitly while it is — as `AuditedFields` and `SalaryFields` do, each declaring *why* it
+  is empty and *until when*.
+- **A guard that reads source text must strip comments first.** Documentation of a rule
+  routinely contains the string the rule forbids; that is what good documentation looks
+  like, and it is exactly what defeats a naive search.
+
+The cost is one minute per guard. The alternative is a test suite whose most important
+assertions are the ones least likely to be true.
+
 ---
 
 ## 10. Required Validation Before Calling a Module "Done"
