@@ -71,9 +71,16 @@ change to `run()` once the migration lands.
 **Out of scope — explicitly**
 
 - **What each module audits.** This module provides the mechanism and the guarantees; a
-  module's own spec states which of its actions produce an audit batch. Same division as
-  `auth-rbac.spec.md` BR-A8: mechanism here, catalogue there. There is no central list of
-  auditable actions in this document and none may be added to it.
+  module's own spec states which of its actions produce an audit batch, and **why those
+  fields**. Same division as `auth-rbac.spec.md` BR-A8: mechanism here, catalogue there.
+  There is no prose catalogue of auditable actions in this document and none may be added.
+
+  **One qualification, added 2026-08-12 with BR-AT13.** The *machine-readable* list of
+  audited fields is a class here — `App\Support\Audit\AuditedFields` — because the
+  architecture test has to read it from somewhere, and a list in markdown plus a copy in
+  code would be two records of one fact. The registry holds the pairs; the **reasoning
+  stays in the owning module's spec**, which references the registry instead of restating
+  field names. Mechanism here, catalogue there, still.
 - **`employee_status_history`** — Employee Master's table, Employee Master's rules. This
   module reads it for the report (§5.5) and **never writes to it** (BR-AT5).
 - **`employee_roles`** — role history is the pivot's own shape (`adr/0003` decision 8).
@@ -368,9 +375,104 @@ That is not a degraded system; it is a locked room with the key inside.
    record is the failure mode this rule trades *for*; it is acceptable only if it is
    visible somewhere.
 
+**⚠ The caller must not wrap this write in a transaction, and the logger cannot enforce
+that.** It writes on the ordinary connection, so a write made inside a caller's transaction
+would roll back with it — which is exactly what BR-AT8 is trying to avoid. Nothing in the
+authentication path opens one today, and a second database connection was not worth its
+cost to make the rule structural rather than stated. Recorded as a limitation rather than
+claimed as a guarantee.
+
 Note the asymmetry with BR-AT7 is deliberate and directional. Blocking a **data change**
 on its audit row costs one rejected save. Blocking a **login** on its audit row costs the
 whole system.
+
+> **Numbering note.** BR-AT12 and BR-AT13 below were decided on 2026-08-12, after the
+> reading and retention rules were written. They are numbered by date of decision rather
+> than renumbered into section order — the migrations, `schema.md` and `conventions.md`
+> already cite these identifiers, and renumbering would silently repoint every one of them.
+
+**BR-AT12 — `batch_id` is bound to the database transaction.**
+
+It is generated when the transaction opens and released when the transaction ends, on
+commit or on rollback alike. **The batch boundary *is* the transaction boundary** — not a
+separate span a caller opens and closes.
+
+There is no second concept to keep aligned, and that is the whole reason. BR-AT7 already
+requires the audit rows to be written inside the same transaction as the action, so **the
+transaction is already the action's boundary.** A batch defined independently of it would
+be a second answer to "what counts as one action", and the two would drift — not loudly,
+but by degrees: a batch left open across two transactions, or closed halfway through one,
+produces a display that groups the wrong rows while every row remains individually
+correct. Nothing errors. This is the same objection that rejected mirroring
+(BR-AT5), a stored read-scope override (`adr/0004` decision 1), and `is_enabled`
+(`adr/0003` decision 1).
+
+**Nested transactions: the outermost one is the boundary.** A savepoint commit does not
+release the batch — an inner action running inside an outer one belongs to the outer
+action's batch, because that is the unit that either lands or does not.
+
+**⚠ Therefore a write outside a transaction is an ERROR, not a permitted case.**
+
+`AuditLogger` **rejects it and throws**. It does not quietly mint a single-use UUID and
+carry on, and the difference matters more than it looks: a silently-minted batch produces a
+one-row batch that is **indistinguishable from a legitimate single-field change**. The one
+fact worth knowing — that this write was made outside the transaction that BR-AT7 requires,
+so the action and its audit row could land separately — would be erased at exactly the
+moment it was created. A fallback that hides its own failure mode is worse than no
+fallback.
+
+**BR-AT13 — every Action calls `AuditLogger` explicitly.**
+
+There is no trait, no model observer, no `saved` hook, and none may be added.
+
+**This is BR-AT7's reasoning applied one level up.** An observer knows *what* changed. It
+does not know *why*, and `reason` is a large part of why this table is worth keeping — a
+Master Admin bypass, a Director decision entered as a manual override, and a transfer
+performed by HR because the usual actor was unavailable are all distinguishable only by
+what the actor said. An observer also cannot name the `action`, and it would audit **every**
+write indiscriminately: imports, seeders, backfills, test factories.
+
+The cost is real and accepted: an Action that forgets to call the logger produces no audit
+row and no error.
+
+**The architecture test, and exactly what it is worth**
+
+The canonical list of audited fields is a class, not prose:
+
+```
+App\Support\Audit\AuditedFields
+```
+
+The specs — this one and each module's — **reference it rather than restating it**. A list
+in markdown plus a copy in code would be two records of one fact, and the copy is the one
+that goes stale; the module spec says *which* fields belong there and why, the registry
+**is** the list. This is the one part of the per-module catalogue that lives here (§2).
+
+The test asserts, for every `(model, field)` pair in the registry:
+
+1. some Action class handles that field, and
+2. that Action **declares itself an audit writer**, by an `AUDITS` constant naming the
+   pairs it is responsible for.
+
+**✅ What this catches:** a field added to the registry — because a module spec said it must
+be audited — with **no Action behind it at all**. That is the realistic Phase 2 failure: the
+spec grows, the code does not.
+
+**❌ What this does NOT catch:** an Action that declares `AUDITS` correctly and then **never
+calls the logger**. The declaration is a promise, and nothing here verifies the promise was
+kept. A static test cannot: the call happens at runtime, inside a branch, possibly behind a
+condition.
+
+**That limitation is stated rather than papered over, because a guard test that looks
+stronger than it is, is worse than a weaker one that is honestly labelled** — it stops
+people looking for the check that is actually missing. What closes the gap is a per-Action
+feature test asserting the rows appear, and **those belong to the module that owns the
+Action**, alongside the rest of its behaviour. Each module spec must require them.
+
+⚠ **The registry is empty today**, because no Action exists anywhere in the codebase yet.
+An architecture test over an empty set passes forever while checking nothing, so the test
+**fails on an empty registry** unless the registry declares itself intentionally empty and
+says until when. Employee Master is the first module that will fill it.
 
 ### Reading
 
@@ -472,24 +574,41 @@ general delete capability with a filter, and not something reachable from a requ
 App\Services\Audit\AuditLogger
 ```
 
-- `startBatch(): string` — generates the `batch_id` UUID, **once per transaction**, and
-  holds it for the life of that transaction.
-- `record(Model $subject, string $field, $old, $new, ?string $reason = null): void`
-- `recordChanges(Model $subject, array $dirty, ?string $reason = null): void` — the usual
-  entry point; one row per dirty attribute.
+- `record(string $action, Model $subject, string $field, $old, $new, ?string $reason = null): void`
+- `recordChanges(string $action, Model $subject, array $changes, ?string $reason = null): void`
+  — the usual entry point; one row per changed attribute, `['field' => [$old, $new]]`.
+- `currentBatchId(): ?string` — the batch in effect, or null outside a transaction. For
+  tests and for assertions; not a way to start one.
+
+> **⚠ `$action` corrected 2026-08-12.** These signatures previously omitted it, while §3
+> and `schema.md` both make `audit_logs.action` **NOT NULL** — the spec contradicted itself
+> and no call could have satisfied both. It is the **first** parameter because BR-AT13 makes
+> the calling Action the thing being named: `employee.transfer`,
+> `master_admin.scope_bypass`, `employee_role.grant`.
+>
+> There is deliberately **no `startBatch()`**. Under BR-AT12 the batch is opened by the
+> **transaction**, not by a caller — a method that appeared to start one would be the second
+> concept that rule exists to prevent.
 
 Rules the service enforces so no caller has to remember them:
 
-- A `record()` call **outside a database transaction is rejected**, not quietly wrapped in
-  one. BR-AT7 is the whole guarantee, and a call site that never opened a transaction is a
-  call site where the action and its audit row can land separately.
-- `batch_id` is taken from the transaction context. A second `startBatch()` inside an open
-  batch returns the existing id rather than a new one — nested actions belong to the
-  batch of the outermost one.
+- A call **outside a database transaction throws**
+  `App\Exceptions\Audit\AuditWriteOutsideTransactionException` (BR-AT12). It is not
+  wrapped in an implicit transaction and not given a throwaway batch id.
+- `batch_id` comes from the transaction (BR-AT12): generated on the first write inside it,
+  reused by every later write in the same transaction, released when it commits **or rolls
+  back**. Nested transactions belong to the outermost batch.
 - `company_id` and `user_id` come from the authenticated context, **never** from method
   arguments and never from request input.
-- Labels are resolved **at write time** (BR-AT4). A reader never joins to produce them.
+- Labels are resolved **at write time** (BR-AT4). A reader never joins to produce them. A
+  subject may implement `auditLabel(string $field, mixed $value): ?string` to render a
+  foreign key as the text it stood for **then**; without it the label is the value's own
+  string form, which BR-AT4 already accepts as redundant-but-uniform for enums and scalars.
 - A no-op change writes nothing. `old_value === new_value` is not an audit row.
+- ⚠ **The logger never opens a transaction of its own.** Doing so would satisfy its own
+  precondition and defeat BR-AT7 — the action would still be able to land without its audit
+  row. The caller's transaction is the guarantee; the logger only refuses to work without
+  one.
 
 **No module writes to `audit_logs` directly.** A raw insert, or an `AuditLog::create()`
 outside this service, is a review failure for the same reason a raw `employee_roles` query
@@ -508,8 +627,14 @@ App\Services\Audit\SecurityEventLogger
   failure is caught, written to the application file log at error level, and swallowed as
   far as the request is concerned (BR-AT8).
 - `identifier` is the **normalised** phone number (BR-A1), stored whether or not it
-  matches an account. Normalising here matters: `012-345 6789` and `+60123456789` must
+  matches an account. Normalising matters: `012-345 6789` and `+60123456789` must
   group as repeated attempts against one number, not read as two.
+
+  ⚠ **The logger does not normalise; the caller passes an already-normalised value.**
+  BR-A1 requires **one** normaliser, called by both the login attempt and the employee
+  form, and it does not exist yet — the Auth module owns it. Implementing a second one here
+  would be the divergence that rule exists to prevent. Until `AuthenticationService` lands,
+  this is a stated contract with nothing enforcing it.
 - `user_id` is set when the identifier resolves to an account, null otherwise. **This
   column is the retention discriminator (BR-AT11)** — setting it defensively to some
   placeholder would silently convert a 90-day row into a permanent one.
@@ -754,6 +879,42 @@ forgot the transaction.
     declaring no scope at all still fails it. The third class must be **recognised** by that
     test, not exempted from it (§11).
 
+**The batch boundary (BR-AT12)**
+
+28. **A write outside a transaction throws** `AuditWriteOutsideTransactionException`, and
+    **writes no row**. Assert both halves: a logger that throws *after* inserting has still
+    broken BR-AT7.
+29. **Every write inside one transaction shares one `batch_id`**, across more than one
+    subject and more than one model — the batch is the transaction, not the record.
+30. **Two sequential transactions produce two different `batch_id` values.** This is the
+    test that proves the batch is *released*; without it a logger that generates once per
+    process passes test 29 forever.
+31. **A rolled-back transaction releases the batch too**, and the next transaction gets a
+    fresh id. Rollback is the path that leaks a stale batch id if only the commit path
+    resets.
+32. **Nested transactions share the outermost batch**, and the inner commit does **not**
+    release it — a savepoint commit is not the action landing.
+33. **A rollback takes the audit rows with it** (BR-AT7), asserted through the logger rather
+    than by hand.
+34. A no-op change (`old === new`) writes no row, and `currentBatchId()` is null outside a
+    transaction.
+
+**The authorship guard (BR-AT13)**
+
+35. **The registry is not silently empty.** With `AuditedFields` empty and no
+    intentionally-empty declaration, the architecture test **fails**. An architecture test
+    over an empty set otherwise passes forever while checking nothing.
+36. A `(model, field)` pair in the registry with **no Action declaring it** fails the test,
+    with the pair named in the message.
+37. An Action declaring a pair **not** in the registry fails too — the registry is the
+    canonical list, and an Action auditing something nobody wrote down is the same drift in
+    the other direction.
+
+⚠ **No test asserts that a declaring Action actually calls the logger.** That is BR-AT13's
+stated limitation, not an omission here — a static test cannot observe a runtime call inside
+a branch. The per-Action feature tests that close it belong to the modules owning those
+Actions.
+
 ## 9. Definition of Done
 
 The full `conventions.md` §10 checklist — `optimize:clear`, syntax check, `route:list`,
@@ -772,6 +933,12 @@ Plus, specific to this module:
   as the number of ways into the table
 - `SecurityEvent` declares its scope opt-out; the `adr/0005` decision 6 guard test passes
 - The salary-field architecture test is in the suite and passing
+- **`AuditLogger` throws outside a transaction and never opens one** (BR-AT12) — grep for
+  `DB::transaction` inside the service and verify there is none
+- **`App\Support\Audit\AuditedFields` is the only list of audited fields**, and no module
+  spec restates its contents (BR-AT13)
+- **The BR-AT13 architecture test fails on an empty registry** unless the registry declares
+  itself intentionally empty and says until when
 - The retention window resolves from `policy_configurations`
 - **`MasterAdminContext::run()` now writes its reason**, closing the deferred half of
   `adr/0005` decision 5, and `auth-rbac.spec.md` §5.3's ⚠ note is discharged in the same
@@ -780,7 +947,8 @@ Plus, specific to this module:
 
 ## 10. Resolved Decisions
 
-Seven decisions, closed. Recorded with their reasoning so it survives.
+Nine decisions, closed. Recorded with their reasoning so it survives. Decisions 8 and 9
+were taken on 2026-08-12, when the write path was built.
 
 **1. Two tables, not one.** `audit_logs` for data changes, `security_events` for
 authentication events. The subjectless case is not a variant of a data change — a failed
@@ -839,6 +1007,36 @@ make the system impossible to log into — including for the Master Admin who ha
 to repair it. Throttling therefore works without reading this table (BR-A3's counter is the
 Auth module's, keyed on the account), which is what makes the non-blocking write safe
 rather than merely convenient. See BR-AT7, BR-AT8.
+
+**8. `batch_id` is bound to the database transaction** — generated when it opens, released
+when it commits or rolls back. **The batch boundary is the transaction boundary**, because
+decision 7 already puts the audit write in the same transaction as the action, so the
+transaction is *already* the action's boundary. A separately-managed batch would be a second
+answer to "what counts as one action", and the two would drift silently: rows grouped
+wrongly while each row stays individually correct, and nothing erroring.
+
+**A write outside a transaction is therefore an ERROR, not a permitted case.** `AuditLogger`
+throws; it does not quietly mint a single-use UUID, because a silently-minted batch is
+**indistinguishable from a legitimate one-field change** — it erases the one fact worth
+knowing at the moment it is created. See BR-AT12.
+
+**9. Every Action calls the logger explicitly.** No trait, no observer, no `saved` hook.
+This is decision 7's reasoning one level up: an observer knows **what** changed but not
+**why**, and `reason` is much of why this table is worth keeping. It could not name the
+`action` either, and it would audit every write indiscriminately — imports, seeders,
+backfills, factories.
+
+Protected by an architecture test with a **deliberately honest scope**.
+`App\Support\Audit\AuditedFields` is the canonical list of audited fields — a class, not
+prose, so there is no markdown copy to go stale — and the test asserts every pair in it is
+claimed by an Action that declares itself an audit writer.
+
+**It catches a field added without an Action behind it. It does not catch an Action that
+declares the field and never calls the logger** — a static test cannot observe a runtime
+call. That limit is written into the spec rather than left implied, because **a guard that
+looks stronger than it is stops people looking for the check that is actually missing.**
+The per-Action feature tests that close it belong to the modules owning those Actions. See
+BR-AT13.
 
 ### What this spec closes elsewhere
 
