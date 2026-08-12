@@ -5,7 +5,8 @@
   `MasterAdminSeeder` included (`CLAUDE.md` Principle #1).
 - **Branch:** `feat/auth-rbac`
 - **Depends on:** `companies`, `employees`, `employee_roles`, `users`,
-  `policy_configurations`, `audit_logs`; `adr/0001` (provisioning, Director off-system),
+  `policy_configurations`, `audit_logs`, `security_events`
+  (`audit-trail.spec.md`); `adr/0001` (provisioning, Director off-system),
   `adr/0002` (shared org structure — the `branches` / `departments` scope carve-out §5.3
   must honour, and same-company approval), `adr/0003` (roles are a pivot), `adr/0004`
   (account access, authentication, permission matrix — this spec implements it)
@@ -169,7 +170,20 @@ digits, or symbols.
 - The counter **resets on successful login**.
 - Throttling is keyed on the **account**, not the IP. An attacker changing IP must not get
   a fresh allowance.
-- Every failed attempt writes to `audit_logs`.
+- Every failed attempt writes to **`security_events`**.
+
+> **⚠ Corrected 2026-08-12 — this said `audit_logs`.** Authentication events live in
+> `security_events`; `audit_logs` records changes to data. A failed login has no
+> `old_value` and never will (`audit-trail.spec.md` BR-AT1).
+>
+> **The counter is this module's, and it must not be derived from that table.** The
+> `security_events` write is deliberately non-blocking (`audit-trail.spec.md` BR-AT8): a
+> failure is logged to file and the request continues, because authentication that depends
+> on a table write turns one database fault into a system nobody can log into — **including
+> the Master Admin who has to log in to repair it**. A counter reading
+> `SELECT COUNT(*) FROM security_events` would reintroduce that dependency and would fail
+> **open** on exactly the fault that suppresses the log. The tiers above must hold with the
+> table unwritable, and that is asserted (`audit-trail.spec.md` §8 test 12).
 - The response must not reveal whether the username exists. "Invalid credentials" for both
   an unknown number and a wrong password.
 
@@ -360,8 +374,9 @@ password-change screen and logout redirects there. This applies to Master Admin 
 1. Normalise the submitted phone number (BR-A1).
 2. Check the throttle state **before** verifying the password (BR-A3). A locked account
    fails without a password check.
-3. Verify credentials. On failure: increment counter, write `audit_logs`, return a generic
-   message.
+3. Verify credentials. On failure: increment counter, write `security_events`, return a
+   generic message. The counter increment and the event write are **independent** — the
+   counter must advance even if the write fails (BR-A3).
 4. On success: reset the counter, check account state (§5.2), regenerate the session ID.
 5. If `must_change_password`, redirect to the change screen (BR-A23).
 
@@ -415,13 +430,17 @@ ordinary mechanism and simply resolves to every company, which is why a row belo
 soft-deleted company is invisible to it outside the context and visible inside
 (`adr/0005` decision 5).
 
-> **⚠ Half implemented — the audit write is deferred.** `audit_logs` has no migration, so the
-> reason passed to `run()` is captured and goes nowhere. **That table is deliberately not
-> created by the tenant-scope work**: it has no spec, and it accepts writes from every module
-> — auth, approvals, attendance corrections, Director overrides, role grants — so its column
-> shape is not a decision for a scoping branch to make. Adding the write is a one-line change
-> to `run()` once the table exists. Until then, "explicit, never ambient" holds and "audited"
+> **⚠ Half implemented — the audit write is still deferred.** `audit_logs` has no migration,
+> so the reason passed to `run()` is captured and goes nowhere. **That table was deliberately
+> not created by the tenant-scope work**: it accepts writes from every module — auth,
+> approvals, attendance corrections, Director overrides, role grants — so its column shape
+> was not a decision for a scoping branch to make. Adding the write is a one-line change to
+> `run()` once the table exists. Until then, "explicit, never ambient" holds and "audited"
 > does not.
+>
+> **Updated 2026-08-12 — the missing spec now exists.** `docs/modules/audit-trail.spec.md`
+> settles the column shape and states this write as a Definition-of-Done item. What remains
+> is the migration; the deferral is unchanged until it lands.
 
 ### 5.4 Read scope resolution
 

@@ -127,6 +127,61 @@ is not visible at insert time — it appears only after a transfer that may be m
 Decide the category in the module spec, before the migration is written. Full reasoning:
 `adr/0003` decision 7; per-table detail in `schema.md` § Company transfer.
 
+### Carve-out — `audit_logs` takes a third scope class
+
+The **third** carve-out to §2, and the only table taking a scope class of its own.
+
+`audit_logs.company_id` is **nullable**, and `NULL` means **"a system-level event"** — an
+audited action whose subject belongs to no company, such as a Master Admin changing another
+Master Admin's `system_access`, or a tenant-scope bypass entered through
+`MasterAdminContext`.
+
+Neither of the two usual classes fits, and they fail in **opposite** directions:
+`TenantScope` hides those rows from everyone including Master Admin — whose own actions
+they mostly are — while `SharedTenantScope` shows them to everyone, so a subsidiary `HR`
+would read every group-level administrative action. The table therefore declares
+`App\Models\Scopes\SystemTenantScope`:
+
+```
+company_id IN (:read_scope)
+OR (company_id IS NULL AND the account has system_access = FULL)
+```
+
+⚠ **`NULL` does not mean the same thing on `branches` as it does here.** There it means
+*available to all companies*; here it means *attributable to no company*. Same column type,
+opposite meaning — decide it per table, and never pick a scope class because a column
+happens to be nullable.
+
+Applies to `audit_logs` and to nothing else without an ADR, the same restriction
+`SharedTenantScope` carries. `adr/0005` decision 6's guard test must **recognise** this
+class as a valid declaration rather than exempt the model from the test. See
+`adr/0005` decision 6's amendment note and `audit-trail.spec.md` §11.
+
+### Carve-out — `security_events` carries no tenant scope at all
+
+The **fourth** carve-out, and the only table in the system with no scope class at all —
+including not the `SystemTenantScope` above.
+
+`security_events` records authentication events, which happen **before authentication** —
+so `SystemTenantScope` does not fit it either, since that class reads the account's
+`system_access` and there may be no account.
+There is no authenticated user from whom to resolve a read scope, and in the
+failed-attempt case there may be **no account at all** — an attempt against a phone number
+that has never existed here has no subject, so no employer, so no company. `company_id` is
+therefore **nullable**, filled where knowable and left null where it is not, and it is a
+**reporting convenience, never an access control**.
+
+Access control for the table is a permission check in `audit-trail.spec.md` BR-AT9, applied
+at read time: Master Admin sees everything, `HR` and `ASSISTANT_DIRECTOR` see within their
+read scope, and an event with a null `user_id` — belonging to no company — is Master Admin
+only.
+
+**The opt-out must be declared on the model, not left as silence.** `adr/0005` decision 6's
+guard test exists precisely so that *"deliberately unscoped"* and *"someone forgot"* stay
+distinguishable; a `SecurityEvent` with no declaration must fail the suite like any other
+model. This carve-out is a **declaration, not a precedent** — no other table takes it
+without an ADR.
+
 ## 3. Every Business Table Must Include
 
 - `company_id` (except pure reference/lookup tables; nullable on the shared
@@ -137,7 +192,7 @@ Decide the category in the module spec, before the migration is written. Full re
 
 ### Deliberate exceptions — do not "fix" these
 
-Two tables depart from the list above **on purpose**. Each omission is load-bearing:
+Four tables depart from the list above **on purpose**. Each omission is load-bearing:
 adding the missing column back would create a second way to express a state the table
 already expresses once, and two mechanisms for one meaning eventually disagree. If you
 find yourself about to add a soft delete here because "every business table has one,"
@@ -147,6 +202,8 @@ that is the mistake this section exists to stop.
 |---|---|---|
 | `employee_status_history` | `updated_by`, `updated_at`, soft deletes | Append-only ledger — rows are inserted, never edited or deleted |
 | `employee_roles` | Soft deletes | Revocation is `revoked_date`; a `deleted_at` would be a second way to say "revoked" |
+| `audit_logs` | `updated_by`, `updated_at`, soft deletes, `created_by` | Append-only. `user_id` **is** the actor, so `created_by` would record the same person twice |
+| `security_events` | `updated_by`, `updated_at`, soft deletes, `created_by` | Append-only, and written before there is an authenticated actor to attribute |
 
 **`employee_status_history` is an append-only ledger.** A correction is a **new row**, not
 an edit to an existing one. Mutability would defeat the entire point of the table: a
@@ -164,7 +221,18 @@ authority query filters `WHERE revoked_date IS NULL`**, applied as a default mod
 rather than repeated at each call site. The same reasoning bans an `is_enabled` flag on
 this table. See `adr/0003` decisions 1 and 3.
 
-Both exceptions are recorded in `schema.md` on the tables themselves as well, so neither
+**`audit_logs` and `security_events` are append-only for the same reason and more
+strongly.** There is no update path, no delete path, and no UI affordance for either, **not
+for Master Admin** (`audit-trail.spec.md` BR-AT6). A correction is a new row. This is what
+makes it safe to let `HR` *read* the audit log at all: the value of an audit trail comes
+from not being able to **delete** it, not from not being able to **see** it. A soft delete
+here would be a delete path with a nicer name.
+
+The single exception is the `security_events` retention sweep — a scheduled command with
+one fixed predicate, removing only rows with a null `user_id` past the configured window
+(`audit-trail.spec.md` BR-AT11). It touches `audit_logs` never.
+
+All four exceptions are recorded in `schema.md` on the tables themselves as well, so none
 can be discovered only by reading this file.
 
 ## 4. Structured Data Over Free Text

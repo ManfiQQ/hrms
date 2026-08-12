@@ -24,8 +24,8 @@
 **Still draft, with no migration behind them:** the Employee Master satellite tables
 (`employee_family_members`, `employee_education_history`, `employee_employment_history`,
 `employee_documents`, `employee_status_history`), `job_functions`,
-`employee_job_functions`, `sequences`, `approval_requests`, `audit_logs`, and everything
-under Phase 2.
+`employee_job_functions`, `sequences`, `approval_requests`, `audit_logs`,
+`security_events`, and everything under Phase 2.
 
 **The `users.employee_id` foreign key is added by the `employees` migration**, in the same
 file that creates the table it references — not by a separate migration. See
@@ -525,8 +525,164 @@ part of it) — see `business-rules.md` § Approval Hierarchy.
 > to the Approval Engine spec, which has not been written.
 
 ### `audit_logs`
-`id`, `user_id`, `action`, `auditable_type`, `auditable_id`, `old_values` (json),
-`new_values` (json), timestamps
+`id`, `batch_id` (uuid), `company_id` (FK, **nullable**), `user_id` (FK → users, nullable),
+`action`,
+`auditable_type`, `auditable_id`, `field`, `old_value` (text, nullable), `new_value`
+(text, nullable), `old_label` (text, nullable), `new_label` (text, nullable), `reason`
+(text, nullable), `created_at`
+
+**What changed, who changed it, and when.** Authentication events do **not** live here —
+they are `security_events` below (`audit-trail.spec.md` BR-AT1).
+
+> **⚠ `old_values` / `new_values` as JSON is withdrawn — 2026-08-12.** This entry
+> previously carried two JSON columns. **They do not exist and must not be added.**
+>
+> **One row per changed field**, grouped by `batch_id` — a UUID generated **once per
+> transaction** and stamped on every row that transaction produces. `conventions.md` §4
+> forbids unstructured storage where the system must query against it, and *"who changed
+> this employee's salary, and when"* must be a `WHERE` clause, not a scan-and-parse over
+> every row in the table. A JSON blob also cannot be indexed for the salary filter that
+> runs on **every** `HR` read (`audit-trail.spec.md` BR-AT10).
+>
+> The stub predates the module spec and reached no migration. See `audit-trail.spec.md`
+> §10 decision 2.
+
+**The subject is polymorphic — `auditable_type` + `auditable_id`, not `employee_id`.**
+Three of this table's writers have no employee to point at: a `system_access` change
+(subject: a `users` row), an attendance correction (an `attendance_import_rows` row), and
+a salary adjustment (a salary-ledger row). A nullable `employee_id` would be null for all
+three, and "everything that ever happened to this record" would be unanswerable for
+exactly the records where it matters most (BR-AT3).
+
+**`old_label` / `new_label` are a snapshot of the display text at the time** — the same
+pattern and the same reason as `employee_status_history` above. A join renders the
+department's name **today**, not its name **then**, and a record that changes
+retroactively is not a record (BR-AT4).
+
+**No `value_type` column** — rejected as metadata that can be filled in wrong without
+anyone noticing, buying only cosmetic formatting (`audit-trail.spec.md` §10 decision 4).
+
+**No `created_by`** — `user_id` is the actor, and `created_by` would record the same person
+twice. **Append-only:** no `updated_at`, no `updated_by`, no soft deletes — a deliberate
+exception to `conventions.md` §3, recorded there.
+
+**Kept forever.** No retention window, no archival, no prune path.
+
+> ### `company_id` is nullable here, and this table takes a **third** scope class
+>
+> `NULL` is a **meaningful value meaning "a system-level event"**, not missing data — the
+> same status it carries on `branches.company_id` (`adr/0002` decision 1), though **not the
+> same meaning**, and that difference is the whole point below.
+>
+> The subject is polymorphic, and some subjects belong to no company: a Master Admin
+> changing another Master Admin's `system_access` (`auth-rbac.spec.md` §6), or a Master
+> Admin tenant-scope bypass (`adr/0005` decision 5). Both are audited actions against
+> accounts with a null `employee_id`. `NOT NULL` cannot hold either without inventing an
+> attribution that is not true.
+>
+> **Both existing scope classes are wrong for this table, in opposite directions:**
+>
+> | Scope | On a `NULL` row | Why wrong |
+> |---|---|---|
+> | `TenantScope` | Hidden from everyone, Master Admin included | Hides exactly the rows that exist to hold the most powerful account to account |
+> | `SharedTenantScope` | Visible to everyone in any scope | A subsidiary-employed `HR` would read every group-level administrative action |
+>
+> On `branches`, `NULL` means **available to all companies**. Here it means **attributable
+> to no company** — the opposite. Reusing `SharedTenantScope` because both columns are
+> nullable would be reading the type and ignoring the meaning.
+>
+> ```
+> App\Models\Scopes\SystemTenantScope
+>
+>     company_id IN (:read_scope)
+>     OR (company_id IS NULL AND the account has system_access = FULL)
+> ```
+>
+> **The `FULL` check cannot go through read scope**, and `adr/0005` decision 5 already names
+> why: read scope resolves to a set of **companies**, and a `NULL` row belongs to none, so
+> no set however complete contains it. Inside `MasterAdminContext` the scope lifts entirely,
+> as for every other model.
+>
+> **`adr/0005` decision 6's guard test must recognise this third class** — see the amendment
+> note there. `AuditLog` fails the suite until it does. Applied to this table only; another
+> table wanting it needs an ADR, exactly as `SharedTenantScope` is restricted to `branches`
+> and `departments` (`adr/0005` decision 3). Full reasoning: `audit-trail.spec.md` §11.
+
+Indexes: `batch_id`; `(auditable_type, auditable_id)`; `(auditable_type, field)` — the
+salary filter; `(company_id, created_at)`, which must serve `IS NULL` lookups as well as
+equality; `user_id`.
+
+### `security_events`
+`id`, `user_id` (FK → users, **nullable**), `event_type` (enum), `identifier` (string, the
+normalised login identifier), `company_id` (FK, **nullable**), `created_at`
+
+**Who tried to get in** — login success and failure, lockout, unlock, password change,
+activation redemption, session termination. **Not a variant of an `audit_logs` row:** a
+failed login has no `old_value` and never will, and forcing both into one table means every
+reader must know which columns are meaningful for which type — a rule that would live
+nowhere (`audit-trail.spec.md` BR-AT1).
+
+**`event_type` — fixed enum, derived from `auth-rbac.spec.md` rather than defined here:**
+
+```
+LOGIN_SUCCESS, LOGIN_FAILED, ACCOUNT_LOCKED, PASSWORD_CHANGED, ACTIVATION_REDEEMED
+```
+
+A new authentication event is a change to what Auth does, so it arrives with a migration
+and an amendment to that spec — not by a caller passing a new string.
+
+**An action performed *on* an account by someone else goes to `audit_logs`, not here.**
+Password reset and unlock by `HR`, QR regeneration, a `system_access` change, and the
+`TERMINATED` session deletion all have an actor, a subject, and a before-and-after.
+`auth-rbac.spec.md` BR-A15 already routes the session kill to `audit_logs` and stays as
+written — that write must sit **inside** the freeze transaction, which the non-blocking
+`security_events` write cannot do. The line is **who the event is about**:
+`security_events` holds what the subject did or attempted; `audit_logs` holds what was
+done to the account.
+
+> **⚠ This is the tenant-scope exception. It carries no scope class at all — including not
+> the `SystemTenantScope` above — and `company_id` cannot be `NOT NULL`.**
+>
+> A security event happens **before authentication**. There is no authenticated user from
+> whom to resolve a read scope, and in the failed-attempt case there may be **no account at
+> all** — an attempt against a phone number that has never existed here has no subject, so
+> no employer, so no company.
+>
+> `adr/0005` decision 6 requires every model over a table carrying `company_id` to declare
+> its scope explicitly, so that *"deliberately unscoped"* and *"someone forgot"* stay
+> distinguishable. The `SecurityEvent` model therefore declares the **documented opt-out**,
+> not silence, and a model with no declaration must fail the guard test.
+>
+> `company_id` is filled where knowable and left null where it is not. It is a **reporting
+> convenience, never an access control.**
+>
+> **`SystemTenantScope` does not fit either**, for the same reason: it reads the account's
+> `system_access`, and when a failed login is written there may be no account. Two nullable
+> `company_id` columns in one module, two different answers — which is why the choice is
+> made per table and declared on the model.
+
+**`user_id` is the retention discriminator, and the split is deliberate**
+(`audit-trail.spec.md` BR-AT11):
+
+| Rows | Kept |
+|---|---|
+| `user_id` **not null** — an attempt against an account that exists | **Forever** |
+| `user_id` **null** — an attempt against a number in no account | **90 days**, from `policy_configurations` |
+
+This does not breach `CLAUDE.md` §3, which forbids deleting **for performance**. Nothing
+here is deleted to make anything faster; the line is between a record and noise. An attempt
+against a number that never existed has no subject and therefore no statutory retention
+period, because there is nobody it is about. Setting `user_id` defensively to a placeholder
+would silently convert a 90-day row into a permanent one.
+
+**The write is non-blocking and lives outside any transaction** (BR-AT8). A failure is
+written to the application file log and the request continues — **authentication must not
+depend on a table write**, or one database problem makes the system impossible to log into,
+including for the Master Admin who has to log in to repair it. **Throttling therefore never
+counts rows in this table**; the BR-A3 counter is the Auth module's, keyed on the account.
+
+Append-only, as above. Indexes: `(user_id, created_at)` — also the retention sweep;
+`(identifier, created_at)`; `(event_type, created_at)`.
 
 ### `users`
 Standard Laravel `users` table — **with `email` changed to nullable and `remember_token`
@@ -863,8 +1019,14 @@ sticky note.
 by the client over the recommended eight, and **the username is not secret** — it is the
 employee's phone number. Password length is therefore not carrying the security here; the
 throttling is. If the tiers are relaxed, or the counter is not enforced server-side, brute
-force becomes practical. **Failed attempts are written to `audit_logs`**, so a hundred
+force becomes practical. **Failed attempts are written to `security_events`**, so a hundred
 overnight failures against the `ACCOUNT` holder's login is visible.
+
+> **⚠ Corrected 2026-08-12 — this said `audit_logs`.** Authentication events live in
+> `security_events`; `audit_logs` records changes to data (`audit-trail.spec.md` BR-AT1).
+> Note also that **the throttle counter does not read either table** (BR-AT8): the
+> `security_events` write is non-blocking, so a counter derived from it would fail open on
+> exactly the fault that suppresses the log.
 
 **Password reset is `HR` and Master Admin only** — not self-service by email (most employees
 have none), and **not `ACCOUNT`**, who reads everything but administers nothing. Seeing data

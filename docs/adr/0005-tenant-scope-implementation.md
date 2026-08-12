@@ -1,7 +1,9 @@
 # ADR 0005 — Tenant Scope Implementation
 
 - **Status:** **Accepted** — 2026-08-11. Implemented in PR #10, with decision 5's audit
-  write knowingly deferred — see the note there.
+  write knowingly deferred — see the note there. **Decision 6 amended 2026-08-12** — a
+  third scope class, `SystemTenantScope`, which the guard test must recognise; see the
+  amendment note there.
 - **Date:** 2026-08-11
 - **Implements:** `adr/0002` decision 3 (shared org structure query scope), `adr/0003`
   decision 7 (event tables release the scope), `adr/0004` decision 1 (read scope derives
@@ -189,6 +191,53 @@ guard test must require that exemption to be **declared on the model**, so that 
 is deliberately unscoped" and "someone forgot" are distinguishable. That distinction is the
 entire value of the test.
 
+> **⚠ Amended 2026-08-12 — a third scope class exists, and this test must recognise it.**
+>
+> The decision above stands as written. What changes is only the **set of valid
+> declarations**: `TenantScope`, `SharedTenantScope`, **`SystemTenantScope`**, or a
+> documented opt-out. A model declaring none still fails the suite, which is the rule this
+> decision exists to enforce and is unchanged.
+>
+> **`App\Models\Scopes\SystemTenantScope`** is required by `audit_logs`
+> (`docs/modules/audit-trail.spec.md` §11), whose `company_id` is **nullable**, where `NULL`
+> means *a system-level event* — an audited action whose subject belongs to no company, such
+> as a Master Admin changing another Master Admin's `system_access`, or a bypass entered
+> through `MasterAdminContext` under decision 5 above.
+>
+> ```
+> company_id IN (:read_scope)
+> OR (company_id IS NULL AND the account has system_access = FULL)
+> ```
+>
+> **Both existing classes are wrong for that table, in opposite directions.** `TenantScope`
+> hides the `NULL` rows from everyone including Master Admin — whose own actions they mostly
+> are, so the scope would conceal precisely the rows that exist to hold the most powerful
+> account to account. `SharedTenantScope` exposes them to everyone in any scope, so a
+> subsidiary-employed `HR` would read every group-level administrative action.
+>
+> Note that `NULL` does **not** mean the same thing on the two tables. On `branches` and
+> `departments` it means *available to all companies* (decision 3); on `audit_logs` it means
+> *attributable to no company*. Reusing `SharedTenantScope` because both columns are nullable
+> would be matching the column type and ignoring the value's meaning.
+>
+> **The `FULL` condition is named directly and does not route through read scope.** This is
+> the case decision 5 above already anticipates — *"the two come apart the moment read scope
+> cannot express something."* A `FULL` account's read scope resolves to every **company**,
+> and a `NULL` row belongs to none, so no set of company ids can contain it. Inside
+> `MasterAdminContext` the scope lifts entirely, as it does for every model.
+>
+> **The class applies to `audit_logs` and to nothing else without an ADR** — the same
+> restriction decision 3 places on `SharedTenantScope`. `security_events` is **not** a user
+> of it: that table carries **no** scope at all, because a security event may be written
+> before there is an authenticated account whose `system_access` the scope could read, and
+> its model keeps the documented opt-out this decision requires.
+>
+> Decision 1's reasoning is untouched and is what forced a third class rather than a flag on
+> an existing one: a single scope reading a model property would have let `audit_logs`
+> default to the narrowing behaviour, which here means **silently hiding Master Admin's own
+> actions from Master Admin** — a fresh instance of the same failure mode that decision
+> rejects.
+
 ---
 
 ## Consequences
@@ -205,9 +254,9 @@ entire value of the test.
 
 **Costs and constraints accepted**
 
-- **Two classes to keep in step.** A change to read-scope resolution touches both. Accepted:
-  the duplication is a few lines, and merging them reintroduces the defaulting problem
-  decision 1 rejects.
+- **Two classes to keep in step** — **three since the decision 6 amendment.** A change to
+  read-scope resolution touches all of them. Accepted: the duplication is a few lines, and
+  merging them reintroduces the defaulting problem decision 1 rejects.
 - **The guard test needs maintenance.** It must know which models are deliberately unscoped,
   so adding a company-reference table means updating a declaration. That cost is the point —
   it forces the category to be decided rather than defaulted.
@@ -236,9 +285,11 @@ entire value of the test.
 
 ## Still open
 
-- **The audit half of decision 5**, pending an `audit_logs` migration and the spec that must
-  precede it. Tracked in decision 5 above rather than only here, so it is visible where the
-  rule is stated.
+- **The audit half of decision 5**, pending an `audit_logs` migration. **The spec that had to
+  precede it now exists** — `docs/modules/audit-trail.spec.md`, 2026-08-12 — and settles the
+  column shape, the transaction rule, and this write as a Definition-of-Done item. Only the
+  migration is outstanding. Tracked in decision 5 above rather than only here, so it is
+  visible where the rule is stated.
 - **Unauthenticated and console contexts run unscoped.** Seeders, migrations, queue workers
   and artisan commands have no user to resolve a scope from, and throwing there would break
   every command. HTTP is protected by route middleware, not by this scope. Recorded because
@@ -264,6 +315,8 @@ entire value of the test.
 - `adr/0004` decision 2 — `system_access`; `FULL` bypasses tenant scope
 - `docs/modules/auth-rbac.spec.md` §5.3 — `TenantScope`, §5.4 — `ReadScopeResolver`,
   BR-A14 — the bypass is explicit and audited
+- `docs/modules/audit-trail.spec.md` §11 — `SystemTenantScope` and the nullable
+  `audit_logs.company_id`; §3, BR-AT9 — `security_events` and its declared opt-out
 - `docs/conventions.md` §2 — multi-tenancy rule and both carve-outs
 - `docs/schema.md` — `branches`, `departments`, `employees`, `employee_roles`
 - `CLAUDE.md` Principle #4, §9
