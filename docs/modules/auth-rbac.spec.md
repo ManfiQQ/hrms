@@ -603,6 +603,40 @@ account with `employee_id` null, `system_access = FULL`, `must_change_password =
 
 The seeder is **idempotent**: re-running it must not create a second Master Admin.
 
+**Three variables, all required, none with a fallback:**
+
+| Variable | Purpose |
+|---|---|
+| `MASTER_ADMIN_EMAIL` | Contact address. **Not a login credential** (BR-A1) |
+| `MASTER_ADMIN_PHONE` | **The login username** (`users.phone_no`, `adr/0006`) |
+| `MASTER_ADMIN_PASSWORD` | The initial password, retired on first login (BR-A23) |
+
+**A missing or empty value stops the install.** The seeder throws, names all three variables
+and points at `.env.example`, and **creates nothing** — it does not write a partial account
+and then fail.
+
+> **⚠ There is no default for any of them, and none may be added.** A fallback would not
+> break an install; it would **complete** one — creating the most powerful account in the
+> system with a credential anybody can read in the repository, printing "Master Admin
+> created", and exiting zero. Nothing would look wrong.
+>
+> That is the same shape as the defect `adr/0006` closed: **a failure that presents as a
+> success.** The loud version costs one confused install; the quiet version costs the group
+> its administrative account, and nobody finds out by using the system.
+>
+> `MASTER_ADMIN_PHONE` is the newest of the three and the easiest to treat as optional,
+> because an account will save without it. It must not be: an account with no username is
+> one nobody can log into, which is precisely what `adr/0006` was written to prevent.
+>
+> **`.env.example` lists all three with empty values.** A committed example value is a
+> default by another name, and the one people copy without reading.
+>
+> This is enforced by test, not by review: the behaviour is asserted for **each** of the
+> three keys, and a separate structural test reads `config/auth.php` and fails if any of them
+> acquires a second argument. ⚠ That structural test strips comments first, because the file
+> explains why `env()` is wrong *using the very string it is searching for* — the first
+> version matched the prose and passed against a real fallback on the line below it.
+
 **⚠ The credentials must be read through `config()`, never `env()` directly.** After
 `php artisan config:cache` — which production runs — `env()` returns **null** for
 everything outside the cached config. A seeder calling `env('MASTER_ADMIN_PASSWORD')` would
