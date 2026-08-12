@@ -77,12 +77,23 @@ it('leaves an employee with no account unable to authenticate at all', function 
 });
 
 /**
- * ⚠ Pins the gap so it cannot be forgotten. When Employee Master's creation Action lands,
- * this test fails and points at the requirement: BR-A20 must be enforced there, in the same
+ * ⚠ Pins the gap so it cannot be forgotten. When the employee-CREATION Action lands, this
+ * test fails and points at the requirement: BR-A20 must be enforced there, in the same
  * transaction, and this file should then assert it directly.
+ *
+ * ⚠ RETARGETED 2026-08-12. It used to assert that `app/Actions/Employee` did not exist —
+ * which fired the moment ChangeEmployeeStatus landed in that directory, for a change that
+ * has nothing to do with BR-A20. A guard pointed at the wrong subject fires on unrelated
+ * work, and a guard that cries wolf gets deleted rather than fixed.
+ *
+ * ⚠ Its weak point is now the class NAME, and that is worth stating rather than hiding: an
+ * employee-creation Action called something else slips past. `employee-master.spec.md` §5.1
+ * names `App\Actions\Employee\*` as the home for these, and creation is the obvious one to
+ * call CreateEmployee — but if it arrives as `RegisterEmployee` or `ProvisionEmployee`, this
+ * guard is silent. It narrows the window; it does not close it.
  */
 it('has no employee-creation Action yet, so BR-A20 is not structurally enforced', function () {
-    expect(is_dir(app_path('Actions/Employee')))->toBeFalse(
+    expect(class_exists(App\Actions\Employee\CreateEmployee::class))->toBeFalse(
         'An employee-creation Action now exists. BR-A20 must be enforced in it — the account '.
         'created in the same transaction as the employee — and this test replaced with one '.
         'asserting that an employee cannot be created without an account (adr/0006 item 6).'
