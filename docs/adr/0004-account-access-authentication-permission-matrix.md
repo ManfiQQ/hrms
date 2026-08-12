@@ -228,9 +228,16 @@ therefore the login identifier.
 
 Consequences that must be implemented:
 
-- **`employees.phone_no` requires a unique index.** It currently has none. Two employees
+- **The login username requires a unique index.** It currently has none. Two accounts
   sharing a number — a married couple at the same workplace, or a typo — would make login
   ambiguous.
+
+> **⚠ Amended 2026-08-12 — the username lives on `users`, not `employees`** (`adr/0006`).
+> This decision is otherwise unchanged: the number is still the username, still normalised,
+> still unique. Only the table changed, and it had to — this decision and `adr/0001`
+> decision 4 together left Master Admin with nowhere to keep its own username, which made
+> the installer's account impossible to log into. `employees` now holds no phone number at
+> all, and no separate contact number either (`adr/0006` decision 7).
 - **The system normalises the number** before storing and before comparing: strip spaces,
   dashes, and a leading `+60` or `60`. `012-345 6789`, `0123456789`, and `+60123456789` are
   one number and must all work.
@@ -541,5 +548,5 @@ holds for leave, for termination, and for disciplinary warnings.
 - `adr/0003` decision 9 — retired numbers, rejoining as a new record
 - `docs/modules/employee-master.spec.md` §6 — the flagged permission table this ADR resolves
 - `docs/conventions.md` §5 — configurable numbers belong in `policy_configurations`
-- `docs/schema.md` — `users.system_access`, `employees.phone_no`, `employee_roles`
+- `docs/schema.md` — `users.system_access`, `users.phone_no`, `employee_roles`
 - `CLAUDE.md` §10, §11

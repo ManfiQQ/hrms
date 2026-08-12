@@ -1,7 +1,8 @@
 # ADR 0006 — The Login Identifier Lives on `users`
 
-- **Status:** **Accepted** — 2026-08-12. Not yet implemented; the migration and the code
-  changes follow in their own branch.
+- **Status:** **Accepted and implemented** — 2026-08-12. Follow-up item 1 was carried out by
+  **editing the two creating migrations in place** rather than by a move-and-backfill
+  migration; see the amendment on that item.
 - **Date:** 2026-08-12
 - **Supersedes:** the placement half of `auth-rbac.spec.md` BR-A1 — the login identifier is
   still the phone number, and everything else about BR-A1 (normalisation, the 9–12 digit
@@ -221,11 +222,12 @@ own reasoning**, not a second copy of this one. `employee_family_members` alread
 
 **Costs and constraints accepted**
 
-- **A migration that moves a NOT NULL unique column between tables.** It must create the
-  column on `users`, copy each employee's number to their account, and drop it from
-  `employees` — in one migration, since a gap between the two leaves accounts unable to
-  authenticate. No production data exists yet, which is the only reason this is cheap; the
-  same change in six months is a different piece of work.
+- **The creating migrations were edited in place**, so there is no record of a move — see
+  the amendment to follow-up item 1 for why that is the honest outcome rather than a missing
+  step. The cost lands on anyone holding an existing local database: they must
+  `migrate:fresh`, because editing a creating migration does not touch a database that has
+  already run it. Cheap only because no production data exists; the same change after the
+  first real migration run is a different piece of work entirely.
 - **Every employee must have an account before this holds.** BR-A20 already requires exactly
   that — the account is created in the same transaction as the employee — so the copy is
   total. If an employee ever existed without an account, their number would have nowhere to
@@ -260,9 +262,28 @@ own reasoning**, not a second copy of this one. `employee_family_members` alread
 
 Required before this ADR is satisfied, all in the implementing branch:
 
-1. One migration: add `phone_no` to `users` (NOT NULL, unique), backfill from `employees`,
-   drop `employees.phone_no`. It must abort rather than proceed if any employee has no
-   account.
+1. ~~One migration: add `phone_no` to `users`, backfill from `employees`, drop
+   `employees.phone_no`.~~ **Amended and done differently — the two creating migrations were
+   edited in place:** the column was removed from `create_employees_table` and added to
+   `create_users_table` (NOT NULL, unique). **There is no move-and-backfill migration, and
+   its absence is a decision.**
+
+   `conventions.md` §7 asks that a table's design not be patched by a later "repair"
+   migration where it can be avoided, and here it could: **no migration has ever run against
+   real data**, which is the same door already used to edit the base `users` migration in
+   place. It closes permanently the first time one does.
+
+   ⚠ **A backfill would have been a permanent historical artefact.** One file creating the
+   column, another relocating it, and a reader a year from now reasonably inferring that
+   real rows once lived in the old place and were carried across. **None did** — the column
+   never held a row outside a test database. A migration recording a migration that never
+   happened is worse than no record at all: it asserts a false history, in the one file set
+   whose entire job is to be the true history of the schema.
+
+   The accepted cost is that **anyone with an existing local database must `migrate:fresh`**.
+   Editing a creating migration does not change a database that has already run it, so a
+   stale schema keeps `employees.phone_no`, lacks `users.phone_no`, and fails to log anyone
+   in for a reason the code cannot explain. Recorded in `schema.md` § Status.
 2. `AuthenticationService` resolves the account directly; the `employees` lookup and its
    scope release go.
 3. `MasterAdminSeeder` requires a number from configuration and fails loudly without one.

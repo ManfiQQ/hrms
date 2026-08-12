@@ -35,16 +35,27 @@ return new class extends Migration
             // phone_no (adr/0004 decision 6).
             $table->string('email')->nullable();
 
-            // NOT NULL and UNIQUE: this is the login username (adr/0004 decision 6,
-            // auth-rbac.spec.md BR-A1). Two employees sharing a number would make login
-            // ambiguous. There is no placeholder path — a dummy number occupies the unique
-            // index and hands one employee's username to another. HR therefore cannot
-            // register an employee without a phone number, which is the accepted cost.
+            // ⚠ THERE IS NO phone_no HERE, AND NONE MAY BE ADDED (adr/0006).
             //
-            // The value is normalised before storing and before comparing (strip spaces,
-            // dashes, leading +60 or 60) and validated at 9-12 digits; that belongs to the
-            // Auth layer, not to the schema.
-            $table->string('phone_no')->unique();
+            // The phone number is the login username, and it lives on `users`. It was on
+            // this table until 2026-08-12, and the combination was fatal: BR-A1 makes the
+            // number the username, adr/0001 decision 4 gives Master Admin no employee record,
+            // so the most powerful account in the system had nowhere to keep its own
+            // username. A seeded Master Admin was refused on every identifier, with the
+            // correct password — the installer's account could not log in, and no employee
+            // could be created until it did.
+            //
+            // ⚠ There is no separate contact number either (adr/0006 decision 7). The
+            // employee's personal number IS the username — one number, one meaning — so a
+            // `contact_no` beside it would be the same fact written twice, and the copy goes
+            // stale the first time someone changes one and not the other. Changing a personal
+            // number therefore changes a login, and HR does it from the account management
+            // screen, not from the employee form (auth-rbac.spec.md §6,
+            // employee-master.spec.md §6.4).
+            //
+            // A genuinely different fact — a next-of-kin number, a company-issued handset —
+            // would be a different column with its own reasoning, not a second copy of this
+            // one. `employee_family_members.is_emergency_contact` already covers the first.
 
             // NOT NULL. The payroll and legal employer — that meaning only. It does not
             // answer "what authority does this person have"; employee_roles does

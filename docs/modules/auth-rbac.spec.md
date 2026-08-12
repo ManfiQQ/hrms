@@ -72,6 +72,7 @@ records only what a migration author needs beyond the column list.
 
 | Column | Note |
 |---|---|
+| `phone_no` | string, **NOT NULL**, **unique**. **The login username** (BR-A1). Moved here from `employees` on 2026-08-12 — `adr/0006`, see below |
 | `email` | string, **nullable**, unique retained. **Not a login credential** — see below. Changed from Laravel's NOT NULL default |
 | `employee_id` | FK, **nullable**. Null for Master Admin and Director (`adr/0001` decision 4, `adr/0004` decision 4) |
 | `system_access` | enum, **NOT NULL**, default `STANDARD` (`adr/0004` decision 2). **`FULL` + null `employee_id` is what identifies a Master Admin** — see below |
@@ -108,7 +109,7 @@ records only what a migration author needs beyond the column list.
 > `LoginThrottle`, never by hand.
 
 **`email` is nullable, and that follows directly from BR-A1.** The login identifier is
-`employees.phone_no`; **email authenticates nothing in this system**. `employees.email` is
+`users.phone_no` (`adr/0006`); **email authenticates nothing in this system**. `employees.email` is
 already nullable because most field staff have none, and BR-A20 creates a `users` row for
 every employee — so a NOT NULL email would fail on the **second** employee without one.
 Certainty, not risk.
@@ -130,9 +131,23 @@ Note this is the **inverse of `phone_no` below**, and the inversion is the point
 > being defined. **Every "is this a Master Admin?" check reads `system_access = FULL`**, and
 > `BR-A13`'s 3/1 limits count on that column.
 
-**`employees.phone_no`** — string, **NOT NULL**, **unique**. This is the login username
-(BR-A1). HR cannot register an employee without one, and there is no placeholder path — a
-dummy number occupies the unique index and hands one employee's username to another.
+**`users.phone_no`** — string, **NOT NULL**, **unique**. This is the login username (BR-A1).
+There is no placeholder path — a dummy number occupies the unique index and hands one
+person's username to another.
+
+> **⚠ Moved from `employees` — 2026-08-12, `adr/0006`.** It lived on `employees` until then,
+> and the combination was fatal rather than untidy: BR-A1 makes the number the username and
+> `adr/0001` decision 4 gives Master Admin **no employee record**, so the most powerful
+> account in the system had nowhere to keep its own. Reproduced with the correct password —
+> the seeded account was refused on the number, the email, the id and an empty string. It is
+> the first account and the only one, so that was not one broken login but a system nobody
+> could enter.
+>
+> **`employees` holds no phone number at all now, and no separate contact number either**
+> (`adr/0006` decision 7). The personal number *is* the username — one number, one meaning —
+> so a second column would be the same fact written twice, and the copy goes stale the first
+> time someone changes one and not the other. **Changing a personal number therefore changes
+> a login**, done from the account management screen (§6, §7), never from the employee form.
 
 **`sessions`** — the standard Laravel session table, with `user_id` indexed. Required by
 the database session driver (BR-A5), which is what makes BR-A15 possible.
@@ -166,7 +181,7 @@ lookup, never a literal (`conventions.md` §5).
 
 ### Authentication
 
-**BR-A1 — Username is `employees.phone_no`.** Normalised before storing and before
+**BR-A1 — Username is `users.phone_no`.** Normalised before storing and before
 comparing: strip spaces, dashes, and a leading `+60` or `60`. `012-345 6789`,
 `0123456789`, and `+60123456789` are one number and must all authenticate. Validation:
 **9–12 digits after normalisation**.
@@ -620,7 +635,7 @@ This module's own surface only. Per-module tables live in their own specs (BR-A8
 | Reset another's password | `HR`, Master Admin |
 | Unlock a locked account | `HR`, Master Admin |
 | Regenerate an activation QR | `HR`, Master Admin |
-| Change an employee's `phone_no` | `HR`, Master Admin — **from the account screen only**, see below |
+| Change an account's `phone_no` | `HR`, Master Admin — **from the account screen only**, see below |
 | Create / remove a Master Admin | Master Admin |
 | Change `system_access` on an account | Master Admin |
 
@@ -730,7 +745,13 @@ its failures are silent.
 30. Downloading the QR sets `activation_downloaded_at`; downloading again does not move it.
 31. `MasterAdminSeeder` is idempotent.
 32. Creating a fourth Master Admin is rejected; removing the last one is rejected.
-33. An employee cannot be created without a `phone_no`, and two employees cannot share one.
+33. An **account** cannot be created without a `phone_no`, and two accounts cannot share
+    one. ⚠ Asserted on `users`, not on `employees` — the column moved (`adr/0006`), and an
+    employee holds no username of its own.
+34. **A seeded Master Admin can log in**, in every accepted number format, and is sent
+    straight to the password-change screen. This is the test whose absence let `adr/0006`'s
+    defect ship past 171 passing tests: every other test built its account through a factory
+    with an employee attached, so nothing exercised the one account type that has none.
 
 ## 9. Definition of Done
 

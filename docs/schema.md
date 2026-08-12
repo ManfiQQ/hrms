@@ -57,6 +57,29 @@ data: `conventions.md` §7 asks that a table's design not be patched by a later 
 migration where it can be avoided, and here it could. Once real data exists this option is
 gone, and changes become forward-only migrations.
 
+**The same door was used again on 2026-08-12 to move `phone_no` from `employees` to
+`users`** (`adr/0006`). Both creating migrations were edited **in place**: the column was
+removed from `create_employees_table` and added to `create_users_table`. **There is no
+move-and-backfill migration, and its absence is a decision, not an omission.**
+
+> **⚠ Why no migration for a column that moved.** A backfill would have been a permanent
+> historical artefact: one file creating the column, another relocating it, and a reader a
+> year from now reasonably inferring that real rows once lived in the old place and were
+> carried across. **None did.** The column never held a single row outside a test database.
+> A migration recording a migration that never happened is worse than no record at all — it
+> asserts a history that is false, in the one file set whose whole job is to be the true
+> history of the schema.
+>
+> This is the same door as the base `users` edit above, and it closes on the same terms: the
+> **first** migration run against real data ends it permanently. From that moment a column
+> that moves needs a real migration and a real backfill, because by then there really is
+> something to carry.
+
+⚠ **Anyone re-running an existing local database must `migrate:fresh`.** Editing a creating
+migration in place does not change a database that has already run it, so a stale local
+schema will still carry `employees.phone_no` and lack `users.phone_no` — and login will fail
+in a way the code cannot explain.
+
 ---
 
 ## Core / Company & Org (Phase 0)
@@ -171,7 +194,25 @@ gone, and changes become forward-only migrations.
 > under AHS grants its staff group-wide reads. The hierarchy is small and rarely changes,
 > but it is now load-bearing and **must be covered by a test**.
 
-> ### `employees.phone_no` is the login username — read before touching it
+> ### The login username lives on `users`, not here — read before touching either table
+>
+> **⚠ Moved 2026-08-12 (`adr/0006`). `employees` holds no phone number at all**, and no
+> separate contact number either (decision 7). The rules below still describe the column;
+> they now describe `users.phone_no`. They are kept in this position because this is where a
+> reader looking for an employee's number will come.
+>
+> **Why it moved.** `adr/0001` decision 4 gives Master Admin no employee record, so with the
+> username here the most powerful account in the system had nowhere to keep its own.
+> Reproduced with the correct password: the seeded account was refused on the number, the
+> email, the id and an empty string. It is the first account and the only one — a system
+> nobody could enter.
+>
+> **Why there is no `contact_no` to replace it.** The personal number *is* the username, so
+> a second column would be one fact written twice, and the copy goes stale the first time
+> someone changes one and not the other. **Changing a personal number changes a login**, and
+> HR does it from the account management screen (`auth-rbac.spec.md` §7). A genuinely
+> different fact — next of kin, a company handset — is a different column with its own
+> reasoning; `employee_family_members.is_emergency_contact` already covers the first.
 >
 > Login runs on the phone number, not on email (`adr/0004` decision 6). `email` is nullable
 > and much of this workforce has none; a phone number is something every employee has and
@@ -724,7 +765,8 @@ dropped, both below** — plus `employee_id` (FK → employees,
 `STANDARD`**), `must_change_password` (boolean, **default true**), `password_changed_at` (timestamp,
 nullable), `activation_token` (string, unique, nullable), `activation_expires_at`
 (timestamp, nullable), `activation_downloaded_at` (timestamp, nullable),
-`activation_used_at` (timestamp, nullable), `failed_login_attempts` (unsigned integer,
+`activation_used_at` (timestamp, nullable), `phone_no` (string, **NOT NULL, unique** — the
+login username, `adr/0006`), `failed_login_attempts` (unsigned integer,
 **NOT NULL, default 0**), `locked_until` (timestamp, nullable).
 
 > **BR-A3's throttle state — added 2026-08-12**
@@ -803,8 +845,8 @@ carry null here for good (`adr/0001` decision 4, `adr/0004` decision 4).
 **`users.email` is `nullable` and keeps its unique index.** This is a deliberate change to
 Laravel's default, which declares it NOT NULL + unique.
 
-**Email is not a login credential here.** The username is `employees.phone_no`
-(`adr/0004` decision 6). `employees.email` is already nullable because most field staff —
+**Email is not a login credential here.** The username is `users.phone_no` — the column
+beside it on this same table (`adr/0004` decision 6, `adr/0006`). `employees.email` is already nullable because most field staff —
 Operation Crew, Live Host, factory — have no company email, and a `users` row is created for
 **every** employee in the same transaction as their employee record. NOT NULL would
 therefore fail on the **second** employee without an email. That is not a risk; it is a
@@ -818,9 +860,9 @@ unique index and manufactures data that is not true.
 unique index, so the pair reads as *email is optional, but where present it is unique*.
 
 > **This is the inverse of `phone_no`, and the difference carries the meaning.**
-> `employees.phone_no` is **NOT NULL** because it *is* the username. `users.email` is
-> **nullable** because it is not. Same unique index on both, opposite nullability, for one
-> reason: which of the two is a credential.
+> `users.phone_no` is **NOT NULL** because it *is* the username. `users.email` is
+> **nullable** because it is not. Two columns on one table, same unique index, opposite
+> nullability, for one reason: which of the two is a credential.
 
 #### `system_access` — three values
 

@@ -517,7 +517,9 @@ shape costs a few bytes and avoids per-type branching in every reader.
 ### 5.4 List & search
 
 - Default list is tenant-scoped and excludes soft-deleted rows.
-- Search on `employee_no`, `full_name`, `nickname`, `email`, `phone_no`.
+- Search on `employee_no`, `full_name`, `nickname`, `email`. ⚠ **Not on `phone_no`** — the
+  employee record no longer holds one (`adr/0006`). Searching by number means searching
+  accounts, which belongs to the account management screen.
 - Filters: company, branch, department, position, `staff_status`, `employment_type`,
   `level`.
 - Paginated. Query lives in a model scope or repository, not inline in the controller
@@ -596,7 +598,7 @@ is the normal case, not an edge case.
 | View own record | any employee |
 | View department employees | `SUPERVISOR`, `MANAGER`, `HOD` — own department **and own `company_id`** |
 | View all in **read scope** | `HR`, `ASSISTANT_DIRECTOR` — scope **derived from the employer's hierarchy position**, see below |
-| Create / edit / archive | `HR`, `ASSISTANT_DIRECTOR` — within their read scope, **`phone_no` excepted** (§6.4) |
+| Create / edit / archive | `HR`, `ASSISTANT_DIRECTOR` — within their read scope. `phone_no` is not on this record at all (§6.4) |
 | Grant / revoke `MANAGER`, `SUPERVISOR` | `HR` — within their read scope |
 | Grant / revoke `ACCOUNT`, `HR`, `ASSISTANT_DIRECTOR`, `HOD` | **Master Admin only** (BR-16) |
 | Create / deactivate `job_functions` types | **Master Admin only** (BR-15) |
@@ -684,7 +686,28 @@ fit the fixed types (§10 decision 4), which makes it the natural place for inte
 and investigation material. Hiding it gives it a defined purpose rather than leaving it an
 undifferentiated bucket.
 
-### 6.4 `phone_no` is read-only on the employee form — for everyone
+### 6.4 There is no `phone_no` on the employee record — for anyone
+
+> **⚠ Rewritten 2026-08-12 — `adr/0006`.** This section previously said the employee form
+> *displays* `phone_no` read-only. It no longer displays it, because **the column is not on
+> `employees`**: the login username lives on `users`, since Master Admin has no employee
+> record and had nowhere to keep one (`adr/0001` decision 4). The reasoning below is the
+> reasoning that moved it, and is kept because it is what makes the absence make sense.
+>
+> **⚠ There is no separate contact number either, and none may be added**
+> (`adr/0006` decision 7). The employee's personal number **is** their login username — one
+> number, one meaning — so a `contact_no` beside it would be the same fact written twice,
+> and the copy goes stale the first time someone changes one and not the other.
+>
+> **Changing a personal number therefore changes a login.** HR does it from the account
+> management screen (`auth-rbac.spec.md` §7), where it sits beside password reset and
+> unlock, because it is the same kind of operation: a credential change, not a profile edit.
+> *"HR needs to reach people"* is already met — the login number **is** the number HR
+> reaches them on.
+>
+> A genuinely different fact — a next-of-kin number, a company-issued handset — would be a
+> different column with its own name and its own reasoning, not a second copy of this one.
+> `employee_family_members.is_emergency_contact` already covers the first.
 
 **The employee form displays `phone_no` and never edits it. This holds for every role,
 `HR` and Master Admin included.** There is no edit affordance on this form, greyed out or

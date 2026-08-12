@@ -4,8 +4,6 @@ namespace App\Services\Auth;
 
 use App\Exceptions\Auth\AccountLockedException;
 use App\Exceptions\Auth\InvalidCredentialsException;
-use App\Models\Employee;
-use App\Models\Scopes\TenantScope;
 use App\Models\User;
 use App\Services\Audit\SecurityEventLogger;
 use App\Support\Auth\PhoneNumber;
@@ -113,7 +111,7 @@ class AuthenticationService
     private function assertNotLocked(User $user): void
     {
         if ($this->throttle->isPermanentlyLocked($user)) {
-            $this->securityEvents->record('LOGIN_FAILED', $user->employee?->phone_no ?? '', $user);
+            $this->securityEvents->record('LOGIN_FAILED', $user->phone_no, $user);
 
             throw AccountLockedException::permanent();
         }
@@ -121,7 +119,7 @@ class AuthenticationService
         $until = $this->throttle->lockedUntil($user);
 
         if ($until !== null) {
-            $this->securityEvents->record('LOGIN_FAILED', $user->employee?->phone_no ?? '', $user);
+            $this->securityEvents->record('LOGIN_FAILED', $user->phone_no, $user);
 
             throw AccountLockedException::timed($until);
         }
@@ -130,22 +128,18 @@ class AuthenticationService
     /**
      * The account behind a normalised phone number.
      *
-     * ⚠ Employee is read WITHOUT TenantScope, and not as an optimisation. This runs before
-     * authentication, so there is no user from whom a read scope could be resolved; the
-     * scope would return early and read everything anyway. Releasing it explicitly makes the
-     * behaviour identical however the service is invoked, rather than depending on who
-     * happens to be logged in at the time.
+     * ⚠ One query against `users`, and no join through `employees` (adr/0006). The username
+     * belongs to the account, which is what lets an account with no employee record — every
+     * Master Admin, and the Director — have one at all. Until 2026-08-12 this resolved
+     * through the employee record, and the installer's own account was therefore unreachable
+     * by any input.
+     *
+     * It also removes a `withoutGlobalScope(TenantScope::class)` release that the join
+     * needed: `users` carries no tenant scope, so the pre-authentication path — the one with
+     * no user to scope against — now has nothing to release.
      */
     private function findByPhone(string $normalised): ?User
     {
-        $employeeId = Employee::withoutGlobalScope(TenantScope::class)
-            ->where('phone_no', $normalised)
-            ->value('id');
-
-        if ($employeeId === null) {
-            return null;
-        }
-
-        return User::query()->where('employee_id', $employeeId)->first();
+        return User::query()->where('phone_no', $normalised)->first();
     }
 }

@@ -34,7 +34,6 @@ class Employee extends Model
         'full_name',
         'nickname',
         'email',
-        'phone_no',
         'branch_id',
         'department_id',
         'position_id',

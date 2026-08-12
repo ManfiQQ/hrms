@@ -12,8 +12,8 @@ namespace App\Support\Auth;
  * to someone typing the correct number.
  *
  * `012-345 6789`, `0123456789` and `+60123456789` are ONE number and must all authenticate
- * to the same account. `employees.phone_no` is the login username (BR-A1) and carries a
- * unique index, so the value stored must already be normalised or two spellings of one
+ * to the same account. `users.phone_no` is the login username (BR-A1, adr/0006) and carries
+ * a unique index, so the value stored must already be normalised or two spellings of one
  * number would occupy two rows.
  */
 class PhoneNumber

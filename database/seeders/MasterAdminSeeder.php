@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\User;
+use App\Support\Auth\PhoneNumber;
 use Illuminate\Database\Seeder;
 use RuntimeException;
 
@@ -23,15 +24,35 @@ class MasterAdminSeeder extends Seeder
 {
     public function run(): void
     {
-        $email = env('MASTER_ADMIN_EMAIL');
-        $password = env('MASTER_ADMIN_PASSWORD');
+        // ⚠ config(), NEVER env() directly. After `php artisan config:cache` — which
+        // production runs — env() returns null for everything outside the cached config, so
+        // this seeder would abort on a production install with an error pointing at a
+        // variable that is demonstrably sitting in .env. This is the single first way into
+        // the system; it is the worst place to leave that trap (spec §5.8).
+        $email = config('auth.master_admin.email');
+        $password = config('auth.master_admin.password');
+        $phoneNo = config('auth.master_admin.phone_no');
 
         // Fail loudly rather than fall back to a default credential (adr/0001 decision 5).
-        if (blank($email) || blank($password)) {
+        if (blank($email) || blank($password) || blank($phoneNo)) {
             throw new RuntimeException(
-                'MASTER_ADMIN_EMAIL and MASTER_ADMIN_PASSWORD must both be set in .env. '
-                .'This seeder never falls back to a default credential — see adr/0001 '
-                .'decision 5. Both keys are listed in .env.example.'
+                'MASTER_ADMIN_EMAIL, MASTER_ADMIN_PHONE and MASTER_ADMIN_PASSWORD must all be '
+                .'set in .env. This seeder never falls back to a default credential — see '
+                .'adr/0001 decision 5. All three keys are listed in .env.example.'
+            );
+        }
+
+        // ⚠ Normalised through the ONE normaliser BR-A1 requires, so the seeded account is
+        // reachable by every form the number can be typed in. A number stored unnormalised
+        // here would produce an account that exists and cannot be logged into — which is
+        // precisely the defect adr/0006 was written to close.
+        $phoneNo = PhoneNumber::normalise((string) $phoneNo);
+
+        if (! PhoneNumber::isValid($phoneNo)) {
+            throw new RuntimeException(
+                "MASTER_ADMIN_PHONE does not look like a phone number after normalisation "
+                ."(got \"{$phoneNo}\"). BR-A1 requires 9-12 digits. Refusing to create an "
+                .'account nobody can log into.'
             );
         }
 
@@ -47,6 +68,12 @@ class MasterAdminSeeder extends Seeder
         $user = new User();
         $user->name = 'Master Admin';
         $user->email = $email;
+
+        // ⚠ THE LOGIN USERNAME, and it lives here rather than on an employee record —
+        // which this account does not have and never will (adr/0001 decision 4, adr/0006).
+        // Before the move, this seeder produced an account that could not be logged into by
+        // any input, with the correct password.
+        $user->phone_no = $phoneNo;
 
         // Assigned in plain text on purpose: the User model casts password to 'hashed',
         // which hashes once. Passing an already-hashed value would be hashed again only if

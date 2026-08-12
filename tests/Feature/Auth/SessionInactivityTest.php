@@ -44,9 +44,10 @@ beforeEach(function () {
         }
     }
 
-    $employee = Employee::factory()->forCompany($this->aim)->create(['phone_no' => '0123456789']);
+    $employee = Employee::factory()->forCompany($this->aim)->create();
 
     $this->user = User::factory()->forEmployee($employee)->create([
+        'phone_no' => '0123456789',
         'password' => 'secret123',
         'must_change_password' => false,
     ]);

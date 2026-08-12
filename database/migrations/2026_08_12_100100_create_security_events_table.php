@@ -56,7 +56,7 @@ return new class extends Migration
                 'ACTIVATION_REDEEMED',
             ]);
 
-            // The submitted login identifier — employees.phone_no, NORMALISED per BR-A1
+            // The submitted login identifier — users.phone_no, NORMALISED per BR-A1
             // (strip spaces, dashes, leading +60 or 60) — stored whether or not it matches
             // an account. Normalising matters here: 012-345 6789 and +60123456789 must
             // group as repeated attempts against ONE number, not read as two.

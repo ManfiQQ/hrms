@@ -80,6 +80,43 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Master Admin — the installer's account (auth-rbac.spec.md §5.8)
+    |--------------------------------------------------------------------------
+    |
+    | ⚠ READ THROUGH config(), NEVER env() DIRECTLY, and that is why these keys
+    | exist at all. After `php artisan config:cache` — which production runs —
+    | env() returns NULL for everything outside the cached config. A seeder
+    | calling env('MASTER_ADMIN_PASSWORD') would therefore see nothing on a
+    | production install and abort with "must be set", while the variable sits
+    | correctly in .env.
+    |
+    | That failure is loud, which is the only reason it is not worse. But this
+    | seeder is the single first way into the system: it creates the only
+    | account that exists, and until it succeeds there is no account to log in
+    | with and no way to create one. A first install that cannot proceed, with
+    | an error pointing at a variable that is demonstrably present, is the worst
+    | place in the system to leave that trap.
+    |
+    | adr/0001 decision 5 is unchanged and still met — the credentials come from
+    | environment variables and never from literals in a seeded file, which is
+    | what keeps them out of git history. config() reads those same variables and
+    | only adds the indirection that survives caching.
+    |
+    | ⚠ phone_no is REQUIRED, not optional. It is the login username (adr/0006),
+    | and an account created without one cannot be logged into by anybody — the
+    | exact defect that ADR exists to close. The seeder fails loudly without it
+    | rather than producing an unreachable account.
+    |
+    */
+
+    'master_admin' => [
+        'email' => env('MASTER_ADMIN_EMAIL'),
+        'password' => env('MASTER_ADMIN_PASSWORD'),
+        'phone_no' => env('MASTER_ADMIN_PHONE'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | User Providers
     |--------------------------------------------------------------------------
     |

@@ -24,12 +24,12 @@ class EmployeeFactory extends Factory
             'nickname' => null,
 
             // Null by default: most of this workforce has no company email, which is why
-            // login runs on phone_no (adr/0004 decision 6).
+            // login runs on the phone number, which lives on users (adr/0006, BR-A1).
             'email' => null,
 
-            // The login username. Unique because two employees sharing a number would make
-            // login ambiguous. 11 digits, matching the 9-12 validation range (BR-A1).
-            'phone_no' => '01'.fake()->unique()->numerify('#########'),
+            // ⚠ No phone_no. The login username lives on the ACCOUNT, not the employee
+            // record (adr/0006) — UserFactory generates it. An employee has no username of
+            // its own, and there is no separate contact number either (adr/0006 decision 7).
 
             'company_id' => Company::factory(),
 
