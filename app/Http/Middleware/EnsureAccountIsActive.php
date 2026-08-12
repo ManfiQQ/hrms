@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\Auth\AccountExpiry;
 use App\Services\Auth\LoginThrottle;
 use Closure;
 use Illuminate\Http\Request;
@@ -27,7 +28,10 @@ class EnsureAccountIsActive
     /** Methods that only read. Everything else is a write and is refused to a frozen account. */
     private const READ_METHODS = ['GET', 'HEAD', 'OPTIONS'];
 
-    public function __construct(private readonly LoginThrottle $throttle) {}
+    public function __construct(
+        private readonly LoginThrottle $throttle,
+        private readonly AccountExpiry $expiry,
+    ) {}
 
     public function handle(Request $request, Closure $next): Response
     {
@@ -44,23 +48,21 @@ class EnsureAccountIsActive
             return $this->logout($request, 'This account is locked. HR or a Master Admin must unlock it.');
         }
 
-        // ⚠ EXPIRED IS NOT IMPLEMENTED, DELIBERATELY, AND IS NOT APPROXIMATED.
+        // ⚠ EXPIRED IS CHECKED BEFORE FROZEN, AND THE ORDER IS THE RULE.
         //
-        // BR-A17 counts ten days from the effective_date — the LAST WORKING DAY, not the day
-        // HR typed the change. That date lives on employee_status_history, which has no
-        // migration; employees carries staff_status and no date for when it took effect, so
-        // there is nothing to count from.
+        // An expired account is also frozen — it holds a terminal status either way — so a
+        // freeze check reached first would grant it read access forever and the countdown
+        // would never end anything. Expiry is the stricter of the two states and has to be
+        // asked about first.
         //
-        // The column is not this module's to add: employee_status_history belongs to
-        // Employee Master, and designing its shape from an Auth branch is the
-        // code-before-spec pattern Principle #1 exists to prevent — the same reason
-        // audit_logs was not created by the tenant-scope PR (adr/0005 decision 5).
-        //
-        // The failure direction is safe: the freeze below never lifts, so a terminated
-        // account stays read-only forever instead of becoming inaccessible on day ten.
-        // Access is NARROWER than the rule requires, not wider. What is missing is the
-        // account ever going fully dark, and BR-A19's countdown, which needs the same date.
-        // Both land with Employee Master; §8 test 24 cannot pass until then.
+        // BR-A17 counts ten days from `effective_date`, the LAST WORKING DAY, never from the
+        // day HR typed the change. AccountExpiry owns that arithmetic; this gate owns only
+        // what happens when it comes back true.
+        if ($this->expiry->hasExpired($user)) {
+            // Session invalidated and logged out (§5.2). All data remains in the system —
+            // expiry closes the account, not the record.
+            return $this->logout($request, 'This account has expired: its post-employment access window has ended.');
+        }
 
         if ($this->isFrozen($user) && ! $this->isReadRequest($request)) {
             // Frozen: reads of own data permitted, all writes rejected. Not logged out —

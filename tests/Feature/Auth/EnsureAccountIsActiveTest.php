@@ -19,12 +19,14 @@ beforeEach(function () {
     $this->aim = Company::factory()->subsidiary($this->ahs)->create(['code' => 'AIM']);
 
     foreach ([$this->ahs, $this->aim] as $company) {
-        PolicyConfiguration::create([
-            'company_id' => $company->id,
-            'key' => 'auth.throttle.tier_4.attempts',
-            'value' => '12',
-            'effective_from' => now()->toDateString(),
-        ]);
+        foreach (['auth.throttle.tier_4.attempts' => '12', 'auth.account.expiry_days' => '10'] as $key => $value) {
+            PolicyConfiguration::create([
+                'company_id' => $company->id,
+                'key' => $key,
+                'value' => $value,
+                'effective_from' => now()->toDateString(),
+            ]);
+        }
     }
 
     Route::middleware(['web', EnsureAccountIsActive::class])->group(function () {
@@ -103,37 +105,3 @@ it('ignores unauthenticated requests', function () {
     $this->get('/_t/read')->assertOk();
 });
 
-/**
- * ⚠ BR-A17 EXPIRY IS NOW UNBLOCKED AND STILL NOT IMPLEMENTED — this test records that, and
- * it is the next commit's work.
- *
- * This assertion used to read `Schema::hasTable('employee_status_history')->toBeFalse()`,
- * with a message telling whoever tripped it to go and implement expiry. **It fired**: the
- * table landed with the status-history migration, the suite went red, and the failure
- * message was the instruction. That is the tripwire working exactly as intended.
- *
- * What it cannot do is make the work happen in the same breath. BR-A17 counts ten days from
- * `effective_date` — the last working day — and reading it means resolving the employee's
- * most recent terminal-status row through the ledger, inside `EnsureAccountIsActive`. That
- * is a change to the authentication gate and it earns its own commit and its own tests
- * (§8 test 24, and BR-A19's countdown, which needs the same date).
- *
- * ⚠ Until then the failure direction stays safe: a terminal status freezes the account and
- * the freeze NEVER LIFTS, so access is narrower than the rule requires, never wider. What is
- * missing is the account ever going fully dark on day ten.
- */
-it('still does not expire an account, though the ledger it needs now exists', function () {
-    expect(Illuminate\Support\Facades\Schema::hasTable('employee_status_history'))->toBeTrue(
-        'The ledger BR-A17 needs is gone again — expiry has lost its date source a second time.'
-    );
-
-    $user = accountWithStatus('TERMINATED', $this->aim);
-    $this->actingAs($user);
-
-    // Far past any ten-day window: still merely frozen, not gone. Narrower than the rule
-    // requires, never wider.
-    $this->travel(60)->days();
-
-    $this->get('/_t/read')->assertOk();
-    $this->post('/_t/write')->assertForbidden();
-});
