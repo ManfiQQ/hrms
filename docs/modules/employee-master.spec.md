@@ -481,7 +481,18 @@ Hard deletion is not exposed in the UI at all.
 
 Any change to `staff_status`, `position_id`, `department_id`, or `level` writes a new
 `employee_status_history` row inside the same transaction as the update — the caller
-cannot forget to write it, because the service does it, not the controller. Rows are
+cannot forget to write it, because the service does it, not the controller.
+
+**`staff_status` is implemented: `App\Actions\Employee\ChangeEmployeeStatus`** (2026-08-12).
+It validates the BR-2 transition **before** opening the transaction, then writes the status,
+the ledger row, the audit row and — for a terminal status — the BR-A15 freeze, all inside
+one transaction. The other three change types have no Action yet.
+
+⚠ **The ledger row is not optional, and BR-A17 is why.** Account expiry counts ten days from
+`employee_status_history.effective_date`, so a terminal status written *without* its ledger
+row has nothing to count from: the account never expires and keeps read access indefinitely,
+wider than the rule allows and with nothing to notice. That failure is the reason this is an
+Action rather than an `$employee->update()` in a controller. Rows are
 never edited or deleted; a correction is a new row.
 
 **It is not mirrored to `audit_logs`, and a service that writes both is wrong.**

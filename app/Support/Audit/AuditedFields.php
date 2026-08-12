@@ -25,23 +25,16 @@ class AuditedFields
      * @var array<class-string, list<string>>
      */
     public const FIELDS = [
-        // Employee Master is the first module to fill this. Nothing is audited yet because
-        // no Action exists anywhere in the codebase.
+        // Who moved this person to RESIGNED, when, and why. The ledger
+        // (employee_status_history) answers what the status WAS on a date; this answers who
+        // changed it — two different facts about one event, which is why recording both is
+        // not the duplication adr/0003 decision 8 forbids.
+        //
+        // Written by App\Actions\Employee\ChangeEmployeeStatus, which declares the matching
+        // AUDITS constant. The architecture test fails in both directions: an entry here
+        // with no Action behind it, and an Action auditing a field absent from this list.
+        \App\Models\Employee::class => ['staff_status'],
     ];
-
-    /**
-     * ⚠ Why the registry may be empty right now, and until when.
-     *
-     * An architecture test over an empty set passes forever while checking nothing — it is
-     * the kind of test nobody notices has died. The BR-AT13 guard therefore FAILS on an
-     * empty registry unless this constant is present, which makes "not started yet" a
-     * deliberate statement with an expiry rather than a silent gap.
-     *
-     * DELETE THIS CONSTANT the moment the first pair is added above. Leaving it in place
-     * alongside real entries would let a later emptying of the list pass unnoticed, and the
-     * guard test rejects that combination.
-     */
-    public const INTENTIONALLY_EMPTY_UNTIL = 'Employee Master (Phase 1) — its Actions are the first that will audit a field. audit-trail.spec.md BR-AT13.';
 
     /**
      * Every audited pair, flattened.
