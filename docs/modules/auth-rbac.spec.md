@@ -605,7 +605,26 @@ App\Actions\Auth\RedeemActivationToken
 - **Download** — serving the QR image sets `activation_downloaded_at` if not already set
   (BR-A22). No user action, no button.
 - **Redeem** — rejects if used, expired, or unknown. On success: sets `activation_used_at`,
-  authenticates, forces password creation, notifies HR.
+  authenticates, forces password creation, notifies HR. **Implemented 2026-08-12:**
+  `App\Actions\Auth\RedeemActivationToken`, reached at `GET /activate/{token}`.
+
+  ⚠ **All three rejections return ONE message.** Telling somebody a token *expired* confirms
+  it once existed; telling them it is *unknown* confirms it never did. Either turns the
+  activation URL into an oracle — and the reward for finding a live token is not a hint but
+  an **account**, since redemption authenticates the holder outright.
+
+  ⚠ **HR notification is an event with no listener.** `App\Events\Auth\AccountActivated` is
+  dispatched and nothing consumes it: the **Notification Engine has no spec**, and writing
+  delivery rules here is the code-before-spec pattern Principle #1 prevents. Same standing
+  gap as BR-A16's freeze event.
+
+  **`must_change_password` is left true** and this Action does not redirect — BR-A23's gate
+  is what forces the password, and duplicating that here would be a second place for the
+  rule to be wrong.
+
+  **`activation_downloaded_at` is not touched.** Serving the QR image sets it (BR-A22), and
+  no image exists yet; stamping it on redemption would assert that HR fetched something that
+  was never generated.
 
 Redemption is **atomic**. Two simultaneous scans of one token must not both succeed —
 take the row `lockForUpdate()`.
