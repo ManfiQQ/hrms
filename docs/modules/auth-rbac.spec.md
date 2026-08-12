@@ -603,7 +603,32 @@ App\Actions\Auth\RedeemActivationToken
   employee-creation transaction (BR-A20). Regeneration invalidates the previous token and
   clears both timestamps.
 - **Download** — serving the QR image sets `activation_downloaded_at` if not already set
-  (BR-A22). No user action, no button.
+  (BR-A22). No user action, no button. **Implemented 2026-08-12:**
+  `App\Services\Auth\ActivationImage` renders it, served at
+  `GET /accounts/{user}/activation.png`.
+
+  **The image carries all three elements** — QR, full name, validity period
+  (`adr/0004` decision 7). It arrives over WhatsApp detached from whatever HR typed with it,
+  in a thread that may hold several: without the **name** HR sends the wrong one and hands
+  an employee's account to somebody else; without the **validity** an employee scans a dead
+  token days later and reads "not valid" with no idea why.
+
+  ⚠ **The image is a credential, and the route is bounded accordingly.** Whoever holds it can
+  activate the account. `HR` and Master Admin only, via `UserPolicy::viewActivationImage` —
+  and **`ASSISTANT_DIRECTOR` is excluded** even though it may create, edit and archive
+  employee records, for the same reason it cannot change a `phone_no`: account operations and
+  profile operations are separate. Read scope bounds *which* accounts, independently of the
+  role. The response is never cached.
+
+  ⚠ **A second download does not move the timestamp.** It answers *when did HR first take
+  possession of this image*; overwriting it on every fetch would silently convert that into
+  *when did somebody last look* — a different question, and one that destroys the only half
+  of delivery the system can state with certainty (§8 test 30).
+
+  **The font is vendored in the repository**, not taken from the system. Sail has Liberation
+  and DejaVu; the production VPS is a native LEMP stack and may not, and a missing font is
+  not cosmetic — no image can be produced and HR cannot activate anybody. See
+  `resources/fonts/README.md`.
 - **Redeem** — rejects if used, expired, or unknown. On success: sets `activation_used_at`,
   authenticates, forces password creation, notifies HR. **Implemented 2026-08-12:**
   `App\Actions\Auth\RedeemActivationToken`, reached at `GET /activate/{token}`.

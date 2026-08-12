@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Auth\ActivationController;
+use App\Http\Controllers\Auth\ActivationImageController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\PasswordChangeController;
 use App\Http\Controllers\DashboardController;
@@ -45,6 +46,19 @@ Route::middleware('guest')->group(function () {
  */
 Route::middleware(['auth', EnsureAccountIsActive::class, EnsurePasswordIsChanged::class])->group(function () {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
+
+    /*
+     * ⚠ The activation QR image — HR and Master Admin only (UserPolicy).
+     *
+     * It is a CREDENTIAL, not a report: whoever holds it can activate the account, because
+     * redemption authenticates the holder outright. Inside the authenticated group and behind
+     * a policy for that reason, and never cached.
+     *
+     * Serving it stamps activation_downloaded_at if unset (BR-A22) — the system records what
+     * it can observe, and a second fetch does not move the timestamp.
+     */
+    Route::get('/accounts/{user}/activation.png', ActivationImageController::class)
+        ->name('activation.image');
 
     Route::get('/password/change', [PasswordChangeController::class, 'show'])->name('password.change');
     Route::post('/password/change', [PasswordChangeController::class, 'update'])->name('password.change.update');
