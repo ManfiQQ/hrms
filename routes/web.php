@@ -69,6 +69,13 @@ Route::middleware(['auth', EnsureAccountIsActive::class, EnsurePasswordIsChanged
     Route::get('/accounts/{user}', fn (App\Models\User $user) => view('accounts.manage', ['user' => $user]))
         ->name('accounts.manage');
 
+    /*
+     * Master Admin management (§5.8) — Master Admin only, enforced by
+     * UserPolicy::administerMasterAdmins inside the component, and BR-A13's 3/1 limits
+     * enforced inside the Actions rather than by either.
+     */
+    Route::get('/master-admins', fn () => view('accounts.master-admins'))->name('master-admins');
+
     Route::get('/password/change', [PasswordChangeController::class, 'show'])->name('password.change');
     Route::post('/password/change', [PasswordChangeController::class, 'update'])->name('password.change.update');
 

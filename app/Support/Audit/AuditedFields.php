@@ -40,7 +40,7 @@ class AuditedFields
         // their read scope (BR-AT9), so auditing a credential's VALUE would hand it to every
         // reader of that screen. The derived facts below record that the operation happened,
         // which is the accountable part; the secret is not.
-        \App\Models\User::class => ['phone_no', 'password_changed_at', 'locked_until', 'activation_expires_at'],
+        \App\Models\User::class => ['phone_no', 'password_changed_at', 'locked_until', 'activation_expires_at', 'system_access'],
     ];
 
     /**
