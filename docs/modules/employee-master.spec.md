@@ -471,6 +471,18 @@ reference rows are left alone for a different reason: a Manager role at AIM is s
 Manager role at AIM after the person's payroll moves, so cascading it would corrupt the
 data outright.
 
+> **⚠ One phrase above is superseded by `adr/0010`; the rest of BR-17 stands unchanged.**
+>
+> The cascade table is still correct — existing event rows are **never** rewritten by a
+> transfer, and that is the whole point of the category. What `adr/0010` changes is the
+> **new** rows a transfer now writes itself: for those, *"the employer at the time it
+> happened"* resolves to the **new** company, not the old one. Freezing them to the old
+> employer would open the new company's history with a gap, which is the silent-missing-rows
+> failure this very section exists to prevent.
+>
+> The full amendment lands with the implementation PR; this pointer exists so the phrase is
+> not read as current in the meantime.
+
 **⚠ Consequence this module must implement.** Frozen rows fall **outside the new
 employer's tenant scope**, so a transferred employee's Status History tab would appear to
 **begin on the transfer date, with no error raised**. Therefore: **`employee_status_history`
@@ -616,6 +628,14 @@ other column will miss the cascade entirely.
 Writing a `STAFF_STATUS`-style history row for the transfer itself is **not** in the
 current `change_type` set; if the client wants transfers on the timeline, that is a new
 enum value and an ADR, not an improvisation here.
+
+> **⚠ Superseded by `adr/0010`** — a transfer now writes an `EMPLOYER` ledger row, and §5.3
+> already forced a `DEPARTMENT` row before that. The full amendment lands with the
+> implementation PR; this pointer exists so the sentences above are not read as current in the
+> meantime.
+>
+> Both paragraphs are affected: the *"must not touch `employee_status_history`"* rule, and the
+> demand for an ADR before a fifth `change_type` — which `adr/0010` discharges.
 
 **Who may initiate a transfer — `HR` or Master Admin, either one, directly.** HR is the
 ordinary actor: a transfer is an HR operation, not an administrative repair. Master Admin
