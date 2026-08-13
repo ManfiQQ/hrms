@@ -374,6 +374,14 @@ Two habits follow, both cheap:
 The cost is one minute per guard. The alternative is a test suite whose most important
 assertions are the ones least likely to be true.
 
+**When a deliberate break produces GREEN, the first assumption is that the break did not take
+effect — not that the guard is empty.** Confirm the break actually changed behaviour before
+concluding anything about the guard: a break silently dropped by mass-assignment protection, a
+cached config, or a filtered test run looks identical to a guard that never asserted anything.
+
+Recorded 2026-08-13, after a seeder break set via `updateOrCreate` was dropped because the
+column was not fillable, and the guard read as empty when it was sound.
+
 ---
 
 ## 10. Required Validation Before Calling a Module "Done"

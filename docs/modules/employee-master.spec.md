@@ -510,6 +510,9 @@ full. Test both directions (§8).
 > the system, it needs a decision between an observer, a trait and explicit assignment, and it
 > needs a backfill position for the rows already written. **That is an ADR and a PR of its
 > own, and it must not be slipped into a module slice.**
+>
+> **✅ Decided by `adr/0009`** — that ADR is the answer to this note, and the mechanism it
+> specifies lands in its own PR.
 
 ### 5.2 Delete
 
