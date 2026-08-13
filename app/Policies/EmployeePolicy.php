@@ -9,6 +9,7 @@ use App\Models\Scopes\TenantScope;
 use App\Models\User;
 use App\Services\Auth\ReadScopeResolver;
 use App\Services\Auth\RoleChecker;
+use InvalidArgumentException;
 
 /**
  * Authorisation for Employee Master — `employee-master.spec.md` §6 and §6.2.
@@ -55,6 +56,34 @@ class EmployeePolicy
     public const TAB_DOCUMENTS = 'documents';
 
     public const TAB_STATUS_HISTORY = 'status_history';
+
+    /**
+     * ⚠ THE EIGHTH TAB, DECIDED 2026-08-13. `adr/0004` decision 8's table named seven while
+     * §7 listed eight, so this one had never been decided — and the code answered `false`
+     * silently, which is behaviour nobody chose.
+     *
+     * **Administrative tier only**, plus the employee for their own record. Reasoning in
+     * §6.2 and in `adr/0004` decision 8's amendment note; the short form is that this tab is
+     * **not the long version of the Employment tab's cross-company line**. It adds three
+     * things that line does not have: REVOKED roles, job functions, and the grant/revoke
+     * controls.
+     */
+    public const TAB_ROLES = 'roles';
+
+    /**
+     * Every tab the detail view has (§7). Used to refuse an unknown one rather than let it
+     * fall through — see viewTab().
+     */
+    public const TABS = [
+        self::TAB_EMPLOYMENT,
+        self::TAB_PERSONAL,
+        self::TAB_FAMILY,
+        self::TAB_EDUCATION,
+        self::TAB_EMPLOYMENT_HISTORY,
+        self::TAB_DOCUMENTS,
+        self::TAB_ROLES,
+        self::TAB_STATUS_HISTORY,
+    ];
 
     /**
      * The only two tabs a SUPERVISOR, MANAGER or HOD may read.
@@ -119,6 +148,26 @@ class EmployeePolicy
      */
     public function viewTab(User $actor, Employee $employee, string $tab): bool
     {
+        // ⚠ AN UNKNOWN TAB THROWS RATHER THAN RETURNING false, and the difference is the whole
+        // reason TAB_ROLES needed deciding at all.
+        //
+        // Until 2026-08-13 an unrecognised string fell through to the supervisory branch,
+        // failed the SUPERVISORY_TABS test and returned false — quietly. That is how the
+        // eighth tab acquired an access rule nobody chose: not by a wrong decision, but by a
+        // silent default standing in for a missing one.
+        //
+        // A tab name that is not in TABS is a programming error, not an access decision, and
+        // an access decision is the one thing this method must never invent. Same reasoning as
+        // ChangeEmployeeAssignment refusing an unknown change_type.
+        if (! in_array($tab, self::TABS, true)) {
+            throw new InvalidArgumentException(
+                "\"{$tab}\" is not a tab on the employee detail view. The eight are: "
+                .implode(', ', self::TABS).'. Adding one means deciding its row in '
+                .'employee-master.spec.md §6.2 first — a tab with no decided rule gets a '
+                .'silent default, which is what this check exists to prevent.'
+            );
+        }
+
         // FULL and VIEW_ONLY hold no employee record at all, so no role check could ever
         // answer for them — which is precisely why system_access exists as a separate
         // dimension from employee_roles (adr/0004 decision 2).

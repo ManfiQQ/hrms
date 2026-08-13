@@ -355,9 +355,38 @@ Employee Master's detail view is tabbed. Access differs per tab, not per record.
 | Education | No | Yes | Yes | Own |
 | Employment History | No | Yes | Yes | Own |
 | Documents | No | Yes | Yes | Own — see decision 9 |
+| Roles & Functions | No | Yes | Yes | Own |
 | Status History | No | Yes | Yes | Own |
 
-Supervisors, Managers and HODs read **within their own department and their own company** —
+> **⚠ Amended 2026-08-13 — the Roles & Functions row was added. The table shipped with seven
+> rows; `employee-master.spec.md` §7 has always listed eight tabs.**
+>
+> **Nothing here was wrong. It was silent** — and silence in a permission matrix does not stay
+> silent, it gets a default. `EmployeePolicy::viewTab()` let an unrecognised tab name fall
+> through to the supervisory branch, fail the two-tab test and return `false`: **an access rule
+> nobody chose, arrived at by accident.** The policy now throws on an unknown tab, so the next
+> missing row announces itself instead.
+>
+> **Amended rather than superseded by a new ADR**, and the reason is not that the decision was
+> small. It is that **the eighth row has to be read where the other seven are read.** Anyone
+> consulting this table to answer *"may a supervisor open tab X"* must get all eight answers in
+> one place; splitting the matrix across two documents is precisely the failure this project
+> has spent its documentation budget correcting — §6.2 against §6.4 on `ACCOUNT`, §5.7 against
+> BR-17, `CLAUDE.md` against `composer.json`.
+>
+> **⚠ The decision itself did not change, and the reasoning below is already in this table.**
+> Supervisors read **No** on every history-bearing tab here — Employment History and Status
+> History both — and Roles & Functions carries revoked roles, which is history. It adds job
+> functions and the grant/revoke controls too, and `adr/0003` decision 3 already reserves
+> those.
+>
+> **What supervisors keep is the part that matters for supervision.** §7 puts the BR-12
+> cross-company line on the **Employment** tab, which they read: *"Also serving at: AHS — BDO,
+> Account · AIM — Manager…"*. **They already see who holds what authority today.** This row
+> withholds the history, the job functions and the controls — not the answer a supervisor
+> needs.
+>
+> Full reasoning: `employee-master.spec.md` §6.2.
 the existing double bound (`adr/0002` decision 4, Employee Master BR-10) is unchanged.
 
 **Why Employment and Personal, and nothing else.** A supervisor needs to know *who reports to

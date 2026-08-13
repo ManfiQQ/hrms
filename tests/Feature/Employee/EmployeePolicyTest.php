@@ -279,3 +279,69 @@ it('refuses a destination outside the actor read scope', function () {
 
     expect($this->policy->transfer($subsidiaryHr, policyStaffAt($this->aim), $this->tursenia))->toBeFalse();
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB_ROLES — the eighth tab, decided 2026-08-13
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * ⚠ THIS ROW HAD NEVER BEEN DECIDED. adr/0004 decision 8's table named seven tabs while §7
+ * listed eight, and viewTab() answered `false` for the missing one by letting an unrecognised
+ * string fall through the supervisory branch — an access rule nobody chose.
+ */
+it('gives the administrative tier the Roles & Functions tab', function () {
+    $subject = policyStaffAt($this->aim);
+
+    foreach (['HR', 'ASSISTANT_DIRECTOR', 'ACCOUNT'] as $role) {
+        $actor = policyAccountHolding($role, $this->ahs, policyStaffAt($this->ahs));
+
+        expect($this->policy->viewTab($actor, $subject, EmployeePolicy::TAB_ROLES))
+            ->toBeTrue("{$role} must be able to read Roles & Functions");
+    }
+
+    expect($this->policy->viewTab(User::factory()->masterAdmin()->create(), $subject, EmployeePolicy::TAB_ROLES))->toBeTrue()
+        ->and($this->policy->viewTab(User::factory()->viewOnly()->create(), $subject, EmployeePolicy::TAB_ROLES))->toBeTrue();
+});
+
+/**
+ * ⚠ The negative direction, and it is the decision. Supervisors keep the Employment tab's
+ * BR-12 cross-company line — who holds what authority TODAY — and lose the history, the job
+ * functions and the grant controls this tab adds.
+ */
+it('withholds Roles & Functions from the supervisory tier', function () {
+    $subject = policyStaffAt($this->aim, $this->shared);
+
+    foreach (['SUPERVISOR', 'MANAGER', 'HOD'] as $role) {
+        $actor = policyAccountHolding($role, $this->aim, policyStaffAt($this->aim, $this->shared));
+
+        // The same actor DOES read Employment — so this is the tab being withheld, not the
+        // record. Asserting only the negative would pass against an actor who sees nothing.
+        expect($this->policy->viewTab($actor, $subject, EmployeePolicy::TAB_EMPLOYMENT))
+            ->toBeTrue("{$role} must still read Employment")
+            ->and($this->policy->viewTab($actor, $subject, EmployeePolicy::TAB_ROLES))
+            ->toBeFalse("{$role} must not read Roles & Functions");
+    }
+});
+
+it('gives an employee their own Roles & Functions tab', function () {
+    $employee = policyStaffAt($this->aim);
+    $account = User::factory()->forEmployee($employee)->create();
+
+    expect($this->policy->viewTab($account, $employee, EmployeePolicy::TAB_ROLES))->toBeTrue()
+        ->and($this->policy->viewTab($account, policyStaffAt($this->aim), EmployeePolicy::TAB_ROLES))->toBeFalse();
+});
+
+/**
+ * ⚠ The guard that stops the next missing row becoming a silent default. An unknown tab is a
+ * programming error, not an access decision — and an access decision is the one thing this
+ * method must never invent.
+ */
+it('refuses an unknown tab instead of answering false', function () {
+    $subject = policyStaffAt($this->aim);
+    $hr = policyAccountHolding('HR', $this->ahs, policyStaffAt($this->ahs));
+
+    expect(fn () => $this->policy->viewTab($hr, $subject, 'salary'))
+        ->toThrow(InvalidArgumentException::class);
+
+    expect(EmployeePolicy::TABS)->toHaveCount(8);
+});

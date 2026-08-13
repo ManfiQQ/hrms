@@ -780,7 +780,31 @@ Access differs **per tab, not per record** (`adr/0004` decision 8). The detail v
 | Education | No | Yes | Yes | Own |
 | Employment History | No | Yes | Yes | Own |
 | Documents | No | Yes | Yes | Own — see §6.3 |
+| Roles & Functions | No | Yes | Yes | Own |
 | Status History | No | Yes | Yes | Own |
+
+> **The Roles & Functions row was decided 2026-08-13** — `adr/0004` decision 8's table named
+> seven tabs while §7 lists eight, so this one had never been decided at all, and the code
+> answered `false` **silently**. See that decision's amendment note.
+>
+> **⚠ The question is not "may a supervisor see who holds what authority?" — they already
+> can.** §7 puts the BR-12 cross-company line on the **Employment** tab, which supervisors
+> read:
+>
+> > **Employer (payroll):** AHS · **Also serving at:** AHS — BDO, Account · AIM — Manager, …
+>
+> That line stays, and hiding it would mean deleting something §7 specifies with its own
+> reasoning. Supervision needs *who holds what authority **today***, and that is exactly what
+> the line gives.
+>
+> **This tab is not the long version of that line.** It adds three things the line does not
+> have, and each lands a supervisor outside a boundary already drawn elsewhere:
+>
+> | It adds | Why that is not a supervisor's |
+> |---|---|
+> | **Revoked** roles — history | `adr/0004` decision 8 already answers **No** for supervisors on every history tab: Employment History and Status History both. This row follows that line rather than drawing a new one |
+> | **Job functions** | What a person does, per company — not a supervision input, and BR-15 keeps the vocabulary under Master Admin precisely because it is administrative |
+> | **Grant / revoke controls** | `EmployeePolicy::grantRole()` already refuses supervisors. **Rendering a button the policy will reject is a UI that lies**, and §5.6 is explicit that hiding a control is presentation while the authorisation is the rule |
 
 Supervisors, Managers and HODs read **within their own department and their own company** —
 the existing double bound (BR-10, `adr/0002` decision 4) is unchanged by any of this.
