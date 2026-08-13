@@ -392,6 +392,27 @@ Recorded 2026-08-13, after `AuthorshipObserver` began refusing writes with no ac
 started intercepting the BR-16 restricted-role tests before the rule they were written for
 could run.
 
+### ⚠ Principle #5 is enforced by nothing — a finding, not a decision
+
+**`CLAUDE.md` Principle #5 — *`schema.md` is updated in the same commit as any migration* — was
+broken on 2026-08-13 in PR #37**, the PR that built an enforcement mechanism. The authorship
+`NOT NULL` migration landed and `schema.md` never mentioned it.
+
+**It passed the §10 checklist, because §10 does not check it.** No test compares
+`database/migrations/` against `schema.md`'s Status table, and none compares a migration's
+columns against the entry describing them. **The principle most often cited in this project
+rests entirely on somebody remembering it.**
+
+That is the same shape as the `WithoutModelEvents` finding above: a rule everyone believes is
+in force, carried by nothing. A guard comparing the two would have caught it in the run that
+introduced it.
+
+**This is a record of the finding, not a decision about the remedy.** The guard is not written,
+and designing it needs its own scope — what counts as "described", how a multi-table migration
+maps to entries, and whether the Status table or the per-table sections are the source of
+truth. Recorded here so its absence is a known gap rather than a surprise the next time it
+fails.
+
 ### ⚠ A model hook is enforcement only where events are enabled
 
 **Every rule in this project enforced "structurally rather than by policy" is a model event,
@@ -422,6 +443,23 @@ needs it, scope it to that seeder and write down why. And when a rule is describ
 structural, **state which mechanism carries it**: a global scope survives `withoutEvents()`, a
 hook does not, and the difference decides whether the rule holds in seeders, imports and
 console commands at all.
+
+### ⚠ Query-builder writes bypass model events entirely — the second hole, same family
+
+Not by suppressing them, but by **never raising them**. A mass `update()` through the query
+builder writes rows without `AuthorshipObserver`, without any hook, and **without anything
+failing**.
+
+`AuthorshipCoverageTest` does not catch it: that guard checks **which models are registered**,
+not whether a write path goes through a model at all. It stays green for the entire time this
+hole is open.
+
+Found 2026-08-13 while writing `TransferCompany`, whose cascade uses a mass update deliberately
+and therefore sets `updated_by` by hand. **That is correct there. The gap is everywhere else
+that uses one.**
+
+Recorded as a finding, not a decision. **Anything described as enforced by a hook holds only
+for writes that go through a model instance.**
 
 ---
 

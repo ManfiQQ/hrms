@@ -41,18 +41,25 @@ class EmployeeStatusHistory extends Model
     protected $table = 'employee_status_history';
 
     /**
-     * The four change types, and only four.
+     * The five change types, and only five.
+     *
+     * ⚠ EMPLOYER was added on 2026-08-13 by adr/0010 — a company transfer is a ledger event.
+     * It is named for the FIELD, as the other four are: `employees.company_id` means "the
+     * payroll and legal employer — that meaning only". `COMPANY` was rejected because a row
+     * reading change_type = COMPANY beside its own company_id column uses one word for two
+     * different things.
      *
      * ⚠ CORE_ROLE is deliberately absent and must not be added. Role history lives in
      * `employee_roles`, which records every grant and revocation with its date, actor and
      * reason; writing the same event here would create two records of one fact that can
-     * disagree (adr/0003 decision 8).
+     * disagree (adr/0003 decision 8). A fifth value is not an invitation for a sixth.
      */
     public const CHANGE_TYPES = [
         'STAFF_STATUS',
         'POSITION',
         'DEPARTMENT',
         'LEVEL',
+        'EMPLOYER',
     ];
 
     /** Append-only: created_at alone, managed by Eloquent; updated_at does not exist. */
