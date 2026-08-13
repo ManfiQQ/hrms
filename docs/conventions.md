@@ -407,11 +407,23 @@ That is the same shape as the `WithoutModelEvents` finding above: a rule everyon
 in force, carried by nothing. A guard comparing the two would have caught it in the run that
 introduced it.
 
-**This is a record of the finding, not a decision about the remedy.** The guard is not written,
-and designing it needs its own scope — what counts as "described", how a multi-table migration
-maps to entries, and whether the Status table or the per-table sections are the source of
-truth. Recorded here so its absence is a known gap rather than a surprise the next time it
-fails.
+**✅ A guard now exists — `SchemaStatusCoverageTest`, written 2026-08-13.** It compares
+`database/migrations/` against `schema.md`'s Status table in both directions: a migration with
+no row fails, and a row with no file fails. Hard red, **no exemption mechanism anywhere in the
+code** — Laravel's own `cache` and `jobs` migrations are listed in the table like everything
+else, because the table is an inventory of what is migrated and both are.
+
+Direction two earns its place by catching the **rename**: renaming a file without editing the
+table produces **two** failures at once, and that pairing is what tells the reader it was one
+act rather than two unrelated mistakes.
+
+> **⚠ It checks EXISTENCE, NOT CORRECTNESS, and the limit is written on the guard itself.** A
+> migration listed in the table can be described completely wrongly — wrong columns, wrong
+> types, a per-table section contradicting the migration outright — and the guard stays green.
+> **Column-level verification is still outstanding**, and it needs its own ADR: what counts as
+> "described", how a multi-table migration maps to entries, and whether the Status table or the
+> per-table sections are the source of truth. It must not be attempted by halves, because a
+> guard checking some columns is the worst of the three options — it looks like the strong one.
 
 ### ⚠ A model hook is enforcement only where events are enabled
 

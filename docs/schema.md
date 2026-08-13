@@ -13,6 +13,8 @@
 | Table | Migration |
 |---|---|
 | `users`, `sessions` | `0001_01_01_000000_create_users_table.php` |
+| `cache`, `cache_locks` | `0001_01_01_000001_create_cache_table.php` |
+| `jobs`, `job_batches`, `failed_jobs` | `0001_01_01_000002_create_jobs_table.php` |
 | `companies` | `2026_08_11_100000_create_companies_table.php` |
 | `branches` | `2026_08_11_100100_create_branches_table.php` |
 | `departments` | `2026_08_11_100200_create_departments_table.php` |
@@ -33,6 +35,20 @@
 | `employee_job_functions` | `2026_08_13_100500_create_employee_job_functions_table.php` |
 | `created_by` / `updated_by` — NOT NULL on all eight | `2026_08_13_100600_make_authorship_columns_not_null.php` |
 | `employee_status_history.change_type` — fifth value | `2026_08_13_100700_add_employer_to_change_type_enum.php` |
+
+> **⚠ `cache` and `jobs` are Laravel scaffolding, not designed here, and deliberately have no
+> per-table section below.**
+>
+> They arrived with `laravel new`, nobody in this project chose their shape, and describing
+> columns this project does not own would invite somebody to "correct" them against a
+> convention they were never built to. **Their absence from the sections below is intentional,
+> not a gap** — a reader looking for them has found the note that says so.
+>
+> They are listed here because this table is an **inventory of what is migrated**, and both are
+> migrated. A table that omitted the inconvenient entries would be a curated list, and a
+> curated list cannot be the basis of a guard: `SchemaStatusCoverageTest` compares this table
+> against `database/migrations/` in both directions, with no exemption mechanism anywhere in
+> the code.
 
 **Employee Master's nine tables are complete as of 2026-08-13.** The six above are slice 1;
 `employees`, `employee_roles` and `employee_status_history` landed earlier
