@@ -598,6 +598,63 @@ the canonical table in `CLAUDE.md` §5 — the legacy data contains three spelli
 ES SOFEEYA ENTERPRISE and the importer must reject unknown spellings loudly, not silently
 create a new company.
 
+> **⚠ BLOCKED — recorded 2026-08-13. The five sentences above state intent, not a
+> mechanism, and the missing half cannot be designed from here.**
+>
+> **The legacy data file does not exist in this repository and has never been seen.** No
+> `.csv`, `.xlsx`, `.sql` or dump exists anywhere reachable. Only three facts about the old
+> data are recorded anywhere, and all three describe what was *wrong* rather than what the
+> columns are: working days and hours held as free text (`"ISNIN - SABTU"`,
+> `"9.00 AM - 5.00 PM"`), three spellings of one company across three files, and two-tier
+> reporting taken from the legacy Staff Master template.
+>
+> **Source format, column mapping and table scope are therefore unknown**, and deciding them
+> against an assumed shape is exactly the pattern `CLAUDE.md` §10 already records against
+> NGTime — structure confirmed from a sample, full export never reviewed. Do not repeat it
+> deliberately.
+
+#### The four decisions that block any code
+
+1. **Source format and column mapping.** Needs the file. Nothing else will do.
+2. **Unimportable rows** — no phone number, no department, unparseable working hours.
+   **Reject the row, or reject the whole run?** §5.5's *"rather than guessing"* argues for
+   loudness; it does not say which.
+3. **Transaction boundary**, and what *"re-runnable"* means precisely.
+4. **Scope.** `employees` only, or the child tables too? Are accounts and activation tokens
+   created? Are `employee_roles` imported? Is legacy history written into the ledger?
+
+#### ⚠ Two contradictions inside §5.5's own words
+
+**"Idempotent, re-runnable" contradicts the append-only ledger.** If the importer writes
+`employee_status_history` rows for legacy history, those rows **cannot be updated and cannot
+be deleted** — enforced on the model, by design (`adr/0003` decision 8). A second run must
+either duplicate them or skip them, and there is no third mechanism. **This is a
+contradiction to be decided, not a detail to be handled in code.**
+
+**"Re-runnable" pulls against atomicity.** Re-runnable implies per-row commits, so a second
+run continues where the first stopped — but per-row commits leave a half-populated system
+**with no marker saying so**. All-or-nothing means one bad row in two hundred and fifty
+aborts everything, which suits *"rather than guessing"* but makes the import report nearly
+useless: nothing was imported to report against.
+
+#### What every enforcement built since will do to this data
+
+Not theoretical. Each of these is already enforced and will meet the legacy rows at once:
+
+| Rule | Consequence for a legacy row |
+|---|---|
+| `users.phone_no` NOT NULL, unique, 9–12 digits, **no placeholder** | An employee with no usable number **cannot be created at all** (BR-A1, and `schema.md` says so explicitly). Two employees sharing a number: the second fails |
+| `work_start_time` / `work_end_time` NOT NULL `TIME` | `"9.00 AM - 5.00 PM"` must be parsed into two columns with no null path |
+| `working_days` / `offday` JSON | `"ISNIN - SABTU"` must be parsed into `["MON", …]`; ambiguity is guaranteed |
+| `employee_no` from the locked `sequences` row | `CreateEmployee` **discards** any supplied number, so the importer cannot use it — its own comments say so twice. And **nothing advances the counter past imported numbers**, so the next new hire collides with the group-wide unique index |
+| `department_id` NOT NULL | The legacy system added `department_id` late, with a SQL backfill (`CLAUDE.md` §9) — rows existed without one |
+| BR-A20: every employee holds an account | Importing *n* employees mints *n* activation tokens with a **48-hour** validity, which expire before anybody distributes them |
+| `AuthorshipObserver` (`adr/0009`) | The importer **must** enter `AuthorshipContext`; without it the first insert throws. `created_by` will name whoever ran the import, never who created the record in the old system — honest, but lossy, and it must be said out loud |
+| BR-16 hook | Needed only if legacy data carries `ACCOUNT`, `HR`, `ASSISTANT_DIRECTOR` or `HOD`. ⚠ Entering `RestrictedRoleContext` does **not** waive `employee_roles.assigned_by` being NOT NULL |
+
+**The first row and `assigned_by` are not design problems. They are questions for the
+client**, and they are recorded as such in `CLAUDE.md` §10.
+
 ### 5.6 Role and job-function assignment
 
 - **Granting** a role inserts an `employee_roles` row with `company_id`, `role`,
