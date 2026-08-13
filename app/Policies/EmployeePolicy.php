@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Models\Company;
 use App\Models\Employee;
 use App\Models\EmployeeRole;
 use App\Models\Scopes\TenantScope;
@@ -297,6 +298,73 @@ class EmployeePolicy
     public function revokeRole(User $actor, Employee $employee, string $role, int $companyId): bool
     {
         return $this->grantRole($actor, $employee, $role, $companyId);
+    }
+
+    /**
+     * May this account move an employee to another group company? §6, §5.7.
+     *
+     * ⚠ ADDED 2026-08-13, AND ITS ABSENCE UNTIL THEN IS WORTH RECORDING. `TransferCompany`
+     * shipped with a comment asserting that "EmployeePolicy requires the employee's company to
+     * be inside the actor's read scope" — a protection that **did not exist**. Nothing
+     * authorised a transfer at all. No test caught it, because the Action had never been
+     * reached through an authorised path: §7's UI does not exist, so the only caller was a
+     * test calling the Action directly (`conventions.md` §9).
+     *
+     * **`HR` and Master Admin, each acting directly.** Neither approves the other and Master
+     * Admin is not an escalation above HR — it is a second capable actor so the work never
+     * stalls on one person's availability (§5.7 item 7). HR is the ordinary actor; a transfer
+     * is an HR operation, not an administrative repair.
+     *
+     * ⚠ `ASSISTANT_DIRECTOR` is excluded despite holding create / edit / archive. A transfer
+     * is not a profile edit: it reassigns statutory responsibility for this employee's EPF,
+     * SOCSO and EA Form between two legal entities, and §6's matrix names two actors for it,
+     * not three.
+     *
+     * ⚠ `ACCOUNT` is excluded too. It reads the most data in the system and administers none
+     * of it — the same line `UserPolicy` draws for account operations.
+     */
+    public function transfer(User $actor, Employee $employee, Company $destination): bool
+    {
+        if ($actor->isMasterAdmin()) {
+            return true;
+        }
+
+        // Reads the whole group, writes nothing, approves nothing (adr/0004 decision 2).
+        //
+        // ⚠ CURRENTLY UNFALSIFIABLE, AND KEPT ANYWAY — the same shape as TransferCompany's
+        // tenant-scope lift, and worth knowing before somebody deletes it as dead code.
+        // Removing this line leaves every test green: a VIEW_ONLY account holds a NULL
+        // employee_id by definition (adr/0004 decision 2), RoleChecker returns false for any
+        // account with no employee record, so the HR check below already refuses it.
+        //
+        // It stays because it states the rule where the decision is made rather than leaving
+        // it to emerge from two other classes agreeing. The day VIEW_ONLY gains an employee
+        // record — or a fourth system_access value arrives — this is the line that already
+        // says no, and nothing will announce that change.
+        //
+        // The same redundancy exists on create(), update(), grantRole() and
+        // assignJobFunction(), for the same reason.
+        if ($actor->system_access === 'VIEW_ONLY') {
+            return false;
+        }
+
+        $scope = $this->scope->resolve($actor);
+
+        // ⚠ BOTH COMPANIES, AND THE FIRST ONE IS LOAD-BEARING BEYOND THIS METHOD.
+        //
+        // The employee's CURRENT employer must be in scope — that is the check
+        // TransferCompany's cascade relies on when it explains why its tenant-scope lift is
+        // defensive rather than load-bearing. Remove it and that comment becomes false again,
+        // and the cascade's lift becomes the only thing standing.
+        //
+        // The DESTINATION is checked for the same reason grantRole() checks the company a role
+        // is granted in: handing an employee to a company this account cannot even read is a
+        // reassignment of statutory responsibility made blind.
+        if (! in_array($employee->company_id, $scope, true) || ! in_array($destination->id, $scope, true)) {
+            return false;
+        }
+
+        return $this->hasAnyRoleInScope($actor, ['HR']);
     }
 
     /**

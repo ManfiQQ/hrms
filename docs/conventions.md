@@ -456,6 +456,22 @@ structural, **state which mechanism carries it**: a global scope survives `witho
 hook does not, and the difference decides whether the rule holds in seeders, imports and
 console commands at all.
 
+### ⚠ A comment can cite a protection that does not exist
+
+`TransferCompany` shipped carrying the sentence *"EmployeePolicy requires the employee's
+company to be inside the actor's read scope"*. **`EmployeePolicy::transfer()` did not exist.**
+Nothing authorised a transfer at all, and the comment reasoned confidently from it.
+
+No test caught it, and the reason generalises: **the Action had never been reached through an
+authorised path.** §7's UI does not exist, so its only caller was a test invoking the Action
+directly — and a test that calls an Action never asks a policy anything. **Authorisation is
+tested where it is called, not where it is written**, so an ability nobody calls is an ability
+nobody misses.
+
+Found 2026-08-13, closed the same day. Recorded because it is the fourth of the same family
+this file now lists: a rule believed to be in force, carried by something that turned out not
+to be there. Here the something was a method name in prose.
+
 ### ⚠ Query-builder writes bypass model events entirely — the second hole, same family
 
 Not by suppressing them, but by **never raising them**. A mass `update()` through the query

@@ -206,3 +206,76 @@ it('stops reading through a role once it is revoked', function () {
 
     expect($this->policy->view($hr->fresh(), $subject))->toBeFalse();
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TRANSFER — §6, §5.7. Added 2026-08-13; nothing authorised a transfer before it.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * ⚠ THIS ABILITY DID NOT EXIST UNTIL 2026-08-13, and TransferCompany already carried a
+ * comment claiming it did — "EmployeePolicy requires the employee's company to be inside the
+ * actor's read scope". Nothing authorised a transfer at all.
+ *
+ * No test caught it because the Action had never been reached through an authorised path:
+ * §7's UI does not exist, so its only caller was a test invoking it directly. The negative
+ * cases below are the half that matters — a permission that says yes to the right person and
+ * nothing else is the only kind worth having.
+ */
+it('lets HR transfer within its read scope', function () {
+    $hr = policyAccountHolding('HR', $this->ahs, policyStaffAt($this->ahs));
+
+    expect($this->policy->transfer($hr, policyStaffAt($this->aim), $this->tursenia))->toBeTrue();
+});
+
+it('lets Master Admin transfer as the support path', function () {
+    $master = User::factory()->masterAdmin()->create();
+
+    expect($this->policy->transfer($master, policyStaffAt($this->aim), $this->tursenia))->toBeTrue();
+});
+
+/**
+ * ⚠ Every role that is NOT HR, tested as a group. §6 names two actors for a transfer and
+ * ASSISTANT_DIRECTOR is not one of them, despite holding create / edit / archive — a transfer
+ * is not a profile edit, it reassigns statutory responsibility between two legal entities.
+ */
+it('refuses every role except HR', function () {
+    $subject = policyStaffAt($this->aim);
+
+    foreach (['ASSISTANT_DIRECTOR', 'ACCOUNT', 'SUPERVISOR', 'MANAGER', 'HOD'] as $role) {
+        $actor = policyAccountHolding($role, $this->ahs, policyStaffAt($this->ahs));
+
+        expect($this->policy->transfer($actor, $subject, $this->tursenia))
+            ->toBeFalse("{$role} must not be able to transfer an employee");
+    }
+});
+
+it('refuses ordinary staff, including for their own record', function () {
+    $employee = policyStaffAt($this->aim);
+    $account = User::factory()->forEmployee($employee)->create();
+
+    expect($this->policy->transfer($account, $employee, $this->tursenia))->toBeFalse()
+        ->and($this->policy->transfer($account, policyStaffAt($this->aim), $this->tursenia))->toBeFalse();
+});
+
+it('refuses VIEW_ONLY, which reads the group and writes none of it', function () {
+    $viewer = User::factory()->viewOnly()->create();
+
+    expect($this->policy->transfer($viewer, policyStaffAt($this->aim), $this->tursenia))->toBeFalse();
+});
+
+/**
+ * ⚠ The check TransferCompany's cascade comment depends on. Remove it and that comment turns
+ * false again, and the cascade's tenant-scope lift becomes the only thing standing.
+ */
+it('refuses an employee outside the actor read scope', function () {
+    $subsidiaryHr = policyAccountHolding('HR', $this->aim, policyStaffAt($this->aim));
+
+    expect($this->policy->transfer($subsidiaryHr, policyStaffAt($this->tursenia), $this->aim))->toBeFalse();
+});
+
+/** The destination is checked for the same reason grantRole() checks the company granted in. */
+it('refuses a destination outside the actor read scope', function () {
+    $subsidiaryHr = policyAccountHolding('HR', $this->aim, policyStaffAt($this->aim));
+
+    expect($this->policy->transfer($subsidiaryHr, policyStaffAt($this->aim), $this->tursenia))->toBeFalse();
+});
