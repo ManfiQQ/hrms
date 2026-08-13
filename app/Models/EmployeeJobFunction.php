@@ -42,6 +42,13 @@ class EmployeeJobFunction extends Model
         'employee_id',
         'company_id',
         'job_function_id',
+
+        // ⚠ Set explicitly by the Action, because nothing populates them automatically yet.
+        // §5.1 says created_by / updated_by are "populated automatically"; no such mechanism
+        // exists anywhere in the codebase, so an Action that omits them writes NULL and the
+        // row loses its author silently.
+        'created_by',
+        'updated_by',
     ];
 
     public function employee(): BelongsTo

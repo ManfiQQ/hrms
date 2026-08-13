@@ -34,6 +34,33 @@ class EmployeeRoleFactory extends Factory
         ];
     }
 
+    /**
+     * ⚠ FIXTURES ENTER RestrictedRoleContext DELIBERATELY — BR-16, `adr/0003` decision 3.
+     *
+     * `EmployeeRole`'s creating hook refuses ACCOUNT, HR, ASSISTANT_DIRECTOR and HOD unless
+     * an authenticated Master Admin is granting them. A factory has no authenticated user, so
+     * without this every fixture that needs an HR to test something would have to log a
+     * Master Admin in first — turning the guard into an obstacle tests route around, which is
+     * how guards get weakened until they are switched off.
+     *
+     * This is the shortcut being taken ON PURPOSE and in ONE place, which is the whole
+     * argument for the context class existing rather than a `runningInConsole()` exemption.
+     *
+     * ⚠ WHAT THIS MEANS FOR TESTS OF BR-16 ITSELF: they must NOT use this factory for the
+     * attempt under test. A test asserting "HR cannot grant ACCOUNT" has to go through
+     * `EmployeeRole::create()` or `GrantRole`, or it proves only that the factory bypass
+     * works. Building the actors with the factory is fine; performing the grant with it is
+     * not.
+     */
+    public function create($attributes = [], ?\Illuminate\Database\Eloquent\Model $parent = null)
+    {
+        return app(\App\Services\Auth\RestrictedRoleContext::class)->run(
+            'Test and seed fixtures build role rows directly. BR-16 governs application grants, '
+            .'which go through GrantRole and the EmployeeRole creating hook.',
+            fn () => parent::create($attributes, $parent)
+        );
+    }
+
     public function role(string $role): static
     {
         return $this->state(fn (array $attributes) => [
