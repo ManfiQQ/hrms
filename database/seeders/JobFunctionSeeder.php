@@ -3,7 +3,10 @@
 namespace Database\Seeders;
 
 use App\Models\JobFunction;
+use App\Models\User;
+use App\Services\Audit\AuthorshipContext;
 use Illuminate\Database\Seeder;
+use RuntimeException;
 
 /**
  * The job-function starting set — BR-15, `adr/0003` decision 2.
@@ -29,6 +32,40 @@ use Illuminate\Database\Seeder;
 class JobFunctionSeeder extends Seeder
 {
     public function run(): void
+    {
+        // ⚠ adr/0009 decision 2 — a seeder has no authenticated session, so it NAMES the
+        // account it acts as. The shortcut is for "no session", never for "no accountable
+        // actor", and the installing Master Admin genuinely is who this runs as.
+        app(AuthorshipContext::class)->run(
+            $this->installer(),
+            'Seeding the job function starting set at installation (BR-15).',
+            fn () => $this->seedStartingSet()
+        );
+    }
+
+    /**
+     * The account the installation acts as.
+     *
+     * ⚠ DatabaseSeeder calls MasterAdminSeeder first, so this is present in the ordinary run.
+     * It throws rather than inventing one, because an invented actor is the confident
+     * falsehood `adr/0009` decision 3 rejects for backfilling.
+     */
+    private function installer(): User
+    {
+        $installer = User::query()->where('system_access', 'FULL')->orderBy('id')->first();
+
+        if ($installer === null) {
+            throw new RuntimeException(
+                'JobFunctionSeeder needs a Master Admin to attribute its rows to '
+                .'(adr/0009 decision 2). Run MasterAdminSeeder first — DatabaseSeeder already '
+                .'orders it that way.'
+            );
+        }
+
+        return $installer;
+    }
+
+    private function seedStartingSet(): void
     {
         foreach (JobFunction::STARTING_SET as $name) {
             // ⚠ withTrashed(), so a deactivated function is matched rather than duplicated.

@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Models\Employee;
 use App\Models\EmployeeRole;
 use App\Models\User;
+use Database\Factories\Concerns\AttributesAuthorship;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -13,6 +14,8 @@ use Illuminate\Database\Eloquent\Factories\Factory;
  */
 class EmployeeRoleFactory extends Factory
 {
+    use AttributesAuthorship;
+
     public function definition(): array
     {
         return [
@@ -52,7 +55,7 @@ class EmployeeRoleFactory extends Factory
      * works. Building the actors with the factory is fine; performing the grant with it is
      * not.
      */
-    public function create($attributes = [], ?\Illuminate\Database\Eloquent\Model $parent = null)
+    protected function createAttributed($attributes = [], ?\Illuminate\Database\Eloquent\Model $parent = null)
     {
         return app(\App\Services\Auth\RestrictedRoleContext::class)->run(
             'Test and seed fixtures build role rows directly. BR-16 governs application grants, '

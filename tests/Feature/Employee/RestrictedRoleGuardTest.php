@@ -6,6 +6,7 @@ use App\Models\Department;
 use App\Models\Employee;
 use App\Models\EmployeeRole;
 use App\Models\User;
+use App\Services\Audit\AuthorshipContext;
 use App\Services\Auth\RestrictedRoleContext;
 
 /**
@@ -37,15 +38,36 @@ beforeEach(function () {
     $this->granter = User::factory()->create(['system_access' => 'FULL', 'employee_id' => null]);
 });
 
+/**
+ * ⚠ WRAPPED IN AuthorshipContext SO THE GUARD UNDER TEST IS THE GUARD UNDER TEST — not to
+ * make anything pass. Read that carefully before deleting it as a lazy shortcut.
+ *
+ * Two guards now sit on this same write. AuthorshipObserver refuses a row with no actor
+ * (adr/0009), and the BR-16 hook refuses a restricted role granted by anyone but Master Admin.
+ * Authorship fires first. Left unwrapped, every test below would go red on the authorship
+ * error, BR-16 would never run, and — the part that matters — DELETING THE BR-16 HOOK
+ * ENTIRELY WOULD NOT CHANGE A SINGLE COLOUR HERE. The suite would look like it guarded BR-16
+ * while guarding nothing of the sort.
+ *
+ * Naming an actor satisfies the outer guard and leaves the inner one as the only thing these
+ * tests can fail on. conventions.md §9 records the general rule.
+ *
+ * ⚠ The actor is NOT logged in — auth() stays null where the test wants it null, because
+ * BR-16 has its own separate answer for the unauthenticated case.
+ */
 function grantDirectly(string $role): EmployeeRole
 {
-    return EmployeeRole::create([
+    return app(AuthorshipContext::class)->run(
+        test()->granter,
+        'Fixture attribution, so BR-16 is the rule these tests exercise.',
+        fn () => EmployeeRole::create([
         'employee_id' => test()->employee->id,
         'company_id' => test()->ahs->id,
         'role' => $role,
         'effective_date' => now()->toDateString(),
-        'assigned_by' => auth()->id() ?? test()->granter->id,
-    ]);
+            'assigned_by' => auth()->id() ?? test()->granter->id,
+        ])
+    );
 }
 
 function anHrAccount(): User

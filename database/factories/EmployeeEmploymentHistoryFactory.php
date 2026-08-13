@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Models\Employee;
 use App\Models\EmployeeEmploymentHistory;
+use Database\Factories\Concerns\AttributesAuthorship;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -11,6 +12,8 @@ use Illuminate\Database\Eloquent\Factories\Factory;
  */
 class EmployeeEmploymentHistoryFactory extends Factory
 {
+    use AttributesAuthorship;
+
     protected $model = EmployeeEmploymentHistory::class;
 
     public function definition(): array

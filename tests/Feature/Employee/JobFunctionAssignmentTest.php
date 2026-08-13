@@ -30,6 +30,11 @@ beforeEach(function () {
     )->create());
 
     $this->assign = app(AssignJobFunction::class);
+
+    // ⚠ JobFunctionSeeder names the installing Master Admin as the author of its rows
+    // (adr/0009 decision 2), so one must exist before it runs — DatabaseSeeder orders
+    // MasterAdminSeeder first for the same reason.
+    User::factory()->masterAdmin()->create();
 });
 
 it('records the function, the company and who assigned it', function () {

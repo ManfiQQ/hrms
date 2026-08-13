@@ -82,9 +82,16 @@ it('follows the employer, not the role, when the employer changes', function () 
     // Assigned directly, not via update([...]): company_id is deliberately absent from
     // Employee::$fillable so it can never be set from request input
     // (employee-master.spec.md §8 test 2). Mass assignment here would silently do nothing.
+    // ⚠ AuthorshipContext, not actingAs: moving the employer is ARRANGEMENT here, not the act
+    // under test. This test is about scope following the hierarchy; logging somebody in to
+    // satisfy adr/0009 would put an actor into a test that is not about actors (conventions.md §9).
     $employee = $user->employee;
     $employee->company_id = $this->aim->id;
-    $employee->save();
+    app(App\Services\Audit\AuthorshipContext::class)->run(
+        $user,
+        'Fixture: relocating the employer to observe derived scope change.',
+        fn () => $employee->save()
+    );
 
     $this->resolver->flush();
 

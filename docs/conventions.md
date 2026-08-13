@@ -382,6 +382,47 @@ cached config, or a filtered test run looks identical to a guard that never asse
 Recorded 2026-08-13, after a seeder break set via `updateOrCreate` was dropped because the
 column was not fillable, and the guard read as empty when it was sound.
 
+**Where two guards protect the same path, a test for the inner one must satisfy the outer one
+first** — otherwise it exercises the wrong guard, and breaking the right one will not change
+its colour. This is the same failure as the paragraph above with its sign reversed: not a
+break that produces green, but a break that produces **red for the wrong reason**, which is
+just as undetectable and rather more convincing.
+
+Recorded 2026-08-13, after `AuthorshipObserver` began refusing writes with no actor and
+started intercepting the BR-16 restricted-role tests before the rule they were written for
+could run.
+
+### ⚠ A model hook is enforcement only where events are enabled
+
+**Every rule in this project enforced "structurally rather than by policy" is a model event,
+and `Model::withoutEvents()` switches all of them off at once.** Laravel's
+`WithoutModelEvents` trait — scaffolding on `DatabaseSeeder`, chosen by nobody — does exactly
+that for the whole seeding run.
+
+Verified on 2026-08-13 rather than assumed. Inside `withoutEvents()`, `audit_logs` and
+`security_events` both accepted an `UPDATE` and a `DELETE` that are refused everywhere else:
+
+| Enforced by a hook | Bypassed |
+|---|---|
+| `audit_logs`, `security_events` append-only | **yes** |
+| `employee_status_history` append-only | **yes** |
+| `employee_documents.file_path` write-once | **yes** |
+| `employee_roles` BR-16 restricted grants | **yes** |
+| `AuthorshipObserver` | **yes** |
+| Global scopes (`TenantScope` and the rest) | no — query-time, not events |
+
+**It was found only because one fail-closed constraint was installed.** Making
+`created_by` `NOT NULL` turned a silent `NULL` into a failed seeder in a single run;
+everything above had been bypassed since the first seeder and nothing had ever said so.
+That is the whole argument for fail-closed over fail-open, stated by an accident rather than
+by a design review.
+
+Two rules follow. **Never suppress events for a whole seeding run** — if one seeder genuinely
+needs it, scope it to that seeder and write down why. And when a rule is described as
+structural, **state which mechanism carries it**: a global scope survives `withoutEvents()`, a
+hook does not, and the difference decides whether the rule holds in seeders, imports and
+console commands at all.
+
 ---
 
 ## 10. Required Validation Before Calling a Module "Done"
@@ -428,3 +469,5 @@ not change a database that has already run it.
 ### Usage log
 
 - **2026-08-13** — index `(company_id, staff_status)` on `employees`.
+- **2026-08-13** — development database dropped and reseeded so no row predates the authorship
+  observer (`adr/0009` decision 3).

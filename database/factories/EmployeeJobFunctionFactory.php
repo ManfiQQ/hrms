@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Models\Employee;
 use App\Models\EmployeeJobFunction;
 use App\Models\JobFunction;
+use Database\Factories\Concerns\AttributesAuthorship;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -13,6 +14,8 @@ use Illuminate\Database\Eloquent\Factories\Factory;
  */
 class EmployeeJobFunctionFactory extends Factory
 {
+    use AttributesAuthorship;
+
     protected $model = EmployeeJobFunction::class;
 
     public function definition(): array

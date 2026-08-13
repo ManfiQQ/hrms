@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\JobFunction;
+use Database\Factories\Concerns\AttributesAuthorship;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -10,6 +11,8 @@ use Illuminate\Database\Eloquent\Factories\Factory;
  */
 class JobFunctionFactory extends Factory
 {
+    use AttributesAuthorship;
+
     protected $model = JobFunction::class;
 
     public function definition(): array

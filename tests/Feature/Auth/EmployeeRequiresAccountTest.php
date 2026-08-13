@@ -26,6 +26,11 @@ use Illuminate\Support\Facades\Schema;
  * requirement is already written down and failing if it is skipped.
  */
 beforeEach(function () {
+    // ⚠ actingAs, not AuthorshipContext: registration is an act BY somebody. HR performs it in
+    // production, the audit row records who, and adr/0009 attributes the rows to them. A
+    // context here would model a seeder, which this is not.
+    $this->actingAs(User::factory()->masterAdmin()->create());
+
     $this->ahs = Company::factory()->create(['code' => 'AHS']);
     $this->aim = Company::factory()->subsidiary($this->ahs)->create(['code' => 'AIM']);
 
@@ -79,7 +84,7 @@ it('leaves an employee with no account unable to authenticate at all', function 
     expect(fn () => app(AuthenticationService::class)->attempt('0123456789', 'anything'))
         ->toThrow(InvalidCredentialsException::class);
 
-    expect(User::query()->count())->toBe(0);
+    expect(User::query()->whereNotNull('employee_id')->count())->toBe(0);
 });
 
 /**
@@ -102,7 +107,7 @@ it('creates the account in the same transaction as the employee', function () {
 
     expect($result['user']->employee_id)->toBe($result['employee']->id)
         ->and($result['user']->phone_no)->toBe('0123456789')
-        ->and(User::query()->count())->toBe(1)
+        ->and(User::query()->whereNotNull('employee_id')->count())->toBe(1)
         ->and(Employee::query()->count())->toBe(1);
 });
 
@@ -120,5 +125,5 @@ it('leaves no employee behind when the account cannot be created', function () {
     ))->toThrow(Illuminate\Database\QueryException::class);
 
     expect(Employee::query()->count())->toBe(1)      // only the pre-existing one
-        ->and(User::query()->count())->toBe(1);
+        ->and(User::query()->whereNotNull('employee_id')->count())->toBe(1);
 });
