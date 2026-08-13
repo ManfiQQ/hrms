@@ -261,6 +261,36 @@ The legacy system's **approval hierarchy design** and its validation checklist (
   possible, and payroll is blocked on unverified attendance. `employee-master.spec.md` §2
   lists self-service as out of scope for Phase 1, which stays true.
 
+### Questions for the client — legacy import, added 2026-08-13
+
+**These are not architecture questions, and nobody here can answer them.** They arose from
+implementing Employee Master, where every rule now enforced meets the legacy data at once.
+
+- **(a) How many employees in the current records have no usable mobile number, and who will
+  collect the missing ones?** ⚠ This is the hard blocker. `users.phone_no` is the login
+  username: NOT NULL, unique, 9–12 digits, and **a placeholder is banned** because it would
+  occupy the unique index and hand one person's username to another (BR-A1). BR-A20 requires
+  **every** employee to hold an account. So **an employee with no number cannot be given an
+  account, and cannot be imported at all** — the record simply cannot be created.
+- **(b) Do any two employees share a phone number?** A married couple at the same workplace,
+  or a typo. The second one fails the unique index, and there is no placeholder path.
+- **(c) Do the legacy records store who granted each authority role, and when?**
+  `employee_roles.assigned_by` is NOT NULL and `effective_date` is required. If the old system
+  kept neither, historical roles cannot be imported as they stand — and inventing a granter
+  would be a confident falsehood in an audit column.
+- **(d) When can the full export be provided, and in what format?** The file has never been
+  seen. Source format, column mapping and table scope are all unknown, and none can be
+  designed without it.
+
+**`employee-master.spec.md` §5.5 is blocked by (a) and (d) at minimum** — the same way the
+four items above block Phase 2. The spec's own §5.5 now records the blockers, the four
+decisions waiting on them, and two contradictions inside its five sentences that must be
+decided rather than coded around.
+
+⚠ **Deciding the column mapping or the row-rejection policy against an assumed shape is the
+NGTime pattern above, repeated on purpose.** Structure confirmed from a sample, full export
+never reviewed. Do not.
+
 ### Closed since 2026-08-11 — do not reopen without an ADR
 
 Three items that sat here are **resolved by `adr/0004`**. Recorded as closed rather than
