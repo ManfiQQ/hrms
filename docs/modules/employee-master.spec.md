@@ -111,38 +111,35 @@ behave differently on a company transfer; see BR-17 and `conventions.md` §2.
 - **Nine migrations** belong to this module — one per table created here. Previously six;
   `adr/0003` adds three.
 
-  **⚠ Nine is the module total, not the work remaining: 3 have landed, 6 are left.** Read as
-  a work list it is wrong by three. The order below is the order that **actually happened**,
-  not a plan — an earlier version of this list recorded an FK-safe order that was never
-  followed (`employee_roles` was written second, not ninth), and the two were never
-  reconciled.
-
-  **Landed** — verified against `database/migrations`:
+  **✅ All nine have landed — the last six on 2026-08-13 (slice 1).** The order below is the
+  order that **actually happened**, not a plan: an earlier version of this list recorded an
+  FK-safe order that was never followed (`employee_roles` was written second, not ninth), and
+  the two were never reconciled until the pre-slice-1 audit.
 
   1. ✅ `employees` — `2026_08_11_100400_create_employees_table.php`
   2. ✅ `employee_roles` — `2026_08_11_100500_create_employee_roles_table.php`
   3. ✅ `employee_status_history` — `2026_08_12_100300_create_employee_status_history_table.php`
+  4. ✅ `employee_family_members` — `2026_08_13_100000_…`
+  5. ✅ `employee_education_history` — `2026_08_13_100100_…`
+  6. ✅ `employee_employment_history` — `2026_08_13_100200_…`
+  7. ✅ `employee_documents` — `2026_08_13_100300_…`
+  8. ✅ `job_functions` — `2026_08_13_100400_…`, before the pivot that FKs to it
+  9. ✅ `employee_job_functions` — `2026_08_13_100500_…`
 
-  Nothing broke, because none of the three FKs to another of the nine — each references only
-  `employees`, `companies` and `users`, all of which existed. The recorded order was wrong;
-  the execution was not.
+  Only 8 → 9 was an ordering constraint among the six; 4–7 depend solely on tables that
+  already existed. Nothing in 1–3 FKs to another of the nine either, which is why the wrong
+  recorded order never broke anything.
 
-  **Remaining — 6, in FK-safe order:**
-
-  4. `employee_family_members`
-  5. `employee_education_history`
-  6. `employee_employment_history`
-  7. `employee_documents`
-  8. `job_functions` — before `employee_job_functions`, which FKs to it
-  9. `employee_job_functions`
-
-  Only 8 → 9 is an ordering constraint; 4–7 depend solely on tables that already exist.
+  **Two decisions were taken while writing the six, and both amend `schema.md`:**
+  `job_functions` carries **no `company_id`** — the vocabulary is group-wide and Master Admin
+  owns it — and its **`is_active` column was withdrawn**, because soft delete already expresses
+  deactivation and two columns for one state is the pattern this project has rejected six
+  times. See `schema.md` § `job_functions`.
 
   `sequences` is **not** in this count — it is a Phase 0 Core Engine table (see the
-  dependency note above). Verify with `ls database/migrations | sort` that no two share a
-  timestamp before committing (`conventions.md` §6; the legacy system shipped three
-  colliding timestamps, and six generated in one session is exactly the condition that
-  produced them).
+  dependency note above). Timestamps were verified with `ls database/migrations | sort`
+  before committing (`conventions.md` §6; the legacy system shipped three colliding
+  timestamps, and six generated in one session was exactly the condition that produced them).
 - **`employee_roles` carries no soft deletes and `employee_status_history` carries no
   `updated_at` / `updated_by` / soft deletes.** These are deliberate exceptions to
   `conventions.md` §3, documented there — the migration author must not add them back for

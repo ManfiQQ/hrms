@@ -25,11 +25,19 @@
 | `users` — throttle columns | `2026_08_12_100200_add_login_throttle_to_users_table.php` |
 | `employee_status_history` | `2026_08_12_100300_create_employee_status_history_table.php` |
 | `sequences` | `2026_08_12_100400_create_sequences_table.php` |
+| `employee_family_members` | `2026_08_13_100000_create_employee_family_members_table.php` |
+| `employee_education_history` | `2026_08_13_100100_create_employee_education_history_table.php` |
+| `employee_employment_history` | `2026_08_13_100200_create_employee_employment_history_table.php` |
+| `employee_documents` | `2026_08_13_100300_create_employee_documents_table.php` |
+| `job_functions` | `2026_08_13_100400_create_job_functions_table.php` |
+| `employee_job_functions` | `2026_08_13_100500_create_employee_job_functions_table.php` |
 
-**Still draft, with no migration behind them:** the Employee Master satellite tables
-(`employee_family_members`, `employee_education_history`, `employee_employment_history`,
-`employee_documents`), `job_functions`,
-`employee_job_functions`, `approval_requests`, and everything under Phase 2.
+**Employee Master's nine tables are complete as of 2026-08-13.** The six above are slice 1;
+`employees`, `employee_roles` and `employee_status_history` landed earlier
+(`employee-master.spec.md` §3).
+
+**Still draft, with no migration behind them:** `approval_requests`, and everything under
+Phase 2.
 
 ⚠ **Both audit tables exist without models, and that is deliberate.**
 `audit-trail.spec.md` requires `AuditLog` to declare
@@ -355,7 +363,45 @@ changeable — granting it *bypasses two stages* rather than adding one. `MANAGE
 written to `audit_logs`.
 
 ### `job_functions`
-`id`, `name`, `description`, `is_active` (boolean), timestamps, soft deletes
+`id`, `name` (string, **unique**), `description` (nullable), `created_by`, `updated_by`,
+timestamps, soft deletes
+
+> **⚠ `is_active` withdrawn — 2026-08-13. It does not exist and must not be added.**
+>
+> This entry previously carried an `is_active` boolean **beside** soft deletes, while the
+> prose below said a *"deleted" function is deactivated* — one mechanism described twice. That
+> is the pattern already rejected by name for `is_enabled` on `employee_roles`
+> (`adr/0003` decision 1), `secondary_company_id` (decision 6), `primary_role`, `hr_scope`,
+> `is_master_admin` and `locked_permanently`. It fails the same way each time: a row reaches
+> `deleted_at IS NULL` with `is_active = false`, and the picker that filters on one of the two
+> disagrees with the report that filters on the other.
+>
+> **Deactivation is the soft delete.** `deleted_at IS NULL` means the function appears in the
+> assignment picker; set means it does not, while existing `employee_job_functions` rows stay
+> intact and readable, and `restore()` brings it back with its history.
+>
+> **`created_by` / `updated_by` are required here** by `adr/0008` decision 4 — a table being
+> created now takes its full shape from its first line, at zero cost.
+>
+> **`name` is unique.** The stated defence against this vocabulary drifting into three
+> spellings is that one account owns it (`CLAUDE.md` §5); the index makes the same rule
+> structural rather than procedural. It also enforces reactivate-don't-recreate: a
+> soft-deleted `Media` keeps its name reserved, so the only way back is restoring the original
+> row and the assignments hanging off it.
+>
+> **⚠ There is no `company_id`, and that is the design, not an omission.** The vocabulary is
+> **group-wide** and Master Admin owns it — a per-company list would be six lists, and six
+> lists is how one thing acquires three spellings. Where a person performs a function is
+> `employee_job_functions.company_id`, which answers a different question. The scope guard test
+> skips `JobFunction` by there being no column to scope, the same footing as `sequences`.
+>
+> **The unique index on `name` and the nullable `description` were both decided while writing
+> slice 1 on 2026-08-13 — neither was carried from the spec, and this entry did not previously
+> state either.** They are recorded here as decisions rather than left as migration details,
+> because a constraint discovered only by reading a migration is a constraint the next reader
+> re-litigates. `name` was made unique to give `CLAUDE.md` §5's anti-drift rule a structural
+> form; `description` was made nullable because `Admin` and `Media` explain themselves and
+> requiring prose produces filler.
 
 **What work a person does**, as distinct from what they may approve. A **reference table,
 not an enum**, because the list is not stable: it grows as the remaining workplaces
@@ -386,8 +432,17 @@ doing media work has job function `Media` and `employment_type = INTERN` — two
 fields.
 
 ### `employee_family_members`
-`id`, `company_id` (FK), `employee_id` (FK), `relationship`, `name`, `contact_no`,
-`is_emergency_contact` (boolean), `created_by`, `updated_by`, timestamps, soft deletes
+`id`, `company_id` (FK), `employee_id` (FK), `relationship`, `name`, `contact_no`
+(**nullable**), `is_emergency_contact` (boolean), `created_by`, `updated_by`, timestamps,
+soft deletes
+
+> **`contact_no` was made nullable while writing slice 1 on 2026-08-13** — this entry did not
+> previously state a nullability either way, and the decision is recorded rather than left in
+> the migration. A child has no phone and a parent may have none; `NOT NULL` would not produce
+> a number, it would produce an invented one. That is the same reasoning that rejected a
+> placeholder phone number for an employee (`auth-rbac.spec.md` BR-A1) and a placeholder email
+> (§ `users.email`) — an invented contact number is worse than an absent one, because only the
+> absent one is visibly absent.
 
 ### `employee_education_history`
 `id`, `company_id` (FK), `employee_id` (FK), `level` (SPM/Diploma/Degree/etc.),

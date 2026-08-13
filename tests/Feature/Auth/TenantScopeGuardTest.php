@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\EmployeeJobFunction;
 use App\Models\EmployeeRole;
 use App\Models\Scopes\SharedTenantScope;
 use App\Models\Scopes\SystemTenantScope;
@@ -205,6 +206,13 @@ it('recognises the declared exemptions and no others', function () {
         // company_id answers "in which company does this role apply", not "which tenant owns
         // this row" (adr/0003 decision 7).
         EmployeeRole::class,
+
+        // The same reason as EmployeeRole, on the other half of adr/0003 decision 7's
+        // company-reference category: company_id says where the person performs the function,
+        // not who owns the row. Added by Employee Master slice 1 — and note that adding it
+        // required editing this list, which is the point of naming exemptions individually
+        // rather than accepting any constant that happens to be defined.
+        EmployeeJobFunction::class,
 
         // Written before authentication, so there may be no account from which to resolve a
         // scope — and in the failed-attempt case, no account at all. This is a DECLARATION,
