@@ -13,10 +13,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * companies (HQ, Marketing, Logistics) — not missing data. A set value means
  * company-dedicated (adr/0002 decision 1).
  *
- * The tenant global scope for this model must resolve to
+ * The tenant global scope for this model resolves to
  * `company_id IS NULL OR company_id = :current_company`. A plain equality check silently
- * hides every shared branch: fewer rows, no error. That scope is NOT written yet — it
- * belongs to the Auth & RBAC layer (auth-rbac.spec.md §5.3).
+ * hides every shared branch: fewer rows, no error. That scope is `SharedTenantScope`,
+ * applied below (auth-rbac.spec.md §5.3, adr/0005 decision 3).
  */
 class Branch extends Model
 {

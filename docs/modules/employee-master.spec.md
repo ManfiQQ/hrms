@@ -1,8 +1,13 @@
 # Module Spec — Employee Master
 
 - **Phase:** 1 — Employee & Org
-- **Status:** Draft — awaiting approval. **No code until this is approved** (`CLAUDE.md`
-  Principle #1).
+- **Status:** **Accepted — 2026-08-13.**
+
+  > **This header read `Draft — awaiting approval` until 2026-08-13**, while `CLAUDE.md` §11
+  > had already declared this spec **fully unblocked**. Three migrations — `employees`,
+  > `employee_roles`, `employee_status_history` — landed during that window under §11's
+  > authority. The contradiction is **recorded, not deleted**. Cause: the status header was
+  > not updated when §11 changed.
 - **Branch:** `feat/employee-master`
 - **Depends on:** `companies`, `branches`, `departments`, `positions`, `users`,
   `sequences` (Phase 0); `adr/0001` (taxonomy — partly superseded), `adr/0002` (shared org
@@ -103,23 +108,40 @@ behave differently on a company transfer; see BR-17 and `conventions.md` §2.
   `company_id IS NULL OR company_id = :current_company` so shared rows are **included**,
   not filtered out. See `adr/0002` and `conventions.md` §2 carve-out. A plain
   `where company_id = :current` on these tables is a silent data-loss bug, not an error.
-- **Nine migrations** will be generated in this module — one per table created here.
-  Previously six; `adr/0003` adds three. In FK-safe creation order:
+- **Nine migrations** belong to this module — one per table created here. Previously six;
+  `adr/0003` adds three.
 
-  1. `employees`
-  2. `employee_family_members`
-  3. `employee_education_history`
-  4. `employee_employment_history`
-  5. `employee_documents`
-  6. `employee_status_history`
-  7. `job_functions` — before `employee_job_functions`, which FKs to it
-  8. `employee_job_functions`
-  9. `employee_roles`
+  **⚠ Nine is the module total, not the work remaining: 3 have landed, 6 are left.** Read as
+  a work list it is wrong by three. The order below is the order that **actually happened**,
+  not a plan — an earlier version of this list recorded an FK-safe order that was never
+  followed (`employee_roles` was written second, not ninth), and the two were never
+  reconciled.
+
+  **Landed** — verified against `database/migrations`:
+
+  1. ✅ `employees` — `2026_08_11_100400_create_employees_table.php`
+  2. ✅ `employee_roles` — `2026_08_11_100500_create_employee_roles_table.php`
+  3. ✅ `employee_status_history` — `2026_08_12_100300_create_employee_status_history_table.php`
+
+  Nothing broke, because none of the three FKs to another of the nine — each references only
+  `employees`, `companies` and `users`, all of which existed. The recorded order was wrong;
+  the execution was not.
+
+  **Remaining — 6, in FK-safe order:**
+
+  4. `employee_family_members`
+  5. `employee_education_history`
+  6. `employee_employment_history`
+  7. `employee_documents`
+  8. `job_functions` — before `employee_job_functions`, which FKs to it
+  9. `employee_job_functions`
+
+  Only 8 → 9 is an ordering constraint; 4–7 depend solely on tables that already exist.
 
   `sequences` is **not** in this count — it is a Phase 0 Core Engine table (see the
   dependency note above). Verify with `ls database/migrations | sort` that no two share a
   timestamp before committing (`conventions.md` §6; the legacy system shipped three
-  colliding timestamps, and nine generated in one session is exactly the condition that
+  colliding timestamps, and six generated in one session is exactly the condition that
   produced them).
 - **`employee_roles` carries no soft deletes and `employee_status_history` carries no
   `updated_at` / `updated_by` / soft deletes.** These are deliberate exceptions to
@@ -720,11 +742,7 @@ undifferentiated bucket.
 > different column with its own name and its own reasoning, not a second copy of this one.
 > `employee_family_members.is_emergency_contact` already covers the first.
 
-**The employee form displays `phone_no` and never edits it. This holds for every role,
-`HR` and Master Admin included.** There is no edit affordance on this form, greyed out or
-otherwise.
-
-**Changing it is an account operation, not a profile edit.** It is done from the account
+**Changing the number is an account operation, not a profile edit.** It is done from the account
 management screen specified in `auth-rbac.spec.md` §7 — the same place as password reset,
 unlock, and QR regeneration — where `HR` and Master Admin are the only ones who may do it
 (`auth-rbac.spec.md` §6, `adr/0004` decision 6).
