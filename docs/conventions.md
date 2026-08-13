@@ -235,6 +235,30 @@ one fixed predicate, removing only rows with a null `user_id` past the configure
 All four exceptions are recorded in `schema.md` on the tables themselves as well, so none
 can be discovered only by reading this file.
 
+### Not exceptions — `positions`, `branches` and `departments` are a scheduled correction
+
+**These three carry no soft deletes and no `created_by` / `updated_by`, and they are
+deliberately absent from the table above.** They are **not** exceptions to §3 and must not be
+added to it: they are **business tables that do not yet meet it**, with a decided date for
+when they will. See **`adr/0008`**.
+
+The distinction matters, because the two are corrected in opposite directions. An exception
+above is **finished** — adding the missing column back would create a second way to express a
+state the table already expresses once, and doing so is the mistake this section exists to
+stop. These three are **unfinished**: the columns are genuinely required and are simply not
+written yet.
+
+`adr/0008` decision 3 defers them to the **Org Structure module**, whose screens will define
+the shape they need, and decision 5 puts a **guard test** behind the deferral — no delete
+route, controller action or service method may exist for `Branch`, `Department` or `Position`
+while the tables lack `deleted_at`. Nothing can delete these rows today: every foreign key
+resolves to `ON DELETE NO ACTION`, and no deletion path exists anywhere in `app/`.
+
+⚠ **Do not read this section as licence to leave a new table incomplete.** `adr/0008`
+decision 4 draws the line at whether the migration already exists: **new tables are born
+complete; existing tables are corrected when their screen arrives.** `job_functions` is
+created with all four columns in the migration that creates it, precisely because it is new.
+
 ## 4. Structured Data Over Free Text
 
 Learned directly from the legacy AHS system: don't store `working_days = "ISNIN - SABTU"`
