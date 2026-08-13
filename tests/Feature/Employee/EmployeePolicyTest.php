@@ -1,0 +1,202 @@
+<?php
+
+use App\Models\Company;
+use App\Models\Department;
+use App\Models\Employee;
+use App\Models\EmployeeRole;
+use App\Models\User;
+use App\Policies\EmployeePolicy;
+
+/**
+ * The §6 action matrix and the §6.2 tab matrix (`adr/0004` decisions 8 and 9).
+ *
+ * ⚠ THE TWO AXES MUST DISAGREE, AND THAT IS WHAT THESE TESTS ARE FOR. A subsidiary-employed
+ * `HR` approves across the whole group while reading ONE COMPANY only. If an implementation
+ * ever makes approval scope and read scope agree by construction, it has merged them — and
+ * the merge is a silent widening of access, not a simplification (conventions.md §2).
+ */
+beforeEach(function () {
+    $this->ahs = Company::factory()->create(['code' => 'AHS']);
+    $this->aim = Company::factory()->subsidiary($this->ahs)->create(['code' => 'AIM']);
+    $this->tursenia = Company::factory()->subsidiary($this->ahs)->create(['code' => 'TURSENIA']);
+
+    // Shared: belongs to no single company, and holds staff from several (adr/0002).
+    $this->shared = Department::factory()->shared()->create(['name' => 'Logistics']);
+
+    $this->policy = app(EmployeePolicy::class);
+});
+
+function policyStaffAt(Company $company, ?Department $department = null): Employee
+{
+    return Employee::factory()
+        ->forCompany($company)
+        ->create(['department_id' => ($department ?? test()->shared)->id]);
+}
+
+function policyAccountHolding(string $role, Company $roleAt, Employee $employee): User
+{
+    EmployeeRole::factory()->forCompany($roleAt)->role($role)->create(['employee_id' => $employee->id]);
+
+    return User::factory()->forEmployee($employee)->create();
+}
+
+it('lets an AHS-employed HR read every tab of any group company employee', function () {
+    $hr = policyAccountHolding('HR', $this->ahs, policyStaffAt($this->ahs));
+    $subject = policyStaffAt($this->tursenia);
+
+    foreach ([EmployeePolicy::TAB_EMPLOYMENT, EmployeePolicy::TAB_FAMILY, EmployeePolicy::TAB_DOCUMENTS] as $tab) {
+        expect($this->policy->viewTab($hr, $subject, $tab))->toBeTrue();
+    }
+});
+
+/**
+ * ⚠ THE TEST THAT MUST USE A SUBSIDIARY-EMPLOYED HR, per §8's warning. An AHS-employed HR
+ * reads the whole group legitimately, so writing this with one asserts nothing — it would
+ * pass for the wrong reason and hide a merged-axes bug.
+ */
+it('stops a subsidiary-employed HR at its own company, however wide its approval authority', function () {
+    $hr = policyAccountHolding('HR', $this->aim, policyStaffAt($this->aim));
+
+    expect($this->policy->view($hr, policyStaffAt($this->aim)))->toBeTrue()
+        ->and($this->policy->view($hr, policyStaffAt($this->tursenia)))->toBeFalse();
+});
+
+/**
+ * ⚠ §6.2's central rule. A supervisor needs to know who reports to them and how to reach
+ * them; they do not need a copy of someone's IC or their spouse's identity card number.
+ */
+it('gives a supervisor Employment and Personal, and nothing else', function () {
+    $subject = policyStaffAt($this->aim);
+    $supervisor = policyAccountHolding('SUPERVISOR', $this->aim, policyStaffAt($this->aim));
+
+    expect($this->policy->viewTab($supervisor, $subject, EmployeePolicy::TAB_EMPLOYMENT))->toBeTrue()
+        ->and($this->policy->viewTab($supervisor, $subject, EmployeePolicy::TAB_PERSONAL))->toBeTrue();
+
+    foreach ([
+        EmployeePolicy::TAB_FAMILY,
+        EmployeePolicy::TAB_EDUCATION,
+        EmployeePolicy::TAB_EMPLOYMENT_HISTORY,
+        EmployeePolicy::TAB_DOCUMENTS,
+        EmployeePolicy::TAB_STATUS_HISTORY,
+    ] as $tab) {
+        expect($this->policy->viewTab($supervisor, $subject, $tab))->toBeFalse();
+    }
+});
+
+/**
+ * ⚠ BR-10, AND THE SHARED DEPARTMENT IS EXACTLY WHERE THIS IS MOST LIKELY TO BE GOT WRONG,
+ * because the two employees are visibly colleagues sitting in one department.
+ *
+ * An HOD's authority is strictly same-company. The comparison reads `employees.company_id` on
+ * both sides — the payroll employer — never `employee_roles.company_id` for the subject.
+ */
+it('refuses an HOD of a shared department another company\'s employee in that same department', function () {
+    $hod = policyAccountHolding('HOD', $this->aim, policyStaffAt($this->aim, $this->shared));
+
+    $ownCompany = policyStaffAt($this->aim, $this->shared);
+    $otherCompany = policyStaffAt($this->tursenia, $this->shared);
+
+    expect($this->policy->view($hod, $ownCompany))->toBeTrue()
+        ->and($this->policy->view($hod, $otherCompany))->toBeFalse();
+});
+
+it('refuses a supervisor an employee in a different department of their own company', function () {
+    $other = Department::factory()->shared()->create(['name' => 'Studio']);
+
+    $supervisor = policyAccountHolding('SUPERVISOR', $this->aim, policyStaffAt($this->aim, $this->shared));
+
+    expect($this->policy->view($supervisor, policyStaffAt($this->aim, $other)))->toBeFalse();
+});
+
+it('gives an employee every tab of their own record', function () {
+    $employee = policyStaffAt($this->aim);
+    $account = User::factory()->forEmployee($employee)->create();
+
+    expect($this->policy->viewTab($account, $employee, EmployeePolicy::TAB_FAMILY))->toBeTrue()
+        ->and($this->policy->viewTab($account, $employee, EmployeePolicy::TAB_DOCUMENTS))->toBeTrue();
+});
+
+/**
+ * §6.3 — the employee retrieves six of the seven types. OTHER is withheld, which is what
+ * gives it a defined purpose as the home for internal notes and investigation material
+ * rather than an undifferentiated bucket.
+ */
+it('lets an employee open their own documents except OTHER', function () {
+    $employee = policyStaffAt($this->aim);
+    $account = User::factory()->forEmployee($employee)->create();
+
+    expect($this->policy->viewDocument($account, $employee, 'IC'))->toBeTrue()
+        ->and($this->policy->viewDocument($account, $employee, 'RESIGNATION_LETTER'))->toBeTrue()
+        ->and($this->policy->viewDocument($account, $employee, 'OTHER'))->toBeFalse();
+});
+
+it('holds ordinary staff to their own record only', function () {
+    $employee = policyStaffAt($this->aim);
+    $account = User::factory()->forEmployee($employee)->create();
+
+    expect($this->policy->view($account, $employee))->toBeTrue()
+        ->and($this->policy->view($account, policyStaffAt($this->aim)))->toBeFalse();
+});
+
+it('lets HR create and edit within scope but never grant a restricted role', function () {
+    $hr = policyAccountHolding('HR', $this->aim, policyStaffAt($this->aim));
+    $subject = policyStaffAt($this->aim);
+
+    expect($this->policy->create($hr, $this->aim->id))->toBeTrue()
+        ->and($this->policy->update($hr, $subject))->toBeTrue()
+        ->and($this->policy->grantRole($hr, $subject, 'MANAGER', $this->aim->id))->toBeTrue();
+
+    foreach (EmployeeRole::RESTRICTED as $role) {
+        expect($this->policy->grantRole($hr, $subject, $role, $this->aim->id))->toBeFalse();
+    }
+});
+
+it('reserves the job function vocabulary and employee_no to Master Admin', function () {
+    $hr = policyAccountHolding('HR', $this->ahs, policyStaffAt($this->ahs));
+    $master = User::factory()->create(['system_access' => 'FULL', 'employee_id' => null]);
+
+    expect($this->policy->manageJobFunctionTypes($hr))->toBeFalse()
+        ->and($this->policy->manageJobFunctionTypes($master))->toBeTrue()
+        ->and($this->policy->editEmployeeNo($hr, policyStaffAt($this->ahs)))->toBeFalse()
+        ->and($this->policy->editEmployeeNo($master, policyStaffAt($this->ahs)))->toBeTrue();
+});
+
+/**
+ * ⚠ VIEW_ONLY is the one account type whose read scope and abilities part company: group-wide
+ * reads, writes nothing, approves nothing (`adr/0004` decision 2).
+ */
+it('lets VIEW_ONLY read the whole group and write none of it', function () {
+    $viewer = User::factory()->create(['system_access' => 'VIEW_ONLY', 'employee_id' => null]);
+    $subject = policyStaffAt($this->tursenia);
+
+    expect($this->policy->view($viewer, $subject))->toBeTrue()
+        ->and($this->policy->viewTab($viewer, $subject, EmployeePolicy::TAB_DOCUMENTS))->toBeTrue()
+        ->and($this->policy->update($viewer, $subject))->toBeFalse()
+        ->and($this->policy->archive($viewer, $subject))->toBeFalse();
+});
+
+/**
+ * ⚠ Revoked authority is not current authority, asserted through the policy rather than by
+ * hand-writing the condition. A query missing `revoked_date IS NULL` returns revoked
+ * authority as live and NOTHING FAILS — the record is simply read by someone who should no
+ * longer be able to.
+ */
+it('stops reading through a role once it is revoked', function () {
+    $subject = policyStaffAt($this->tursenia);
+
+    // ⚠ Employed by AHS from the start, not moved here afterwards: Employee::$fillable
+    // deliberately omits company_id, because a transfer cascades four child tables and is
+    // audited (§5.7, BR-17). An ->update() would silently do nothing.
+    $employee = policyStaffAt($this->ahs);
+
+    $role = EmployeeRole::factory()->forCompany($this->ahs)->role('HR')
+        ->create(['employee_id' => $employee->id]);
+
+    $hr = User::factory()->forEmployee($employee)->create();
+
+    expect($this->policy->view($hr, $subject))->toBeTrue();
+
+    $role->update(['revoked_date' => now()->toDateString()]);
+
+    expect($this->policy->view($hr->fresh(), $subject))->toBeFalse();
+});

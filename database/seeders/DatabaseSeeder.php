@@ -23,6 +23,11 @@ class DatabaseSeeder extends Seeder
         $this->call(CompanySeeder::class);
         $this->call(PolicyConfigurationSeeder::class);
 
+        // The job-function vocabulary (BR-15). Independent of the two above — it carries no
+        // company_id, because the list is group-wide and Master Admin owns it. Idempotent,
+        // and it will not resurrect a function that has been deactivated.
+        $this->call(JobFunctionSeeder::class);
+
         // No test/demo user is seeded. Every account other than Master Admin and Director
         // belongs to an employee and is created in the same transaction as that employee's
         // record (BR-A20). A standalone account with no employee record is a shape this

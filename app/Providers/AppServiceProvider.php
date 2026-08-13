@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Services\Audit\AuditLogger;
 use App\Services\Auth\MasterAdminContext;
 use App\Services\Auth\ReadScopeResolver;
+use App\Services\Auth\RestrictedRoleContext;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -24,6 +25,14 @@ class AppServiceProvider extends ServiceProvider
         // instance per resolution would always answer "no", which fails safe but makes the
         // bypass silently inoperative (adr/0005 decision 5).
         $this->app->singleton(MasterAdminContext::class);
+
+        // ⚠ Singleton for exactly the same reason, and the failure mode is the opposite one.
+        // EmployeeRole's creating hook asks this whether a deliberate restricted-role grant
+        // is in effect. A fresh instance per resolution would always answer "no", so every
+        // seeder and importer entering the context would still be refused — the guard would
+        // fail CLOSED and look like a bug in the caller rather than in the binding
+        // (BR-16, adr/0003 decision 3).
+        $this->app->singleton(RestrictedRoleContext::class);
 
         // Singleton because it holds the batch id for the life of the current transaction
         // (BR-AT12). A fresh instance per resolution would mint a new batch_id on every

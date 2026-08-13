@@ -33,7 +33,20 @@ class AuditedFields
         // Written by App\Actions\Employee\ChangeEmployeeStatus, which declares the matching
         // AUDITS constant. The architecture test fails in both directions: an entry here
         // with no Action behind it, and an Action auditing a field absent from this list.
-        \App\Models\Employee::class => ['staff_status', 'employee_no'],
+        // ⚠ `position_id`, `department_id` and `level` added by Employee Master slice 2,
+        // written by App\Actions\Employee\ChangeEmployeeAssignment. They are audited for the
+        // same reason `staff_status` is, and NOT because every column should be: the ledger
+        // says what the value WAS on a date, this says who moved it and why.
+        //
+        // `department_id` earns it twice over — approval routing resolves the HOD stage per
+        // (department, company), so moving somebody between departments silently changes who
+        // approves their leave.
+        //
+        // ⚠ `company_id` is deliberately NOT here yet. A transfer is audited with the actor's
+        // identity because it reassigns statutory responsibility for EPF, SOCSO and the EA
+        // Form (§5.7) — but TransferCompany does not exist, and a registry entry with no
+        // Action behind it fails AuditAuthorshipTest by design.
+        \App\Models\Employee::class => ['staff_status', 'employee_no', 'position_id', 'department_id', 'level'],
 
         // ⚠ Account operations, and note what is NOT here: `password` and
         // `activation_token`. audit_logs is readable by HR and ASSISTANT_DIRECTOR within

@@ -115,6 +115,66 @@ class Employee extends Model
     }
 
     /**
+     * What this person does, per company — distinct from what they may approve.
+     *
+     * ⚠ NOT tenant-scoped by the reader, because `employee_job_functions.company_id` is a
+     * company REFERENCE rather than a tenant marker (adr/0003 decision 7). That is what makes
+     * BR-12's "Also serving at" line possible: a person employed by AHS performing Media at
+     * AIM shows both, and a scope here would hide the second by returning fewer rows.
+     */
+    public function jobFunctions(): HasMany
+    {
+        return $this->hasMany(EmployeeJobFunction::class);
+    }
+
+    /**
+     * The four DESCRIPTIVE child collections — §6.2's Family, Education, Employment History
+     * and Documents tabs.
+     *
+     * ⚠ These keep their tenant scope, unlike statusHistory() above, and the asymmetry is the
+     * point rather than an inconsistency. That relationship releases the scope because its
+     * rows are FROZEN under a former employer and would otherwise vanish after a transfer.
+     * These four CASCADE on a transfer, so their `company_id` always already matches the
+     * employee's — there is nothing for a release to rescue, and releasing anyway would widen
+     * access for no benefit.
+     *
+     * Read permission is decided per TAB, not per record: a Supervisor reading an employee's
+     * Employment tab may not read their Family tab (EmployeePolicy, adr/0004 decision 8).
+     */
+    public function familyMembers(): HasMany
+    {
+        return $this->hasMany(EmployeeFamilyMember::class);
+    }
+
+    public function educationHistory(): HasMany
+    {
+        return $this->hasMany(EmployeeEducationHistory::class);
+    }
+
+    public function employmentHistory(): HasMany
+    {
+        return $this->hasMany(EmployeeEmploymentHistory::class);
+    }
+
+    public function documents(): HasMany
+    {
+        return $this->hasMany(EmployeeDocument::class);
+    }
+
+    /**
+     * The emergency contact, surfaced on the EMPLOYMENT tab rather than behind Family —
+     * §6.2's deliberate exception (adr/0004 decision 8).
+     *
+     * A supervisor is likely the first person present at an accident and needs the number
+     * without being handed the whole family record. Name and number only; the rest of the row
+     * stays behind the Family tab they may not read.
+     */
+    public function emergencyContacts(): HasMany
+    {
+        return $this->familyMembers()->where('is_emergency_contact', true);
+    }
+
+    /**
      * The append-only employment ledger for this person.
      *
      * ⚠ TENANT SCOPE IS RELEASED HERE, DELIBERATELY, AND THIS LINE IS THE CARVE-OUT

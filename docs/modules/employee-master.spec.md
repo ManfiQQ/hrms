@@ -491,6 +491,26 @@ full. Test both directions (§8).
   request input.
 - `created_by` / `updated_by` populated automatically.
 
+> **⚠ "Populated automatically" describes a mechanism that does not exist — found 2026-08-13,
+> and NOT fixed in Employee Master slice 2.**
+>
+> There is no observer, no trait, no base model and no hook anywhere in the codebase that
+> fills either column. `CreateEmployee` does not set them either. **Every row written so far —
+> employees, roles, and the slice 1 child tables — carries `NULL` in both.**
+>
+> **This is a data bug that has already happened**, not a missing feature, and it reaches
+> further than the line above suggests. `schema.md` removed
+> `employee_documents.uploaded_by` on the argument that *"`created_by` already records the
+> same person"*. **That sentence has never been true.** The write-once lock on `file_path`,
+> built specifically to keep `created_by` honest as the uploader, is currently protecting a
+> `NULL`.
+>
+> Slice 2's Actions set both columns **explicitly**, which is correct and is not wasted work.
+> What is deliberately **not** done here is the general mechanism: it touches every model in
+> the system, it needs a decision between an observer, a trait and explicit assignment, and it
+> needs a backfill position for the rows already written. **That is an ADR and a PR of its
+> own, and it must not be slipped into a module slice.**
+
 ### 5.2 Delete
 
 Soft delete only. An employee with dependent records is archived, never hard-deleted.
@@ -772,6 +792,23 @@ companies' staff (BR-10).
 (BR-9), but Employee Master holds no salary data (§10 decision 3), so `ACCOUNT` confers no
 Employee Master permission whatsoever — it appears in no row above except as a role that
 may be *granted*. Do not anticipate the Payroll check here.
+
+> **⚠ Read that sentence as scoped to §6's ACTION matrix, because §6.2's tab matrix says
+> something different and both are correct — recorded 2026-08-13.**
+>
+> | Question | Answer for `ACCOUNT` |
+> |---|---|
+> | May it create, edit, archive, grant, transfer? (§6) | **Nothing.** It holds no row in that table |
+> | May it read the employee detail tabs? (§6.2) | **Every tab, within its read scope** |
+>
+> `adr/0004` decision 8 groups **"HR / Asst Director / Account"** as reading every tab, and
+> that is deliberate: `ACCOUNT` runs payroll and cannot do it blind. Reading and writing are
+> two different questions, and this section answers only the second.
+>
+> Without this note the two sections read as a contradiction, and whoever resolves it in a
+> hurry will resolve it by narrowing the ADR — which would leave payroll unable to see the
+> records it pays. `App\Policies\EmployeePolicy` implements both: `ACCOUNT` sits in
+> `ADMINISTRATIVE_ROLES` for reads and in none of the write paths.
 
 **HR cannot grant itself upward.** The split in the table is the whole enforcement
 mechanism for BR-9: HR may appoint Managers and Supervisors, but `ACCOUNT`, `HR`,
