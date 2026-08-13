@@ -196,7 +196,13 @@ it('stops reading through a role once it is revoked', function () {
 
     expect($this->policy->view($hr, $subject))->toBeTrue();
 
-    $role->update(['revoked_date' => now()->toDateString()]);
+    // ⚠ AuthorshipContext: revoking here ARRANGES the state the read is tested against. The
+    // act under test is the policy read that follows, not the revocation (conventions.md §9).
+    app(App\Services\Audit\AuthorshipContext::class)->run(
+        $hr,
+        'Fixture: revoking the role so the read can be observed afterwards.',
+        fn () => $role->update(['revoked_date' => now()->toDateString()])
+    );
 
     expect($this->policy->view($hr->fresh(), $subject))->toBeFalse();
 });

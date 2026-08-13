@@ -2,7 +2,9 @@
 
 namespace App\Providers;
 
+use App\Observers\AuthorshipObserver;
 use App\Services\Audit\AuditLogger;
+use App\Services\Audit\AuthorshipContext;
 use App\Services\Auth\MasterAdminContext;
 use App\Services\Auth\ReadScopeResolver;
 use App\Services\Auth\RestrictedRoleContext;
@@ -45,6 +47,13 @@ class AppServiceProvider extends ServiceProvider
 
         // SecurityEventLogger is deliberately NOT a singleton: it holds no state, and
         // binding it would suggest it does.
+
+        // ⚠ Singleton for the same reason as the two contexts above: AuthorshipObserver asks
+        // it whether a deliberate attribution is in effect. A fresh instance per resolution
+        // would always answer "no", so every seeder entering the context would still be
+        // refused — the guard would fail CLOSED and read as a bug in the caller
+        // (adr/0009 decision 2).
+        $this->app->singleton(AuthorshipContext::class);
     }
 
     /**
@@ -52,6 +61,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // adr/0009 — authorship columns are written by an observer, never by the caller.
         //
+        // ⚠ Registered from ONE list rather than by an #[ObservedBy] attribute per model.
+        // A per-model attribute is opt-in, and a model that forgets it writes NULL and raises
+        // nothing — the failure this ADR exists to close. AuthorshipCoverageTest compares this
+        // list against the live schema in both directions.
+        foreach (AuthorshipObserver::MODELS as $model) {
+            $model::observe(AuthorshipObserver::class);
+        }
     }
 }

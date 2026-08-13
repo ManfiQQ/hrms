@@ -18,6 +18,14 @@ use App\Models\EmployeeDocument;
  * attribution is wrong in a way no query can detect afterwards, because the old path is gone.
  */
 beforeEach(function () {
+    // ⚠ actingAs: correcting a mis-filed document is an act BY somebody, and adr/0009 records
+    // them in updated_by. The rule under test — file_path is write-once — is unaffected either
+    // way, but modelling the edit as authorless would misdescribe it.
+    // ⚠ masterAdmin(), not a plain account: a STANDARD user with no employee record is the
+    // orphaned shape ReadScopeResolver throws on, and this test reads documents through
+    // TenantScope. FULL resolves to every company without needing an employee.
+    $this->actingAs(App\Models\User::factory()->masterAdmin()->create());
+
     $this->company = Company::factory()->create(['code' => 'AHS']);
     $this->dept = Department::factory()->shared()->create(['name' => 'HQ']);
 

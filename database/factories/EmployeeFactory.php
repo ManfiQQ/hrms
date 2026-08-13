@@ -5,6 +5,7 @@ namespace Database\Factories;
 use App\Models\Company;
 use App\Models\Department;
 use App\Models\Employee;
+use Database\Factories\Concerns\AttributesAuthorship;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -12,6 +13,8 @@ use Illuminate\Database\Eloquent\Factories\Factory;
  */
 class EmployeeFactory extends Factory
 {
+    use AttributesAuthorship;
+
     public function definition(): array
     {
         return [

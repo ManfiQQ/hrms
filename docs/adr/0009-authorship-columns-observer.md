@@ -37,8 +37,22 @@ path — the legacy importer, queue jobs, Phase 2 modules — would have to reme
 
 ### 1. An observer fills both columns, and a guard test enforces coverage
 
-`AuthorshipObserver` sets `created_by` on `creating` and `updated_by` on
-`updating`, registered for every model whose table carries the columns.
+`AuthorshipObserver` sets **both columns on `creating`**, and rewrites `updated_by`
+on every `updating`, registered for every model whose table carries the columns.
+
+> **⚠ Amended 2026-08-13, during implementation and in the same PR.** This
+> sentence originally read *"sets `created_by` on `creating` and `updated_by` on
+> `updating`"* — which **contradicts decision 3 below**, where both columns become
+> `NOT NULL`. A row inserted with a null `updated_by` could not be written at all,
+> so the two decisions could not both hold.
+>
+> Writing both on insert is also the more honest reading, not a convenience:
+> **for a row that has never been updated, its last update is its creation.**
+> Eloquent stamps `created_at` *and* `updated_at` on insert for exactly that
+> reason.
+>
+> Amended rather than replaced by a new ADR: the original text was written before
+> implementation exposed the conflict, and the decision itself has not changed.
 
 **A guard test fails when any model whose table has a `created_by` column is not
 covered by the observer.** Without that test this decision is a trait in

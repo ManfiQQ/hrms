@@ -19,6 +19,11 @@ use Illuminate\Support\Facades\Hash;
  * at all.
  */
 beforeEach(function () {
+    // ⚠ actingAs, not AuthorshipContext: registration is an act BY somebody. HR performs it in
+    // production, the audit row records who, and adr/0009 attributes the rows to them. A
+    // context here would model a seeder, which this is not.
+    $this->actingAs(User::factory()->masterAdmin()->create());
+
     $this->ahs = Company::factory()->create(['code' => 'AHS']);
     $this->aim = Company::factory()->subsidiary($this->ahs)->create(['code' => 'AIM']);
 
@@ -105,7 +110,7 @@ it('leaves neither an employee nor a burned number when the account fails', func
         ->toThrow(Illuminate\Database\QueryException::class);
 
     expect(Employee::query()->count())->toBe(1)          // only the pre-existing one
-        ->and(User::query()->count())->toBe(1);
+        ->and(User::query()->whereNotNull('employee_id')->count())->toBe(1);
 
     // ⚠ And the number was not burned. The next real registration gets AHS-0001, not
     // AHS-0002 — a rolled-back transaction must leave no gap.
