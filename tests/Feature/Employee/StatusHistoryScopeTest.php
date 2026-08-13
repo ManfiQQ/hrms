@@ -149,10 +149,22 @@ it('carries no updated_at, updated_by or deleted_at', function () {
  * ⚠ CORE_ROLE must never appear. Role history lives in employee_roles, which records every
  * grant and revocation with its date, actor and reason — a second copy here would be two
  * records of one fact that can disagree.
+ *
+ * ⚠ FOUR BECAME FIVE ON 2026-08-13, AND EDITING THIS LINE IS THE GUARD WORKING RATHER THAN AN
+ * OBSTACLE TO IT.
+ *
+ * The set is written out literally, not read from the constant it checks, so that a new value
+ * CANNOT arrive without appearing in a diff and being argued for. `EMPLOYER` was argued for in
+ * adr/0010: a company transfer is a ledger event, and employees.company_id was the only
+ * mutable column on employees with no history — and the most statutorily loaded of them.
+ *
+ * This is the same shape as TenantScopeGuardTest going from two named exemptions to three when
+ * EmployeeJobFunction earned one. A guard that quietly accepted whatever the constant said
+ * would have nothing to catch.
  */
-it('accepts exactly four change types and rejects CORE_ROLE at the database level', function () {
+it('accepts exactly five change types and rejects CORE_ROLE at the database level', function () {
     expect(EmployeeStatusHistory::CHANGE_TYPES)
-        ->toBe(['STAFF_STATUS', 'POSITION', 'DEPARTMENT', 'LEVEL']);
+        ->toBe(['STAFF_STATUS', 'POSITION', 'DEPARTMENT', 'LEVEL', 'EMPLOYER']);
 
     $employee = Employee::factory()->forCompany($this->aim)->create();
 

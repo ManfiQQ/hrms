@@ -42,11 +42,16 @@ class AuditedFields
         // (department, company), so moving somebody between departments silently changes who
         // approves their leave.
         //
-        // ⚠ `company_id` is deliberately NOT here yet. A transfer is audited with the actor's
-        // identity because it reassigns statutory responsibility for EPF, SOCSO and the EA
-        // Form (§5.7) — but TransferCompany does not exist, and a registry entry with no
-        // Action behind it fails AuditAuthorshipTest by design.
-        \App\Models\Employee::class => ['staff_status', 'employee_no', 'position_id', 'department_id', 'level'],
+        // ⚠ `company_id` joined this list on 2026-08-13, when TransferCompany was written.
+        // It was withheld until then for a reason the registry enforces in both directions: an
+        // entry with no Action behind it fails AuditAuthorshipTest, exactly as an Action
+        // auditing an unlisted field does.
+        //
+        // It is audited because a transfer reassigns statutory responsibility for an
+        // employee's EPF, SOCSO and EA Form between two legal entities (§5.7). When a filing
+        // is queried later, this row is what shows WHO made that so — the only thing
+        // distinguishing an ordinary HR transfer from a Master Admin support intervention.
+        \App\Models\Employee::class => ['staff_status', 'employee_no', 'position_id', 'department_id', 'level', 'company_id'],
 
         // ⚠ Account operations, and note what is NOT here: `password` and
         // `activation_token`. audit_logs is readable by HR and ASSISTANT_DIRECTOR within

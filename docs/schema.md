@@ -31,6 +31,8 @@
 | `employee_documents` | `2026_08_13_100300_create_employee_documents_table.php` |
 | `job_functions` | `2026_08_13_100400_create_job_functions_table.php` |
 | `employee_job_functions` | `2026_08_13_100500_create_employee_job_functions_table.php` |
+| `created_by` / `updated_by` — NOT NULL on all eight | `2026_08_13_100600_make_authorship_columns_not_null.php` |
+| `employee_status_history.change_type` — fifth value | `2026_08_13_100700_add_employer_to_change_type_enum.php` |
 
 **Employee Master's nine tables are complete as of 2026-08-13.** The six above are slice 1;
 `employees`, `employee_roles` and `employee_status_history` landed earlier
@@ -476,11 +478,35 @@ Indexes: `(employee_id, effective_date)` — the employee's own history tab, the
 > The release is bounded by the employee, not merely by the absence of a scope — asserted
 > separately, since a release that returned everyone's rows would satisfy the first test.
 
-`change_type` enum — **four** values, and only four:
+`change_type` enum — **five** values, and only five:
 
 ```
-STAFF_STATUS, POSITION, DEPARTMENT, LEVEL
+STAFF_STATUS, POSITION, DEPARTMENT, LEVEL, EMPLOYER
 ```
+
+> **`EMPLOYER` added 2026-08-13 — `adr/0010`, a company transfer is a ledger event.**
+>
+> `employees.company_id` was the only mutable column on `employees` with no history, and the
+> most statutorily loaded of them: it decides which legal entity owes an employee's EPF, SOCSO
+> and EA Form. `employee-master.spec.md` §5.7 requires the record to show which entity was
+> responsible **from which date**, and nothing answered that except reconstructing it from
+> audit rows.
+>
+> `old_value` / `new_value` hold the old and new `companies.id`; the labels hold the company
+> **`code`** at the time (`AIM` → `TURSENIA`), matching how §7's timeline already renders
+> companies. ⚠ An EA Form carries the **registered name**, not the code — accepted, because
+> `old_value` resolves to the full row, and the label exists to stop a *renamed* company
+> rewriting history, which the code does as well as the name.
+>
+> **Named for the field, as the other four are.** `COMPANY` was rejected: a row reading
+> `change_type = COMPANY` beside its own `company_id` column uses one word for two different
+> things.
+>
+> ⚠ **Both rows a transfer writes — the `EMPLOYER` row and the `DEPARTMENT` row §5.3 forces —
+> freeze to the NEW company** (`adr/0010` decision 3). Freezing them to the old employer would
+> open the new company's history with a gap; freezing to the new one leaves the old company's
+> history simply ending, which is correct. The absence of further rows is the departure; the
+> absence of an arrival row is a gap.
 
 **`CORE_ROLE` is deliberately not among them.** Role history lives in `employee_roles`,
 which already records every grant and revocation with dates, actors and reasons. Writing
