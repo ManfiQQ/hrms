@@ -220,9 +220,16 @@ class TransferCompany
      * reports.
      *
      * ⚠ THIS SCOPE LIFT IS DEFENSIVE TODAY, NOT LOAD-BEARING — and the dependency is the part
-     * worth knowing. EmployeePolicy requires the employee's company to be inside the actor's
-     * read scope, so no account permitted to transfer can have a scope that excludes the old
-     * company while the child rows still carry it.
+     * worth knowing. `EmployeePolicy::transfer()` requires the employee's company to be inside
+     * the actor's read scope, so no account permitted to transfer can have a scope that
+     * excludes the old company while the child rows still carry it.
+     *
+     * ⚠ THAT SENTENCE WAS FALSE WHEN IT WAS FIRST WRITTEN, and the correction is dated because
+     * the mistake is the instructive part. `EmployeePolicy::transfer()` did not exist until
+     * **2026-08-13** — this comment asserted a protection nobody had built, and **nothing
+     * authorised a transfer at all**. No test caught it, because the Action had never been
+     * reached through an authorised path: §7's UI does not exist, so its only caller was a
+     * test invoking it directly (`conventions.md` §9).
      *
      * It is therefore NOT covered by a test, deliberately: one would have to bypass the policy
      * to reach the state the policy forbids, which asserts behaviour for an unreachable path
