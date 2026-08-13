@@ -65,10 +65,8 @@ it('freezes the display text, so renaming a department later does not rewrite hi
 });
 
 it('resolves the position title as the label', function () {
-    // ⚠ Built directly: there is no PositionFactory. `positions` predates Employee Master
-    // and never got one — a Phase 0 gap, not this slice's to close.
-    $old = Position::create(['title' => 'Executive', 'department_id' => $this->from->id]);
-    $new = Position::create(['title' => 'Senior Executive', 'department_id' => $this->from->id]);
+    $old = Position::factory()->inDepartment($this->from)->titled('Executive')->create();
+    $new = Position::factory()->inDepartment($this->from)->titled('Senior Executive')->create();
 
     $this->employee->update(['position_id' => $old->id]);
 
