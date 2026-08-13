@@ -163,6 +163,22 @@ in a way the code cannot explain.
 | created_by, updated_by | FK → users, nullable | |
 | timestamps, soft deletes | | |
 
+**Indexes: `employee_no` (unique, group-wide), `fingerprint_id` (unique, nullable), and
+`(company_id, staff_status)`** — the last is the default employee-list read, which is always
+narrowed to the account's read scope and then filtered by status, so the two columns are used
+together and in that order.
+
+`department_id`, `direct_supervisor_id`, `manager_id` and `previous_employee_id` are indexed
+**implicitly** by their foreign keys and carry no separate declaration. `employee-master.spec.md`
+§3 lists them, and reading that list as four missing indexes is the mistake to avoid: a second
+index on the same column is dead weight MySQL maintains on every write.
+
+> **`(company_id, staff_status)` was added on 2026-08-13 by editing the creating migration
+> in place** — it was required by `employee-master.spec.md` §3 from the start and simply
+> never written. The in-place edit was available because no migration has yet run against
+> real data; see § Status above, and **`conventions.md` §11** for the rule, its three
+> conditions, and the log every use of it must be written into.
+
 > ### Read scope comes from the employer's position in the hierarchy — and `company_id` bounds it, never grants it
 >
 > An account's **read scope** — *which companies' employees it may see at all* — is derived

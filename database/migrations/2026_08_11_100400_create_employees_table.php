@@ -143,6 +143,17 @@ return new class extends Migration
 
             $table->timestamps();
             $table->softDeletes();
+
+            // The default employee-list query, and the only index this table needs stated
+            // explicitly (employee-master.spec.md §3). Every list read is already narrowed to
+            // the account's read scope by TenantScope and then filtered by staff_status, so
+            // the two columns are always used together and in that order.
+            //
+            // The other indexes §3 requires — department_id, direct_supervisor_id, manager_id,
+            // previous_employee_id — are created implicitly by foreignId()->constrained()
+            // above, and are deliberately not repeated here: a second index on the same column
+            // is dead weight MySQL still maintains on every write.
+            $table->index(['company_id', 'staff_status']);
         });
 
         // The users.employee_id foreign key is added HERE, in the migration that creates
