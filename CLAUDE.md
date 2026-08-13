@@ -118,6 +118,13 @@ row count.
 - **Obsidian** — spec and decision authoring. Vault lives inside `/docs`, so anything
   written there is part of the repo automatically.
 
+**Language boundary.** Discussion in claude.ai runs in Malay; every artefact committed to
+this repo — `CLAUDE.md`, `conventions.md`, `schema.md`, specs, ADRs, code comments, commit
+messages, test names — is written in English, without exception. An instruction given in
+Malay specifies **content**, never the language of the artefact. Where an instruction appears
+to demand otherwise, **ask before writing**: a single Malay-language section in an otherwise
+English document is drift, and it is worse in the documents whose job is to prevent drift.
+
 ---
 
 ## 5. Company / Entity Reference

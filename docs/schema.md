@@ -144,7 +144,7 @@ in a way the code cannot explain.
 | previous_employee_id | FK → employees, self-referencing, nullable | Links a **rejoiner's** new record to their old one. `RESIGNED` and `TERMINATED` are terminal (`business-rules.md` BR-2), so a returning employee gets a **new record with a new `employee_no`** — never a reactivated one — and this column is the only thread back. BR-2 already required the reference; no column existed for it, leaving the rule unimplementable. Employee Master **stores** the link only: whether prior service counts toward leave entitlement is a Leave-spec decision, and it cannot be made at all unless the link is captured now. See `adr/0003` decision 9. |
 | full_name | string, **NOT NULL** | Every other record in the system identifies a person by this. An employee master where the name is optional cannot do its one job. |
 | nickname, email | string, nullable | `email` is **nullable and frequently absent** — much of this workforce (factory crew, studio staff, live hosts) has no company email. That is precisely why login runs on `phone_no` and not on email (`adr/0004` decision 6). |
-| phone_no | string, **NOT NULL**, **unique** | **This is the login username** (`adr/0004` decision 6). `NOT NULL` **and** uniquely indexed — it previously had neither. Normalised, validated, and restricted to HR / Master Admin for edits — see the note below. |
+| ~~phone_no~~ | **Not a column on this table** | **Moved to `users.phone_no` on 2026-08-12 (`adr/0006`).** The login username lives on the account, not on the employee record, and there is no `contact_no` here either (decision 7). This row is kept as a pointer so a reader scanning only the column table does not conclude the number is missing — see § `users` and the note directly below this table. |
 | company_id | FK, **NOT NULL** | **The payroll and legal employer — that meaning only.** Determines which company's leave entitlement, policy config, payroll and statutory rules apply. Mandatory, scoped from creation. **It no longer answers "what authority does this person have"** — `employee_roles` does (`adr/0003` decision 6). Approval scope still reads this value: a `SUPERVISOR`, `MANAGER` or `HOD` approves only for employees sharing it, shared department or not (`adr/0002` decisions 4–5) — but *which* role they hold comes from the pivot. **No `secondary_company_id` column exists and none may be added**: a person's involvement with other companies is derived by querying `employee_roles`, never stored a second time. **It additionally bounds read scope**, via the employer's position in `companies.parent_company_id` — see the read-scope note below (`adr/0004` decision 1). |
 | department_id | FK, **NOT NULL** | Approval routing resolves per **(department, company)** — an employee with no department has no HOD stage to resolve (`adr/0001` decision 3, `adr/0002` decision 4). Org assignment is **independent of `company_id` and not required to match it**: an employee may sit in a shared department belonging to no single company, or to a different one. This is valid and must not be rejected by validation (`adr/0002` decision 2). |
 | branch_id, position_id | FK, **nullable** | Not every employee has a fixed place of work or a titled position, and the legacy import carries records with neither. Same independence from `company_id` as `department_id` above. |
@@ -162,6 +162,22 @@ in a way the code cannot explain.
 | hours_enabled | boolean | Whether Saturday accumulated-hours banking applies to this employee |
 | created_by, updated_by | FK → users, nullable | |
 | timestamps, soft deletes | | |
+
+**Indexes: `employee_no` (unique, group-wide), `fingerprint_id` (unique, nullable), and
+`(company_id, staff_status)`** — the last is the default employee-list read, which is always
+narrowed to the account's read scope and then filtered by status, so the two columns are used
+together and in that order.
+
+`department_id`, `direct_supervisor_id`, `manager_id` and `previous_employee_id` are indexed
+**implicitly** by their foreign keys and carry no separate declaration. `employee-master.spec.md`
+§3 lists them, and reading that list as four missing indexes is the mistake to avoid: a second
+index on the same column is dead weight MySQL maintains on every write.
+
+> **`(company_id, staff_status)` was added on 2026-08-13 by editing the creating migration
+> in place** — it was required by `employee-master.spec.md` §3 from the start and simply
+> never written. The in-place edit was available because no migration has yet run against
+> real data; see § Status above, and **`conventions.md` §11** for the rule, its three
+> conditions, and the log every use of it must be written into.
 
 > ### Read scope comes from the employer's position in the hierarchy — and `company_id` bounds it, never grants it
 >
@@ -442,8 +458,22 @@ correction is a new row, not an edit. Mutability would defeat the point of the t
 > ```
 
 ### `employee_documents`
-`id`, `company_id` (FK), `employee_id` (FK), `type` (enum), `file_path`, `uploaded_by`
-(FK → users), `created_by`, `updated_by`, timestamps, soft deletes
+`id`, `company_id` (FK), `employee_id` (FK), `type` (enum), `file_path`, `created_by`,
+`updated_by`, timestamps, soft deletes
+
+> **⚠ `uploaded_by` withdrawn — 2026-08-13. It does not exist and must not be added.**
+> `created_by` already records the same person: the row is created by the upload, so the
+> creator **is** the uploader. Two columns naming one actor is the pattern
+> `conventions.md` §3 rejects on `audit_logs.created_by` — *"`user_id` **is** the actor, so
+> `created_by` would record the same person twice"* — and the copy is what goes stale.
+>
+> **What keeps `created_by` permanently true as "who uploaded this": replacing a document is
+> a NEW ROW plus a soft delete of the old one, never an edit to `file_path`.** That
+> prohibition is load-bearing, not tidiness. Overwriting the path on an existing row would
+> leave `created_by` naming the person who uploaded a file that is no longer there, while
+> `updated_by` names the one who actually supplied the current one — and the record would
+> read as though the first person had uploaded the second person's file. Two rows keep both
+> facts true and preserve the version history the ledger tables already assume.
 
 `type` enum — Phase 1 starting set:
 

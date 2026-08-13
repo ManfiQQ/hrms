@@ -369,3 +369,30 @@ was solid and is carried forward:
 
 Report: summary of changes, files changed, migrations added, test results
 (exact pass/fail), remaining risks, rollback notes.
+
+---
+
+## 11. Editing a Migration That Has Already Been Merged
+
+**Permitted ONLY while all three of these conditions hold:**
+
+- **(a)** no production environment exists,
+- **(b)** no real data exists in any database,
+- **(c)** the repo is held by a single developer.
+
+**When any one condition falls, this option dies** and a repair migration becomes the only
+route — even though that is the pattern `CLAUDE.md` §9 records as the legacy system's
+disease.
+
+**The reasoning:** a repair migration is **permanent debt**; an in-place edit is **zero
+debt** while this window is open. The window closes on the **first deployment**, or on the
+**first clone by a second person** — whichever comes first.
+
+⚠ **Anyone who already has a local database must `migrate:fresh`** — editing a migration does
+not change a database that has already run it.
+
+**Opened 2026-08-13. Every use must be logged below.**
+
+### Usage log
+
+- **2026-08-13** — index `(company_id, staff_status)` on `employees`.
