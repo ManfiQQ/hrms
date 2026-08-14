@@ -168,6 +168,34 @@ silent default would hide exactly that.
   two forms** — a query scope and a boolean. They can drift, and a guard must
   assert they agree.
 
+> **⚠ Amended 2026-08-14, in the PR that implemented decision 1. The bullet above is
+> DEFERRED, not withdrawn — and the deferral has three reasons, none of them effort.**
+>
+> **1. The two forms do not have the same shape, so the guard cannot compare them
+> directly.** `viewTab()` answers *(actor, subject, tab)*; a list scope answers
+> *(actor) → set*. A guard comparing them must pick one tab as a proxy for the whole
+> method — and that proxy is an assumption nothing checks, which is the family of six
+> findings `conventions.md` §9 now records. A guard that lies in a new shape is worse
+> than no guard, because it is believed.
+>
+> **2. A scope that branches on the actor's tier has no precedent in this codebase.**
+> Every existing scope — `TenantScope`, `SharedTenantScope`, `SystemTenantScope`,
+> `NotRevokedScope` — applies uniformly to every account. This one must apply to the
+> supervisory tier and **not** to `HR`, the administrative tier, `FULL` or `VIEW_ONLY`.
+> A wrong scope filter **returns fewer rows rather than erroring**, which is the whole
+> argument of `adr/0002`, and getting it wrong here hides employees from HR with nothing
+> to notice.
+>
+> **3. A query scope with no list to call it is code with no caller.** That is exactly
+> how `EmployeePolicy::transfer()` came to be missing for days with a green suite: the
+> Action was never reached through an authorised path, so no test asked
+> (`conventions.md` §9). Writing the scope first would repeat it deliberately.
+>
+> **The rule itself is unchanged and is enforced today**, per record, by
+> `EmployeePolicy::viewTab()`. What is deferred is the second form and the guard over
+> both — and they must be **designed with the list**, not before it. `employee-master.spec.md`
+> §5.4 carries a pointer recording that it is currently silent on the narrowing.
+
 **Not changed**
 
 - Approval routing, in any form. BR-10, `adr/0002` decision 4, and the

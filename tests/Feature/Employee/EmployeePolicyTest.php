@@ -26,10 +26,36 @@ beforeEach(function () {
     $this->policy = app(EmployeePolicy::class);
 });
 
+/**
+ * Staff who report to NOBODY — both BR-8 columns null, as `EmployeeFactory` leaves them.
+ *
+ * ⚠ Since `adr/0011` this is no longer a neutral default. An employee with both columns null
+ * is read by nobody below `HR` (decision 4), so every subject built by this helper is
+ * INVISIBLE to the supervisory tier by construction. That is deliberate: it forces each
+ * supervisory test to say out loud which reporting line it is arranging.
+ */
 function policyStaffAt(Company $company, ?Department $department = null): Employee
 {
     return Employee::factory()
         ->forCompany($company)
+        ->create(['department_id' => ($department ?? test()->shared)->id]);
+}
+
+/** Staff whose `direct_supervisor_id` names $supervisor (BR-8, `adr/0011` decision 1). */
+function policyStaffReportingTo(Employee $supervisor, Company $company, ?Department $department = null): Employee
+{
+    return Employee::factory()
+        ->forCompany($company)
+        ->reportingTo($supervisor)
+        ->create(['department_id' => ($department ?? test()->shared)->id]);
+}
+
+/** Staff whose `manager_id` names $manager, with `direct_supervisor_id` left null. */
+function policyStaffManagedBy(Employee $manager, Company $company, ?Department $department = null): Employee
+{
+    return Employee::factory()
+        ->forCompany($company)
+        ->managedBy($manager)
         ->create(['department_id' => ($department ?? test()->shared)->id]);
 }
 
@@ -64,10 +90,14 @@ it('stops a subsidiary-employed HR at its own company, however wide its approval
 /**
  * ⚠ §6.2's central rule. A supervisor needs to know who reports to them and how to reach
  * them; they do not need a copy of someone's IC or their spouse's identity card number.
+ *
+ * The subject reports to the supervisor since `adr/0011`: the tabs a supervisor may open are
+ * decided here, but WHICH employees they may open at all is the reporting line.
  */
 it('gives a supervisor Employment and Personal, and nothing else', function () {
-    $subject = policyStaffAt($this->aim);
-    $supervisor = policyAccountHolding('SUPERVISOR', $this->aim, policyStaffAt($this->aim));
+    $supervisorEmployee = policyStaffAt($this->aim);
+    $subject = policyStaffReportingTo($supervisorEmployee, $this->aim);
+    $supervisor = policyAccountHolding('SUPERVISOR', $this->aim, $supervisorEmployee);
 
     expect($this->policy->viewTab($supervisor, $subject, EmployeePolicy::TAB_EMPLOYMENT))->toBeTrue()
         ->and($this->policy->viewTab($supervisor, $subject, EmployeePolicy::TAB_PERSONAL))->toBeTrue();
@@ -89,23 +119,114 @@ it('gives a supervisor Employment and Personal, and nothing else', function () {
  *
  * An HOD's authority is strictly same-company. The comparison reads `employees.company_id` on
  * both sides — the payroll employer — never `employee_roles.company_id` for the subject.
+ *
+ * ⚠ SINCE `adr/0011` BOTH SUBJECTS REPORT TO THE HOD, and that is what makes this test worth
+ * having. The reporting line is satisfied on both sides, the department is shared on both
+ * sides, and the ONLY difference left is the employer — so a pass here can mean nothing except
+ * that the company bound held. Under the old department rule the two subjects differed in
+ * nothing at all, and the test could not distinguish the bound it names from the one it does
+ * not.
  */
 it('refuses an HOD of a shared department another company\'s employee in that same department', function () {
-    $hod = policyAccountHolding('HOD', $this->aim, policyStaffAt($this->aim, $this->shared));
+    $hodEmployee = policyStaffAt($this->aim, $this->shared);
+    $hod = policyAccountHolding('HOD', $this->aim, $hodEmployee);
 
-    $ownCompany = policyStaffAt($this->aim, $this->shared);
-    $otherCompany = policyStaffAt($this->tursenia, $this->shared);
+    $ownCompany = policyStaffReportingTo($hodEmployee, $this->aim, $this->shared);
+    $otherCompany = policyStaffReportingTo($hodEmployee, $this->tursenia, $this->shared);
 
     expect($this->policy->view($hod, $ownCompany))->toBeTrue()
         ->and($this->policy->view($hod, $otherCompany))->toBeFalse();
 });
 
-it('refuses a supervisor an employee in a different department of their own company', function () {
-    $other = Department::factory()->shared()->create(['name' => 'Studio']);
+/**
+ * ⚠ THE NARROWING, and this test replaces one that could no longer fail.
+ *
+ * It previously read *"refuses a supervisor an employee in a different department of their own
+ * company"* and asserted `false` alone. After `adr/0011` that subject is refused for having no
+ * reporting line, not for its department — the assertion stayed green while testing nothing,
+ * which is the empty-guard family `conventions.md` §9 lists.
+ *
+ * The rule that replaced it is refused in the direction the old one got WRONG: same company,
+ * same department, visibly a colleague — and not a subordinate. Department equality would
+ * return true here (`adr/0011` Context).
+ */
+it('refuses a supervisor a colleague in their own department who does not report to them', function () {
+    $supervisorEmployee = policyStaffAt($this->aim, $this->shared);
+    $supervisor = policyAccountHolding('SUPERVISOR', $this->aim, $supervisorEmployee);
 
-    $supervisor = policyAccountHolding('SUPERVISOR', $this->aim, policyStaffAt($this->aim, $this->shared));
+    $colleague = policyStaffAt($this->aim, $this->shared);
+    $subordinate = policyStaffReportingTo($supervisorEmployee, $this->aim, $this->shared);
 
-    expect($this->policy->view($supervisor, policyStaffAt($this->aim, $other)))->toBeFalse();
+    // Both halves, or the test passes against a supervisor who can read nothing at all.
+    expect($this->policy->view($supervisor, $colleague))->toBeFalse()
+        ->and($this->policy->view($supervisor, $subordinate))->toBeTrue();
+});
+
+/**
+ * ⚠ THE WIDENING — the half department equality got wrong in the other direction, and the
+ * reason `adr/0011` is a correction rather than a tightening.
+ *
+ * A supervisor's own subordinate, sitting in a different department. The old rule refused
+ * this: someone who reports to you, whose leave you approve, whose phone number you may need
+ * at an accident, and whom the system hid from you because a `department_id` differed.
+ */
+it('gives a supervisor a subordinate who sits in a different department', function () {
+    $studio = Department::factory()->shared()->create(['name' => 'Studio']);
+
+    $supervisorEmployee = policyStaffAt($this->aim, $this->shared);
+    $supervisor = policyAccountHolding('SUPERVISOR', $this->aim, $supervisorEmployee);
+
+    $subordinate = policyStaffReportingTo($supervisorEmployee, $this->aim, $studio);
+
+    expect($this->policy->view($supervisor, $subordinate))->toBeTrue()
+        ->and($this->policy->viewTab($supervisor, $subordinate, EmployeePolicy::TAB_PERSONAL))->toBeTrue();
+});
+
+/**
+ * ⚠ `manager_id` ALONE IS ENOUGH — `adr/0011` decision 1 accepts either column, and decision 2
+ * calls two levels without traversal the ordinary case.
+ *
+ * `direct_supervisor_id` is left null deliberately. An implementation reading only the first
+ * column passes every other test in this file and fails this one.
+ */
+it('gives a manager an employee who names them in manager_id alone', function () {
+    $workshop = Department::factory()->shared()->create(['name' => 'Workshop']);
+
+    $managerEmployee = policyStaffAt($this->aim, $this->shared);
+    $manager = policyAccountHolding('MANAGER', $this->aim, $managerEmployee);
+
+    // A different department, so `manager_id` is the only thing that can grant this read.
+    $subject = policyStaffManagedBy($managerEmployee, $this->aim, $workshop);
+
+    expect($subject->direct_supervisor_id)->toBeNull()
+        ->and($this->policy->view($manager, $subject))->toBeTrue();
+});
+
+/**
+ * ⚠ `adr/0011` DECISION 4, AND IT IS ACCEPTED RATHER THAN WORKED AROUND. An employee with both
+ * BR-8 columns null is read by nobody at the supervisory tier.
+ *
+ * Both directions, or this asserts only that something is broken: `HR` must still read the
+ * same record. The rule is *"nobody BELOW HR"*, not *"nobody"* — and an unfilled column
+ * showing up as an employee missing from every supervisor's view is the visible data gap
+ * decision 4 chose over an invented chain.
+ */
+it('hides an employee with no supervisor and no manager from the supervisory tier, but not from HR', function () {
+    $orphan = policyStaffAt($this->aim, $this->shared);
+
+    expect($orphan->direct_supervisor_id)->toBeNull()
+        ->and($orphan->manager_id)->toBeNull();
+
+    foreach (['SUPERVISOR', 'MANAGER', 'HOD'] as $role) {
+        $actor = policyAccountHolding($role, $this->aim, policyStaffAt($this->aim, $this->shared));
+
+        expect($this->policy->view($actor, $orphan))
+            ->toBeFalse("{$role} must not read an employee who reports to nobody");
+    }
+
+    $hr = policyAccountHolding('HR', $this->ahs, policyStaffAt($this->ahs));
+
+    expect($this->policy->view($hr, $orphan))->toBeTrue();
 });
 
 it('gives an employee every tab of their own record', function () {
@@ -309,10 +430,14 @@ it('gives the administrative tier the Roles & Functions tab', function () {
  * functions and the grant controls this tab adds.
  */
 it('withholds Roles & Functions from the supervisory tier', function () {
-    $subject = policyStaffAt($this->aim, $this->shared);
-
     foreach (['SUPERVISOR', 'MANAGER', 'HOD'] as $role) {
-        $actor = policyAccountHolding($role, $this->aim, policyStaffAt($this->aim, $this->shared));
+        $actorEmployee = policyStaffAt($this->aim, $this->shared);
+        $actor = policyAccountHolding($role, $this->aim, $actorEmployee);
+
+        // Reports to this actor, so the Employment assertion below is about the TAB. Since
+        // adr/0011 a subject that reports to nobody is refused every tab, which would make
+        // the negative half pass for the wrong reason.
+        $subject = policyStaffReportingTo($actorEmployee, $this->aim, $this->shared);
 
         // The same actor DOES read Employment — so this is the tab being withheld, not the
         // record. Asserting only the negative would pass against an actor who sees nothing.
