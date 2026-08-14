@@ -504,6 +504,17 @@ number in a supporting clause reads exactly like a right one.
 ⚠ **Quotations in ADRs are checked against the source, not against whether they sound like
 something that source would say.**
 
+### ⚠ An ADR quotes the state it is about to change, and that quotation goes stale on acceptance
+
+`adr/0006` cites BR-A1 and `schema.md` in the present tense as placing `phone_no` on
+`employees` — true when written, false since, and false **because of `adr/0006` itself**. A
+reader checking the citation finds the opposite and has nothing telling them the sentence
+describes the prior state.
+
+Quotations of a state an ADR changes are written in the past tense, or marked with the date
+they were true. This is not the fabricated-citation problem above; it is the opposite — an
+accurate quotation that the document's own success made wrong. Recorded 2026-08-14.
+
 ---
 
 ## 10. Required Validation Before Calling a Module "Done"

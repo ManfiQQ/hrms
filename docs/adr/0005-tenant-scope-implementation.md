@@ -161,7 +161,12 @@ means in practice**, and it is testable today.
 > `docs/modules/audit-trail.spec.md` settled the shape, the migration landed, and
 > `MasterAdminContext` now **writes the bypass to `audit_logs`** — actor, reason, and a
 > `tenant_scope: scoped → bypassed` row against the acting account. **Both halves of this
-> decision now hold:** "explicit, never ambient" *and* "audited".
+> decision now hold:** "explicit, not ambient" *and* "audited".
+>
+> **⚠ Wording corrected 2026-08-14.** This line quoted the decision's own phrase as
+> *"explicit, never ambient"*; the phrase this decision actually uses, above, is
+> **"explicit, not ambient"**. One phrase quoted two ways in one file is how a phrase stops
+> being quotable at all. `conventions.md` §9.
 >
 > Two consequences worth knowing, both decided by the audit requirement rather than added to
 > it. The write happens **before** the callback and in its own transaction, because the
