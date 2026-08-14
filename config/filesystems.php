@@ -33,7 +33,34 @@ return [
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),
-            'serve' => true,
+
+            /*
+             * ⚠ TURNED OFF 2026-08-14. It shipped as `true` — Laravel's own default, chosen
+             * by nobody here — and it is not an option about URLs. It registers TWO ROUTES
+             * on this application at boot (FilesystemServiceProvider::serveFiles):
+             *
+             *     GET  /storage/{path}   storage.local          where('path', '.*')
+             *     PUT  /storage/{path}   storage.local.upload   where('path', '.*')
+             *
+             * Both are registered outside every route group, so they carry NO MIDDLEWARE:
+             * not `web`, not Authenticate, not EnsureAccountIsActive. The PUT one calls
+             * Storage::put() directly with the raw request body.
+             *
+             * Their only gate is a valid relative signature, and a signature is a bearer
+             * token: it carries no identity, so EmployeePolicy is never consulted, a frozen
+             * account is not stopped, and a forwarded link works for whoever holds it. This
+             * disk is where employee IC scans, passports and certificates will live
+             * (employee-master.spec.md §6.3).
+             *
+             * Nothing in this application used it — verified before the change: no
+             * Storage:: call anywhere in app/, resources/, routes/ or tests/, and the QR
+             * image is rendered in memory and streamed, never stored (ActivationImage).
+             *
+             * Turning it back on re-opens an unauthenticated write route.
+             * RouteProtectionGuardTest fails if that happens; conventions.md §9.
+             */
+            'serve' => false,
+
             'throw' => false,
             'report' => false,
         ],

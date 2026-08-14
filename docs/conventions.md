@@ -515,6 +515,35 @@ Quotations of a state an ADR changes are written in the past tense, or marked wi
 they were true. This is not the fabricated-citation problem above; it is the opposite — an
 accurate quotation that the document's own success made wrong. Recorded 2026-08-14.
 
+### ⚠ A framework default can register routes — `serve => true` opened an unauthenticated write
+
+`config/filesystems.php` shipped with `'serve' => true` on the `local` disk, which is not an
+option about URLs: it registers **two routes on this application at boot**, `GET /storage/{path}`
+and **`PUT /storage/{path}`**, the second calling `Storage::put()` with the raw request body.
+Both are registered outside every route group and therefore carry **no middleware at all** — not
+`web`, not `Authenticate`, not `EnsureAccountIsActive`. Their only gate is a valid signature, and
+a signature carries no identity: no policy is consulted, a frozen account is not stopped, and a
+forwarded link works for whoever holds it. That disk is where employee IC scans and passports
+will be stored. Turned off 2026-08-14, with nothing depending on it.
+
+**This is the second finding whose cause is a framework default nobody chose** — the first being
+`WithoutModelEvents` above, and the resemblance is the point. Both arrived as scaffolding, both
+were read past for months, and neither is visible from the code that trusts them: a route table
+does not appear in a diff of `config/`, and a suppressed model event does not appear in a diff
+of the model.
+
+⚠ **A configuration value can be an entry point.** When a package default is left in place,
+what it *registers* is part of the decision, not an implementation detail of it.
+
+The guard is `RouteProtectionGuardTest`, and its shape is deliberate: it asserts **properties**
+— no write route without middleware, no route defined by this project without middleware, no
+served local disk — never a list of permitted exceptions. Three routes legitimately carry no
+middleware (Livewire's two asset routes, Laravel's `/up`), so the naive form is red on arrival
+and the obvious repair is an allowlist, which is the trap `AuthorshipCoverageTest` names: a
+guard checked against a second copy of the same names agrees with itself forever. What the
+guard **cannot** catch is stated in its own docblock — an unprotected **GET** registered by
+vendor code, which is the other half of the very route that prompted it. Recorded 2026-08-14.
+
 ---
 
 ## 10. Required Validation Before Calling a Module "Done"
