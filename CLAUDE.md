@@ -289,8 +289,20 @@ implementing Employee Master, where every rule now enforced meets the legacy dat
   data records no reporting lines at all, every imported employee is invisible to the entire
   supervisory tier until somebody fills them in, and the question of **who does that, and
   from what source** has to be answered before the import runs, not after.
+- **(f) Do the legacy records store date of birth, gender and nationality for every
+  employee?** Added 2026-08-14 with `adr/0013`, which makes `date_of_birth`, `gender` and
+  `nationality_id` **NOT NULL** on `employees`. A legacy row missing any of the three
+  **cannot be imported as it stands**.
+  ⚠ **This is a new question rather than part of (d), and the distinction is worth keeping:
+  (d) asks whether the export exists and in what format; this asks what it CONTAINS, which
+  the client can answer today without producing the file.** Same family as (b) and (c).
+  It differs from (a) in one respect that matters: **a remediation path exists.** A date of
+  birth can be read off an IC scan or a personnel file, where a mobile number that was never
+  collected simply does not exist. So this blocks the import as designed while being fixable
+  by data entry — which makes *who does that entry, and before or after the run* the real
+  question.
 
-**`employee-master.spec.md` §5.5 is blocked by (a) and (d) at minimum** — the same way the
+**`employee-master.spec.md` §5.5 is blocked by (a), (d) and (f) at minimum** — the same way the
 four items above block Phase 2. The spec's own §5.5 now records the blockers, the four
 decisions waiting on them, and two contradictions inside its five sentences that must be
 decided rather than coded around.

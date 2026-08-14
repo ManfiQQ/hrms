@@ -199,6 +199,27 @@ together and in that order.
 §3 lists them, and reading that list as four missing indexes is the mistake to avoid: a second
 index on the same column is dead weight MySQL maintains on every write.
 
+> **⚠ The column table above is INCOMPLETE as of 2026-08-14 — `adr/0013` adds twelve
+> columns.** Identity and statutory fields: `ic_no`, `passport_no`, `permit_expiry`,
+> `date_of_birth`, `gender`, `nationality_id`, `address`, `epf_no`, `socso_no`, `tax_no`,
+> `bank_name`, `bank_account_no`. `nationality_id` points at a new group-wide reference
+> table, `nationalities`.
+>
+> **`ic_no` and `passport_no` are both nullable and both unique, with at least one required
+> by the FormRequest** — the requirement is conditional on the other column, so it is a
+> service-layer rule and not a database constraint, the same shape as `ot_after_time` above.
+> ⚠ Uniqueness is **per column, not across the pair**.
+>
+> **No `personal_phone` column is added, and none may be** — `users.phone_no` is already the
+> personal number as well as the login username (`adr/0006`), and a second would be two
+> numbers for one person. The Personal tab displays it read-only through the account.
+>
+> **No salary data is added.** `bank_name` and `bank_account_no` record where money is sent,
+> never how much (`adr/0003` decision 5).
+>
+> The full amendment lands with the implementation PR; this pointer exists so the table is
+> not read as the complete column list in the meantime.
+
 > **`(company_id, staff_status)` was added on 2026-08-13 by editing the creating migration
 > in place** — it was required by `employee-master.spec.md` §3 from the start and simply
 > never written. The in-place edit was available because no migration has yet run against
@@ -583,6 +604,18 @@ A fixed enum rather than free text, per `conventions.md` §4. **This list is a s
 set, not exhaustive** — it may be amended by a future migration when HR needs more types.
 `OTHER` is a deliberate escape hatch so an unanticipated document is never blocked from
 being uploaded while that migration is written.
+
+> **⚠ The enum is EIGHT values as of 2026-08-14, not seven — `adr/0013` decision 7 adds
+> `PHOTO`.** It is **readable by the employee**, joining the six they may already retrieve
+> (`adr/0004` decision 9); `OTHER` remains the only type withheld from them, which is what
+> gives it its defined purpose.
+>
+> An employee photo is a file, so it lands here rather than as a `photo_path` column on
+> `employees` — a second file path would be governed by none of `adr/0012`'s rules: no
+> write-once lock, no policy, no audit trail, no defined disk.
+>
+> The full amendment lands with the implementation PR; this pointer exists so the seven
+> values above are not read as the complete set in the meantime.
 
 ### Company transfer — three cascade categories
 
