@@ -737,6 +737,17 @@ is the normal case, not an edge case.
 | Transfer employee between companies | `HR` **or** Master Admin — either, directly; always audited with the actor's identity (§5.7) |
 | Cross-tenant view | `system_access = FULL` (Master Admin) — explicit, audited |
 
+> **⚠ The *View department employees* row is superseded by `adr/0011`.** The supervisory
+> bound is no longer *"own department and own `company_id`"* — it becomes the **reporting
+> line**: an employee is readable when their `direct_supervisor_id` or `manager_id` points at
+> the actor (BR-8), still within the same `employees.company_id`. Department equality was
+> borrowed from BR-10, which is a rule about **approval authority**, and it answers a
+> different question from the one `adr/0004` decision 8 asks.
+>
+> Every other row of this table is unchanged, and approval routing is untouched. The full
+> amendment lands with the implementation PR; this pointer exists so the row above is not read
+> as current in the meantime.
+
 ### 6.1 Read scope — derived, never configured
 
 **An account's read scope comes from where its employer sits in
@@ -808,6 +819,15 @@ Access differs **per tab, not per record** (`adr/0004` decision 8). The detail v
 
 Supervisors, Managers and HODs read **within their own department and their own company** —
 the existing double bound (BR-10, `adr/0002` decision 4) is unchanged by any of this.
+
+> **⚠ The sentence directly above is superseded by `adr/0011`.** The department half is
+> replaced by the **reporting line** — `direct_supervisor_id` or `manager_id` pointing at the
+> actor (BR-8) — while the company half stands exactly as written. It is one level, not a
+> traversal, and an employee with both columns empty is read by nobody below `HR`.
+>
+> **The tab matrix above it is unaffected**: `adr/0011` changes *which employees* a supervisor
+> may open, never *which tabs*. The full amendment lands with the implementation PR; this
+> pointer exists so the sentence is not read as current in the meantime.
 
 **Why Employment and Personal, and nothing else.** A supervisor needs to know *who reports
 to me* and *how do I reach them*. They do not need a copy of someone's IC, their spouse's

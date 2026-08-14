@@ -281,6 +281,14 @@ implementing Employee Master, where every rule now enforced meets the legacy dat
 - **(d) When can the full export be provided, and in what format?** The file has never been
   seen. Source format, column mapping and table scope are all unknown, and none can be
   designed without it.
+- **(e) Do the legacy records store who each employee's supervisor and manager are?** Added
+  2026-08-14 with `adr/0011`, which makes `direct_supervisor_id` and `manager_id` (BR-8) the
+  supervisory read bound instead of department equality. Under its **decision 4, an employee
+  with both columns empty is read by nobody below `HR`** — no supervisor, no manager. Both
+  columns stay nullable on purpose, so the import cannot invent a chain; but if the legacy
+  data records no reporting lines at all, every imported employee is invisible to the entire
+  supervisory tier until somebody fills them in, and the question of **who does that, and
+  from what source** has to be answered before the import runs, not after.
 
 **`employee-master.spec.md` §5.5 is blocked by (a) and (d) at minimum** — the same way the
 four items above block Phase 2. The spec's own §5.5 now records the blockers, the four
