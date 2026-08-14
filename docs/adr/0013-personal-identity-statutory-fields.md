@@ -167,8 +167,12 @@ deletes. **No `company_id`** — one vocabulary for the whole group, the same
 reasoning as `job_functions` (`adr/0003` decision 2). Born complete, per
 `adr/0008` decision 4.
 
-Starting set, ten values:Malaysia · Indonesia · Bangladesh · Myanmar · Nepal
+Starting set, ten values:
+
+```
+Malaysia · Indonesia · Bangladesh · Myanmar · Nepal
 India · Pakistan · Vietnam · Philippines · Thailand
+```
 
 
 **⚠ HR may create new entries, and this deliberately differs from
