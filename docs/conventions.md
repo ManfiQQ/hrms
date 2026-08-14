@@ -489,6 +489,21 @@ that uses one.**
 Recorded as a finding, not a decision. **Anything described as enforced by a hook holds only
 for writes that go through a model instance.**
 
+### ⚠ An ADR can quote a document that does not contain the sentence
+
+`adr/0011` shipped in draft with a blockquote attributed to `adr/0002` decision 5 that was
+assembled from memory and never appeared there. The argument it supported was sound; the
+citation was not, and a reader following it would have found nothing. Caught before merge by
+checking the quotation against the file rather than against its plausibility. Recorded
+2026-08-14.
+
+The same draft carried two unverifiable counts and a cross-reference to a section numbering
+that does not exist. None changed a decision, which is why none announced itself: a wrong
+number in a supporting clause reads exactly like a right one.
+
+⚠ **Quotations in ADRs are checked against the source, not against whether they sound like
+something that source would say.**
+
 ---
 
 ## 10. Required Validation Before Calling a Module "Done"
