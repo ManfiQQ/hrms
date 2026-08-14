@@ -59,6 +59,29 @@ class AuditedFields
         // reader of that screen. The derived facts below record that the operation happened,
         // which is the accountable part; the secret is not.
         \App\Models\User::class => ['phone_no', 'password_changed_at', 'locked_until', 'activation_expires_at', 'system_access'],
+
+        // ⚠ EmployeeDocument IS MISSING ON PURPOSE, AND IT IS COMING — adr/0012 decision 9.
+        //
+        // Anyone reading this list and asking why documents will be audited while ROLE GRANTS
+        // are not is asking about a real contradiction, so the answer lives here rather than
+        // only in an ADR. Mirroring employee_roles into audit_logs was refused on 2026-08-13
+        // because the pivot already records assigned_by — one fact, two records (adr/0003
+        // decision 8). By that argument created_by on a document row is enough.
+        //
+        // The exception is NAMED rather than a reversal: documents are the only place in this
+        // system where the record and the thing it refers to can COME APART. Every other table
+        // stores facts; this one stores a pointer to bytes, and a row can say a file exists
+        // when it does not — after adr/0012 decision 8's deletion that is designed, not
+        // hypothetical. Where a row cannot fully answer for what happened, a second record is
+        // not duplication.
+        //
+        // Role grants stay unaudited, unchanged. This does not generalise: it applies to
+        // tables holding files, and there is exactly one.
+        //
+        // ⚠ NOT ADDED YET, AND THAT IS THIS REGISTRY WORKING. It fails in both directions —
+        // an entry here with no Action behind it fails AuditAuthorshipTest exactly as an
+        // Action auditing an unlisted field does. The Actions land with the Documents tab
+        // (adr/0012 decision 11), and the entry lands with them, in the same PR.
     ];
 
     /**

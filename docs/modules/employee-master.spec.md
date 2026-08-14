@@ -878,6 +878,23 @@ fit the fixed types (§10 decision 4), which makes it the natural place for inte
 and investigation material. Hiding it gives it a defined purpose rather than leaving it an
 undifferentiated bucket.
 
+> **⚠ This section defines READING only, and its silence about writing is now deliberate
+> rather than accidental — `adr/0012`, 2026-08-14.**
+>
+> Every verb above is a read verb. Who may **upload** a document, who may **replace** or
+> **delete** one, and who may put anything into `OTHER` were undecided here, and `adr/0012`
+> decides them: `HR` and Master Admin upload directly, an employee **submits** to a separate
+> table and never names a `type`, HR sets the `type` at acceptance because `type` drives the
+> read rule above, and a file is served by a **controller that asks
+> `EmployeePolicy::viewDocument()`** rather than by a signed URL.
+>
+> **The reading rule on this page is unchanged** — `adr/0012` decides writing, and
+> `adr/0004` decision 9 still governs which of the seven types an employee may retrieve.
+>
+> The full amendment lands with the Documents tab implementation PR (`adr/0012`
+> decision 11); this pointer exists so the section is not read as saying that writing is
+> unrestricted in the meantime.
+
 ### 6.4 There is no `phone_no` on the employee record — for anyone
 
 > **⚠ Rewritten 2026-08-12 — `adr/0006`.** This section previously said the employee form
