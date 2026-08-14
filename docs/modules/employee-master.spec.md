@@ -590,6 +590,24 @@ shape costs a few bytes and avoids per-type branching in every reader.
 - Paginated. Query lives in a model scope or repository, not inline in the controller
   (`conventions.md` §1).
 
+> **⚠ This section is silent about the supervisory narrowing, and the silence is now
+> deliberate rather than accidental — recorded 2026-08-14.**
+>
+> Everything above is tenant scope (`company_id`) plus user-chosen filters. **The `department`
+> entry is a filter the reader picks, not a boundary the system imposes.** Nothing here
+> narrows a supervisor's list to the people who report to them, and no model scope or
+> repository exists to do it: `TenantScope` narrows companies only.
+>
+> `adr/0011` decides the rule — the reporting line, `direct_supervisor_id` or `manager_id`
+> (BR-8) — and `EmployeePolicy::viewTab()` enforces it **per record**. The **list** form is
+> deferred to the PR that builds the list itself, with the reasons in that ADR's Consequences:
+> a scope branching on the actor's tier has no precedent here and fails by returning fewer
+> rows rather than erroring, and a query scope with no list to call it is the shape that let
+> `EmployeePolicy::transfer()` be missing for days with a green suite (`conventions.md` §9).
+>
+> **Until then the list does not exist, so nothing is under-protected** — but this section
+> must not be read as saying a supervisor's list is unbounded by design.
+
 ### 5.5 Legacy import
 
 One-off, idempotent, re-runnable command. Matches on `employee_no`. Writes an import
@@ -911,6 +929,16 @@ The two axes never meet: **holding an approval stage is never an input to a visi
 check** (`adr/0004` decision 1, `adr/0002` decision 5). An HOD's read access is bounded
 twice over: own department **and** own company, since a shared department can contain other
 companies' staff (BR-10).
+
+> **⚠ The last sentence above is superseded by `adr/0011`** — the third place this spec states
+> the department bound, and the one most likely to be read by someone checking this rule,
+> since the paragraph around it is about the two axes. The bound is still double; the
+> department half becomes the **reporting line** (`direct_supervisor_id` or `manager_id`
+> pointing at the actor, BR-8), and the own-company half stands exactly as written — a shared
+> department containing other companies' staff is still why it exists.
+>
+> **`EmployeePolicy::viewTab()` implements this today**; the full amendment to this sentence,
+> to §6 and to §6.2 lands with the list-narrowing PR.
 
 **`ACCOUNT` grants nothing in this module.** It is the only role that may read salary
 (BR-9), but Employee Master holds no salary data (§10 decision 3), so `ACCOUNT` confers no

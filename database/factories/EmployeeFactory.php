@@ -82,6 +82,37 @@ class EmployeeFactory extends Factory
     }
 
     /**
+     * Reports to this employee through `direct_supervisor_id` (BR-8).
+     *
+     * ⚠ Added 2026-08-14 with `adr/0011`, and it is not a convenience. The reporting line is
+     * now the SUPERVISORY READ BOUND — an employee whose two FKs are null is read by nobody
+     * below `HR` (decision 4) — so a fixture that leaves them null is a fixture asserting
+     * invisibility, whether or not it meant to. Setting them by hand inside a test hides that
+     * behind an array key; a named state says which rule is being arranged.
+     *
+     * The column is nullable and stays so. Every chain ends somewhere.
+     */
+    public function reportingTo(Employee $supervisor): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'direct_supervisor_id' => $supervisor->id,
+        ]);
+    }
+
+    /**
+     * Reports to this employee through `manager_id` — the second of BR-8's two tiers.
+     *
+     * Separate from reportingTo() because `adr/0011` decision 1 accepts EITHER column, and a
+     * state that set both could never show that one alone is enough.
+     */
+    public function managedBy(Employee $manager): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'manager_id' => $manager->id,
+        ]);
+    }
+
+    /**
      * FLEXIBLE attendance — overtime is applied manually, so ot_after_time is NULL.
      *
      * NULL here means "not applicable", not "unknown" and not "zero". A real-looking value

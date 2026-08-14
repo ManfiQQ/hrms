@@ -106,7 +106,21 @@ class EmployeePolicy
         self::TAB_PERSONAL,
     ];
 
-    /** The supervisory tier — bounded twice over: own department AND own company (BR-10). */
+    /**
+     * The supervisory tier — bounded twice over: the REPORTING LINE and own company.
+     *
+     * ⚠ THE DEPARTMENT HALF WAS REPLACED 2026-08-14 BY `adr/0011`. This constant's comment
+     * read *"own department AND own company (BR-10)"* until then, and BR-10 is where the rule
+     * came from — a rule about **approval authority**, borrowed to answer a **visibility**
+     * question. `adr/0002` decision 5 forbids exactly that inference in the other direction.
+     *
+     * Department equality is symmetric and supervision is not. It meant *"sits in the same
+     * department"*, which is wrong both ways: it granted colleagues who report to nobody here,
+     * and refused this actor's own subordinates sitting elsewhere.
+     *
+     * BR-10 is untouched and still governs approval routing, which resolves
+     * `(department, company) → HOD` from the role row.
+     */
     private const SUPERVISORY_ROLES = ['SUPERVISOR', 'MANAGER', 'HOD'];
 
     /**
@@ -193,14 +207,14 @@ class EmployeePolicy
             return true;
         }
 
-        // ⚠ The supervisory tier is bounded TWICE — own department and own company — and the
-        // company comparison reads `employees.company_id` on BOTH sides, never
+        // ⚠ The supervisory tier is bounded TWICE — the reporting line and own company — and
+        // the company comparison reads `employees.company_id` on BOTH sides, never
         // `employee_roles.company_id` for the subject. The role row says where authority
-        // applies; the employee row says who employs the person, and BR-10 is a rule about
-        // employment (adr/0002 decision 4, adr/0003 decision 6).
+        // applies; the employee row says who employs the person, and the same-company rule is
+        // about employment (adr/0002 decision 4, adr/0003 decision 6).
         //
-        // A shared department is exactly where this is most likely to be got wrong, because
-        // the two employees are visibly colleagues.
+        // A shared department is exactly where the company half is most likely to be got
+        // wrong, because the two employees are visibly colleagues.
         if (! in_array($tab, self::SUPERVISORY_TABS, true)) {
             return false;
         }
@@ -215,7 +229,28 @@ class EmployeePolicy
             return false;
         }
 
-        if ($actorEmployee->department_id !== $employee->department_id) {
+        // ⚠ REPLACED THE DEPARTMENT COMPARISON 2026-08-14 — `adr/0011` decision 1. This read
+        // `$actorEmployee->department_id !== $employee->department_id` until then.
+        //
+        // The shape changed, not just the column. The old check was SYMMETRIC — one column
+        // compared across two rows — and supervision is not symmetric. This one reads the
+        // SUBJECT's two BR-8 foreign keys against the ACTOR's employee id, in that direction
+        // only: the subject names its supervisor, never the reverse. Flipping the operands
+        // would grant an employee their own supervisor's record.
+        //
+        // ⚠ ONE LEVEL, NO TRAVERSAL (decision 2). A boundary that walks the chain moves when
+        // one FK is edited, and a cycle in imported data hangs the query. The cost is recorded
+        // rather than discovered: an HOD over a Manager over a Supervisor does NOT reach the
+        // staff, because no third column points at them.
+        //
+        // Both columns are nullable, so an employee who reports to nobody fails this without
+        // a special case — `null === <id>` is never true. That is decision 4, and it is a
+        // decision: such a record is read by nobody below HR, which makes an unfilled column a
+        // visible gap instead of a silent default.
+        $reportsToActor = $employee->direct_supervisor_id === $actorEmployee->id
+            || $employee->manager_id === $actorEmployee->id;
+
+        if (! $reportsToActor) {
             return false;
         }
 
