@@ -15,7 +15,8 @@
   Operations HR distinction it modeled does not exist; salary visibility is the `ACCOUNT`
   role (`adr/0003` decision 5).
   **Decisions 1, 3, 4, 5, 6 and 7 stand**, re-expressed in pivot terms where they named
-  `core_role` — including decision 4's "Master Admin has no employee record", which is now
+  `core_role` — including decision 4's rule that a Master Admin account has **no linked
+  Employee record**, which is now
   enforced by the absence of any `employee_roles` row rather than by the absence of an
   enum value, and is therefore *more* structural, not less
 - **Extended by:** `adr/0002` — decision 3 (HOD per department) is extended there: a
@@ -90,8 +91,14 @@ route to a Head of Department.
 **`MASTER_ADMIN` is deliberately not a value.** `core_role` is a column on `employees`,
 and by decision 4 a Master Admin has **no employee record** — so a `MASTER_ADMIN`
 `core_role` could never legitimately be set on any row. Including it would define a value
-whose only possible use is a bug, and the "Master Admin has no Employee record" rule
+whose only possible use is a bug, and the rule that a Master Admin holds no Employee record
 would then depend on a test remembering to assert that the value never appears.
+
+> **⚠ Quotation marks removed 2026-08-14, here and in the Superseded-by note above.** Both
+> places set the rule in quotation marks as though citing decision 4. Decision 4's own words
+> are *"a dedicated user account with **no linked Employee record**"* — the quoted string was
+> a name for the rule, not a sentence from it, and the two are indistinguishable to a reader
+> checking. The rule itself is unchanged and is decision 4's. `conventions.md` §9.
 
 Excluding it makes the rule **structurally impossible to violate rather than
 test-enforced**: there is no value to set, so no row can claim Master Admin authority.

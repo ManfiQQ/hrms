@@ -2,14 +2,24 @@
 
 - **Status:** Accepted — 2026-08-13
 - **Supersedes:** nothing
-- **Amends:** `employee-master.spec.md` §5.7 and BR-17 — both currently state that a transfer
-  *"must not touch `employee_status_history`"*, and both are now wrong for two independent
-  reasons
+- **Amends:** `employee-master.spec.md` §5.7 and BR-17 — §5.7 states in those words that a
+  transfer *"must not touch `employee_status_history`"*; BR-17 states the same rule as a
+  cascade table, where `employee_status_history` is the **Event** row and the column reads
+  *"Frozen forever"*. Both are now wrong for two independent reasons
 - **Related:** `adr/0002` (shared org structure), `adr/0003` decision 7 (three cascade
   categories) and decision 8 (role history lives in the pivot), `conventions.md` §2 §4 §9,
   `employee-master.spec.md` §5.3 §5.7 §7, BR-17
 - **Raised by:** the attempt to implement `TransferCompany`, which found that §5.7 forbids by
   name the thing the module needs
+
+> **⚠ Citation corrected 2026-08-14. The decision is untouched.** The *Amends* bullet
+> originally read *"both currently state that a transfer «must not touch
+> `employee_status_history`»"*. The quoted sentence is **§5.7's, verbatim** — but **BR-17 has
+> never contained it.** BR-17 carries the same rule as a cascade table, and a reader checking
+> the quotation against BR-17 would have found nothing in those words.
+>
+> Both sections are still amended by this ADR, for the reasons below; only the attribution of
+> the sentence was wrong. `conventions.md` §9.
 
 ---
 

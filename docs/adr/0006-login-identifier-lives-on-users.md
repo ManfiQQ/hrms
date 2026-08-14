@@ -62,7 +62,20 @@ someone logs in.
 
 Every document is individually correct. BR-A1 says the username is `employees.phone_no`;
 `adr/0001` decision 4 says Master Admin has no employee; `schema.md` lists `phone_no` on
-`employees`, NOT NULL and unique. **No single sentence is wrong.** The contradiction only
+`employees`, NOT NULL and unique.
+
+> **⚠ Read the three citations above as of 2026-08-12, before this ADR. Two of them now say
+> the opposite, because of this ADR.** BR-A1 reads `users.phone_no` today, and `schema.md`
+> carries the column on `users`. Only the `adr/0001` decision 4 citation still reads as
+> written.
+>
+> The sentences were accurate when written and are left standing, because the paragraph's
+> whole argument is what those documents said **at the moment the contradiction survived
+> review**. Rewriting them to today's text would destroy the evidence. Marked rather than
+> corrected, and marked because a reader checking BR-A1 now finds the reverse with nothing
+> to say the sentence is historical. `conventions.md` §9.
+
+**No single sentence is wrong.** The contradiction only
 appears when the three are read together against a Master Admin, which nothing in the
 documents forces a reader to do — and the code that would have failed did not exist until
 `AuthenticationService` was written.

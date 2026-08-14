@@ -22,10 +22,17 @@ Neither was ever edited to disagree with the other; they simply never agreed.
 
 ### It survived twenty-two pull requests
 
-Six migrations, two modules, seven ADRs and 201 tests were written against Laravel 13 while
+Ten migrations, two modules, seven ADRs and 201 tests were written against Laravel 13 while
 the project's own constitution said 12. **Nothing failed, because nothing was wrong** — the
 code was written against the framework that is actually installed, and the framework does not
 read `CLAUDE.md`.
+
+> **⚠ Count corrected 2026-08-14.** This sentence read *"Six migrations"*. The commit that
+> introduced it carried **thirteen migration files, ten of them written by this project** —
+> the other three are the defaults `laravel new` ships. Six was neither. The other three
+> figures check out: PRs #1–#22 were merged by the time this ADR landed, seven ADR files
+> existed including this one, and 201 is consistent with the 176 test declarations then in
+> `tests/` once Pest datasets are counted. `conventions.md` §9.
 
 This is the same shape as `adr/0006`, and it is worth naming because it has now happened
 twice:
@@ -82,8 +89,13 @@ for.** Cost without benefit is not a trade-off; it is just cost.
 
 The file's opening paragraph says:
 
-> If code and this file disagree, the code is wrong — fix the code, not this file, **unless a
-> decision has genuinely changed** (in which case update this file in the same commit).
+> If code and this file disagree, the code is wrong — fix the code, not this file, unless a
+> decision has genuinely changed (in which case update this file in the same commit).
+
+> **⚠ Emphasis removed 2026-08-14.** This quotation carried bold on *"unless a decision has
+> genuinely changed"* that `CLAUDE.md` does not have. Adding emphasis to a quotation makes
+> the source appear to stress the clause the quoter needs, which is the clause this ADR is
+> built on. The sentence is otherwise verbatim. `conventions.md` §9.
 
 ⚠ **This ADR exists to make the exception legitimate rather than convenient.** The default is
 strict and deliberately so: `CLAUDE.md` is the constitution, and a project that edits its
