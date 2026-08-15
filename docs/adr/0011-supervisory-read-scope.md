@@ -196,6 +196,35 @@ silent default would hide exactly that.
 > both — and they must be **designed with the list**, not before it. `employee-master.spec.md`
 > §5.4 carries a pointer recording that it is currently silent on the narrowing.
 
+> **⚠ Amended again 2026-08-15, in the PR that built the list. The deferral above is
+> DISCHARGED**, and the three reasons it gave are worth reading against what was built:
+>
+> **1. The shape mismatch was real and was avoided rather than solved.** A guard cannot compare
+> *(actor, subject, tab)* with *(actor) → set* directly. It does not have to: it compares
+> against **`EmployeePolicy::view()`**, which is `viewTab(…, TAB_EMPLOYMENT)` by definition and
+> asks exactly what a list asks — *may this account open this record at all?* No tab stands in
+> as a proxy for another, so the assumption nothing checks never arises.
+>
+> **2. The lack of precedent stands, and is contained by shape rather than by care.**
+> `Employee::scopeVisibleTo()` is the first scope here that branches on the actor's tier, and a
+> wrong filter still returns fewer rows rather than erroring. It is a **local** scope, called
+> explicitly by one screen — so it cannot narrow `CreateEmployee`, `TransferCompany`, the audit
+> reader or a seeder, and the blast radius of that failure is the callers who opted in.
+>
+> **3. "No caller" is discharged outright** — the list is the caller, and it was written first.
+>
+> **⚠ The guard's own limits are on its face, and one of them earned its place immediately.**
+> *"Only as wide as the test population"* proved true in the same run: the original population
+> could not catch a lost company bound, because `TenantScope` had already excluded every other
+> company for the AIM-employed supervisor it was built around. A **parent-employed** supervisor
+> — group-wide scope, where `employees.company_id` on both sides is all that remains — made the
+> break red. Recorded in `conventions.md` §9 as the ninth finding.
+>
+> The limit that matters most is the third: **agreement is not correctness.** If the policy and
+> the scope are wrong in the same direction, the two agree and the guard stays green;
+> `EmployeePolicyTest`, which asserts the direction against fixed expectations, is what holds
+> that half.
+
 **Not changed**
 
 - Approval routing, in any form. BR-10, `adr/0002` decision 4, and the

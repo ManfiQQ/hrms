@@ -98,10 +98,15 @@ class EmployeeStoreRequest extends FormRequest
             'fingerprint_id' => ['nullable', 'string', 'max:255', 'unique:employees,fingerprint_id'],
 
             // Display only — never an authorization or routing input (BR-9).
-            'level' => ['required', Rule::in(['STAFF', 'SUPERVISOR', 'MANAGER', 'HOD'])],
+            'level' => ['required', Rule::in(Employee::LEVELS)],
 
-            'employment_type' => ['required', Rule::in(['FULL-TIME', 'PART-TIME', 'CONTRACT', 'INTERN', 'FREELANCE'])],
-            'staff_status' => ['required', Rule::in(['PROBATION', 'ACTIVE', 'CONFIRMED', 'SUSPENDED'])],
+            'employment_type' => ['required', Rule::in(Employee::EMPLOYMENT_TYPES)],
+
+            // ⚠ The terminal statuses are EXCLUDED, and the exclusion is the rule rather than
+            // an oversight: RESIGNED and TERMINATED freeze the account in the same transaction
+            // and are reached through ChangeEmployeeStatus. A registration form is not where an
+            // employment ends (BR-2, adr/0004 decision 5).
+            'staff_status' => ['required', Rule::in(array_values(array_diff(Employee::STAFF_STATUSES, Employee::TERMINAL_STATUSES)))],
 
             'join_date' => ['nullable', 'date'],
             'probation_end_date' => ['nullable', 'date'],

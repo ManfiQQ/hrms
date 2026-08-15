@@ -590,23 +590,54 @@ shape costs a few bytes and avoids per-type branching in every reader.
 - Paginated. Query lives in a model scope or repository, not inline in the controller
   (`conventions.md` §1).
 
-> **⚠ This section is silent about the supervisory narrowing, and the silence is now
-> deliberate rather than accidental — recorded 2026-08-14.**
+**The list is bounded by `Employee::scopeVisibleTo()`, which is not a filter** — landed
+2026-08-15 with the list itself (`adr/0011`). It resolves in four branches:
+
+| Account | Sees |
+|---|---|
+| `system_access` `FULL` / `VIEW_ONLY` | everything in read scope |
+| Holds `HR`, `ASSISTANT_DIRECTOR` or `ACCOUNT` in scope | everything in read scope |
+| Holds `SUPERVISOR`, `MANAGER` or `HOD` at their own company | employees of that company whose `direct_supervisor_id` **or** `manager_id` names them (BR-8) — **plus their own record** |
+| No role at all | their own record only |
+
+**The `department` entry in the filter list above is a filter the reader picks, not a boundary
+the system imposes.** The boundary is the scope, and the two must not be confused: clearing
+every filter widens nothing.
+
+> **⚠ It is a LOCAL scope, called explicitly, and it must never become a global one.**
+> `TenantScope` is global because tenancy is a property of the table; the supervisory narrowing
+> is the question one screen asks. **A scope that must be called cannot narrow a query that
+> does not call it** — so `CreateEmployee`, `TransferCompany`, the audit reader and the seeders
+> are untouched, and HR cannot silently lose rows. That containment is the answer to
+> `adr/0011`'s own objection that a tier-branching scope has no precedent here and fails by
+> returning fewer rows rather than erroring.
 >
-> Everything above is tenant scope (`company_id`) plus user-chosen filters. **The `department`
-> entry is a filter the reader picks, not a boundary the system imposes.** Nothing here
-> narrows a supervisor's list to the people who report to them, and no model scope or
-> repository exists to do it: `TenantScope` narrows companies only.
+> **⚠ The actor's own record is always included**, because `EmployeePolicy::viewTab()` grants it
+> before any role check. A supervisor nobody reports to therefore sees exactly one row —
+> themselves — and that is `adr/0011` decision 4 in plain sight, not a defect.
 >
-> `adr/0011` decides the rule — the reporting line, `direct_supervisor_id` or `manager_id`
-> (BR-8) — and `EmployeePolicy::viewTab()` enforces it **per record**. The **list** form is
-> deferred to the PR that builds the list itself, with the reasons in that ADR's Consequences:
-> a scope branching on the actor's tier has no precedent here and fails by returning fewer
-> rows rather than erroring, and a query scope with no list to call it is the shape that let
-> `EmployeePolicy::transfer()` be missing for days with a green suite (`conventions.md` §9).
->
-> **Until then the list does not exist, so nothing is under-protected** — but this section
-> must not be read as saying a supervisor's list is unbounded by design.
+> **The rule now exists in two forms** — this scope and `EmployeePolicy::view()` — and
+> `EmployeeListVisibilityTest` compares their outcomes across a population rather than
+> comparing code. It compares against `view()`, never `viewTab()`, which is what removes the
+> proxy-tab problem `adr/0011` deferred the guard over. **Its four stated limits are on its
+> face**, including the one that matters: agreement is not correctness.
+
+**Screen decisions taken 2026-08-15, with the list:**
+
+- **Six columns**: `employee_no`, `full_name`, company, department, position, `staff_status`.
+  ⚠ **None of `adr/0013`'s twelve identity or statutory columns appear.** Those are the
+  Personal tab's, behind a per-tab check (§6.2) — a list identifies people, it does not
+  display their identity.
+- **Default sort `full_name` ascending** — HR looks people up by name.
+- **25 rows a page.**
+- **Search is a substring match** (`%term%`), ORed across the four fields, one box.
+  ⚠ A leading wildcard **cannot use an index**; there is no index on `full_name` and the scale
+  is hundreds of rows. **At a much larger scale this is a decision to revisit.**
+- **The company filter is hidden when the account reads one company**, so a group-scoped and a
+  subsidiary-scoped account see **different forms**. A select with one option is a control that
+  cannot change the answer. Do not unify them.
+- **No per-row link yet** — the detail screen does not exist, and a row linking to a 404 is
+  worse than a row that does not link.
 
 ### 5.5 Legacy import
 
@@ -744,7 +775,7 @@ is the normal case, not an edge case.
 | Action | Who |
 |---|---|
 | View own record | any employee |
-| View department employees | `SUPERVISOR`, `MANAGER`, `HOD` — own department **and own `company_id`** |
+| View employees who report to them | `SUPERVISOR`, `MANAGER`, `HOD` — `direct_supervisor_id` **or** `manager_id` names them (BR-8), **and own `company_id`** |
 | View all in **read scope** | `HR`, `ASSISTANT_DIRECTOR` — scope **derived from the employer's hierarchy position**, see below |
 | Create / edit / archive | `HR`, `ASSISTANT_DIRECTOR` — within their read scope. `phone_no` is not on this record at all (§6.4) |
 | Grant / revoke `MANAGER`, `SUPERVISOR` | `HR` — within their read scope |
@@ -755,16 +786,24 @@ is the normal case, not an edge case.
 | Transfer employee between companies | `HR` **or** Master Admin — either, directly; always audited with the actor's identity (§5.7) |
 | Cross-tenant view | `system_access = FULL` (Master Admin) — explicit, audited |
 
-> **⚠ The *View department employees* row is superseded by `adr/0011`.** The supervisory
-> bound is no longer *"own department and own `company_id`"* — it becomes the **reporting
-> line**: an employee is readable when their `direct_supervisor_id` or `manager_id` points at
-> the actor (BR-8), still within the same `employees.company_id`. Department equality was
-> borrowed from BR-10, which is a rule about **approval authority**, and it answers a
-> different question from the one `adr/0004` decision 8 asks.
+> **The supervisory row was rewritten 2026-08-15 (`adr/0011` decision 1), and it previously
+> read *"own department and own `company_id`"*.** Department equality was borrowed from BR-10,
+> a rule about **approval authority**, and it answered a different question from the one
+> `adr/0004` decision 8 asks: it is symmetric where supervision is not, granting colleagues who
+> report to nobody here and refusing this actor's own subordinates sitting elsewhere.
 >
-> Every other row of this table is unchanged, and approval routing is untouched. The full
-> amendment lands with the implementation PR; this pointer exists so the row above is not read
-> as current in the meantime.
+> **Approval routing is untouched.** BR-10 and `adr/0002` decision 4 still resolve
+> `(department, company) → HOD` from the role row, and the two axes now say visibly different
+> things — which is `adr/0002` decision 5 working rather than failing.
+>
+> **The rule is enforced in two places and both are tested**: `EmployeePolicy::viewTab()` per
+> record, and `Employee::scopeVisibleTo()` for the list (§5.4). Every other row of this table
+> is unchanged.
+>
+> **⚠ Opening the LIST is a separate question from seeing anybody in it** —
+> `EmployeePolicy::viewAny()`. Every account can see its own record, so "can see at least one
+> employee" is true for everybody and would put the screen in front of a clerk whose list is
+> one row long. The gate is **any authority role, or a `system_access` other than STANDARD**.
 
 ### 6.1 Read scope — derived, never configured
 
@@ -838,14 +877,16 @@ Access differs **per tab, not per record** (`adr/0004` decision 8). The detail v
 Supervisors, Managers and HODs read **within their own department and their own company** —
 the existing double bound (BR-10, `adr/0002` decision 4) is unchanged by any of this.
 
-> **⚠ The sentence directly above is superseded by `adr/0011`.** The department half is
-> replaced by the **reporting line** — `direct_supervisor_id` or `manager_id` pointing at the
-> actor (BR-8) — while the company half stands exactly as written. It is one level, not a
-> traversal, and an employee with both columns empty is read by nobody below `HR`.
+> **⚠ The sentence directly above was superseded by `adr/0011` and is kept only as the record
+> of what changed — amended 2026-08-15.** The department half is replaced by the **reporting
+> line** — `direct_supervisor_id` or `manager_id` pointing at the actor (BR-8) — while the
+> company half stands exactly as written. It is one level, not a traversal, and an employee
+> with both columns empty is read by nobody below `HR`.
 >
 > **The tab matrix above it is unaffected**: `adr/0011` changes *which employees* a supervisor
-> may open, never *which tabs*. The full amendment lands with the implementation PR; this
-> pointer exists so the sentence is not read as current in the meantime.
+> may open, never *which tabs*. That distinction is also why the list guard compares against
+> `EmployeePolicy::view()` rather than `viewTab()` — a list answers the *which employees*
+> question and no tab question at all (§5.4).
 
 **Why Employment and Personal, and nothing else.** A supervisor needs to know *who reports
 to me* and *how do I reach them*. They do not need a copy of someone's IC, their spouse's

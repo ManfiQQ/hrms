@@ -84,8 +84,8 @@ class EmployeeUpdateRequest extends FormRequest
 
             'fingerprint_id' => ['nullable', 'string', 'max:255', Rule::unique('employees', 'fingerprint_id')->ignore($id)],
 
-            'level' => ['sometimes', 'required', Rule::in(['STAFF', 'SUPERVISOR', 'MANAGER', 'HOD'])],
-            'employment_type' => ['sometimes', 'required', Rule::in(['FULL-TIME', 'PART-TIME', 'CONTRACT', 'INTERN', 'FREELANCE'])],
+            'level' => ['sometimes', 'required', Rule::in(Employee::LEVELS)],
+            'employment_type' => ['sometimes', 'required', Rule::in(Employee::EMPLOYMENT_TYPES)],
 
             'join_date' => ['nullable', 'date'],
             'probation_end_date' => ['nullable', 'date'],

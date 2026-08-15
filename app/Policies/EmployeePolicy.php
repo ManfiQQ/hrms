@@ -109,6 +109,13 @@ class EmployeePolicy
     /**
      * The supervisory tier — bounded twice over: the REPORTING LINE and own company.
      *
+     * ⚠ PUBLIC SINCE 2026-08-15, because `Employee::scopeVisibleTo()` expresses the same rule
+     * as a query and must read the same role set. `adr/0011` accepts that the RULE exists in
+     * two forms and requires a guard over both; it does not follow that the LIST OF ROLES
+     * should exist twice as well, and a second copy would drift silently — the guard compares
+     * outcomes, so two role lists that disagree on a role nobody holds today would agree
+     * forever and part company the day it is granted.
+     *
      * ⚠ THE DEPARTMENT HALF WAS REPLACED 2026-08-14 BY `adr/0011`. This constant's comment
      * read *"own department AND own company (BR-10)"* until then, and BR-10 is where the rule
      * came from — a rule about **approval authority**, borrowed to answer a **visibility**
@@ -121,7 +128,7 @@ class EmployeePolicy
      * BR-10 is untouched and still governs approval routing, which resolves
      * `(department, company) → HOD` from the role row.
      */
-    private const SUPERVISORY_ROLES = ['SUPERVISOR', 'MANAGER', 'HOD'];
+    public const SUPERVISORY_ROLES = ['SUPERVISOR', 'MANAGER', 'HOD'];
 
     /**
      * The administrative tier — reads every tab within its read scope.
@@ -132,7 +139,7 @@ class EmployeePolicy
      * create, edit, archive or grant ability, and it does not. Read and write are separate
      * questions here, and the ADR is the later and more specific statement of the read half.
      */
-    private const ADMINISTRATIVE_ROLES = ['HR', 'ASSISTANT_DIRECTOR', 'ACCOUNT'];
+    public const ADMINISTRATIVE_ROLES = ['HR', 'ASSISTANT_DIRECTOR', 'ACCOUNT'];
 
     /** The tier that may create, edit and archive employee records (§6). */
     private const WRITE_ROLES = ['HR', 'ASSISTANT_DIRECTOR'];
@@ -141,6 +148,35 @@ class EmployeePolicy
         private readonly RoleChecker $roles,
         private readonly ReadScopeResolver $scope,
     ) {}
+
+    /**
+     * May this account open the employee LIST at all? — spec §5.4, §7.
+     *
+     * ⚠ THIS IS NOT "CAN THEY SEE AT LEAST ONE EMPLOYEE". That test is true for EVERYBODY,
+     * because `viewTab()` grants every account its own record before any role check, so it
+     * would put the screen in front of a clerk whose list is one row long — themselves — under
+     * a search box and seven filters. The dashboard refuses the same shape for the same
+     * reason: a screen that answers a question nobody asked.
+     *
+     * So the gate is: **any authority role, or a `system_access` other than STANDARD.**
+     * Answered from data the account already carries, with no query over `employees` — the
+     * alternative, counting the visible set on every page load, spends a query to answer a
+     * question the role already answers.
+     *
+     * ⚠ WHAT THIS DELIBERATELY DOES NOT GUARANTEE: a supervisor whose subordinates' BR-8
+     * columns were never filled still sees the link and still opens a list of one row —
+     * themselves. That is CORRECT, not a defect. They genuinely hold the role, and the empty
+     * list is `adr/0011` decision 4 made visible: an employee nobody names is read by nobody
+     * below `HR`, and the gap should be seen rather than smoothed over.
+     */
+    public function viewAny(User $actor): bool
+    {
+        if ($actor->system_access !== 'STANDARD') {
+            return true;
+        }
+
+        return $this->hasAnyRoleInScope($actor, EmployeeRole::ROLES);
+    }
 
     /**
      * May this account see this employee record at all?
