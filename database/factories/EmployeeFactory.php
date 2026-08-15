@@ -5,6 +5,7 @@ namespace Database\Factories;
 use App\Models\Company;
 use App\Models\Department;
 use App\Models\Employee;
+use App\Models\Nationality;
 use Database\Factories\Concerns\AttributesAuthorship;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -33,6 +34,34 @@ class EmployeeFactory extends Factory
             // ⚠ No phone_no. The login username lives on the ACCOUNT, not the employee
             // record (adr/0006) — UserFactory generates it. An employee has no username of
             // its own, and there is no separate contact number either (adr/0006 decision 7).
+
+            // ⚠ 18 TO 60, AND THE BOUNDS ARE THE POINT RATHER THAN TIDINESS (adr/0013
+            // decision 1). Faker's default date range would happily produce a three-year-old
+            // employee, which passes every constraint this table has and then quietly poisons
+            // Phase 2: SOCSO's contribution rate CHANGES AT 60 and EIS eligibility turns on
+            // age, so a payroll test built on these fixtures would compute against ages that
+            // cannot occur. The lower bound is the law — the Employment Act does not permit an
+            // employee record below 18 — and a fixture that generates one asserts something
+            // the business may not do.
+            //
+            // ⚠ The range STOPS at 60 on purpose: no default fixture should land on the far
+            // side of the SOCSO boundary by accident. A test that wants that case says so, with
+            // agedOver() below.
+            'date_of_birth' => fake()->dateTimeBetween('-60 years', '-18 years')->format('Y-m-d'),
+
+            'gender' => fake()->randomElement(['MALE', 'FEMALE']),
+
+            // ⚠ Reuses an existing nationality before creating one. The vocabulary is
+            // group-wide and ten rows deep in reality — thousands of employees share them — so
+            // a fresh country per fixture would misrepresent the table and drain the pool of
+            // unused country names NationalityFactory draws from.
+            'nationality_id' => Nationality::query()->value('id') ?? Nationality::factory(),
+
+            // The nine nullable identity and statutory columns default to null and are not
+            // listed here. ⚠ That is deliberate for `ic_no` and `passport_no`: a FormRequest
+            // will require at least one of the two (adr/0013 decision 2), and a factory that
+            // always supplied an IC would make every test satisfy that rule without meaning
+            // to — including the tests written to prove it is enforced.
 
             'company_id' => Company::factory(),
 
@@ -78,6 +107,34 @@ class EmployeeFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'company_id' => $company->id,
+        ]);
+    }
+
+    /**
+     * Past a given age on a given day — the boundary cases the default range excludes.
+     *
+     * ⚠ WRITTEN FOR SOCSO, WHOSE CONTRIBUTION RATE CHANGES AT 60 (adr/0013 decision 1). A
+     * Payroll test arranging that case by hand would put a raw date string in an array, and the
+     * reader would have to compute an age from it to see which rule was being exercised;
+     * `->agedOver(60)` says it. The default range stops at 60 precisely so no fixture lands on
+     * the far side by accident, which would make such a test pass for the wrong reason.
+     *
+     * A day past the birthday, never exactly on it: "aged over 60" and "turns 60 today" are
+     * different questions, and a fixture that answered both would settle by accident a rule
+     * Payroll has not yet decided.
+     */
+    public function agedOver(int $years): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'date_of_birth' => now()->subYears($years)->subDay()->format('Y-m-d'),
+        ]);
+    }
+
+    /** A named nationality, where a test cares which — otherwise the default reuses any. */
+    public function ofNationality(Nationality $nationality): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'nationality_id' => $nationality->id,
         ]);
     }
 

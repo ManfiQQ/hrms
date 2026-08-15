@@ -35,6 +35,9 @@
 | `employee_job_functions` | `2026_08_13_100500_create_employee_job_functions_table.php` |
 | `created_by` / `updated_by` — NOT NULL on all eight | `2026_08_13_100600_make_authorship_columns_not_null.php` |
 | `employee_status_history.change_type` — fifth value | `2026_08_13_100700_add_employer_to_change_type_enum.php` |
+| `nationalities` | `2026_08_14_100000_create_nationalities_table.php` |
+| `employees` — twelve identity and statutory columns | `2026_08_14_100100_add_personal_identity_fields_to_employees_table.php` |
+| `employee_documents.type` — eighth value | `2026_08_14_100200_add_photo_to_document_type_enum.php` |
 
 > **⚠ `cache` and `jobs` are Laravel scaffolding, not designed here, and deliberately have no
 > per-table section below.**
@@ -171,6 +174,16 @@ in a way the code cannot explain.
 | full_name | string, **NOT NULL** | Every other record in the system identifies a person by this. An employee master where the name is optional cannot do its one job. |
 | nickname, email | string, nullable | `email` is **nullable and frequently absent** — much of this workforce (factory crew, studio staff, live hosts) has no company email. That is precisely why login runs on `phone_no` and not on email (`adr/0004` decision 6). |
 | ~~phone_no~~ | **Not a column on this table** | **Moved to `users.phone_no` on 2026-08-12 (`adr/0006`).** The login username lives on the account, not on the employee record, and there is no `contact_no` here either (decision 7). This row is kept as a pointer so a reader scanning only the column table does not conclude the number is missing — see § `users` and the note directly below this table. |
+| ic_no | string, **nullable**, unique | Malaysian identity card. Every statutory integration asks for it by its Malaysian name — EPF, SOCSO and the EA Form all want *No. KP* — which is why this is its own column and not half of an `identity_no` + `identity_type` pair (`adr/0013` decision 2). |
+| passport_no | string, **nullable**, unique | Non-citizens. ⚠ **A passport number is never stored in `ic_no`** — with both columns present that would be one value in two places, and the unique index on a column called `ic_no` would silently be enforcing a rule about passports. |
+| permit_expiry | date, nullable | Work permit. **An expired permit blocks nothing** — it raises a flag and, once the Notification Engine exists, notifies HR and the employee. Renewal is the response, not suspension (`adr/0013` decision 4). ⚠ The flag covers only records that **carry** a date; a non-citizen with this empty is never flagged, which is the direct cost of the nullability. |
+| date_of_birth | date, **NOT NULL** | SOCSO's contribution rate changes at 60 and EIS eligibility turns on age, so Payroll cannot compute a contribution without it. ⚠ **Blocks the legacy import where absent** — `CLAUDE.md` §10 question (f) — but is fixable by data entry from an IC scan or personnel file, unlike a phone number that was never collected. |
+| gender | enum: MALE, FEMALE, **NOT NULL** | EA Form; maternity entitlement. **An enum where `nationality` is a table**, and that is `conventions.md` §4 applied twice: this list does not grow, and nationality does (`adr/0013` decision 1). |
+| nationality_id | FK → `nationalities`, **NOT NULL** | The group-wide vocabulary — see § `nationalities`. ⚠ **The relationship reads `withTrashed()`**: withdrawing a nationality must stop it being *chosen*, never stop it being *displayed* on the records already carrying it. |
+| address | text, nullable | EA Form and statutory correspondence. **One text column, not parsed into street, city, postcode and state** — it is written onto forms as a block and never queried by component. Structuring it would create five columns nobody filters on and four more ways to leave it half-complete. |
+| epf_no, socso_no | string, nullable | ⚠ **Nullable is a fact, not a compromise** (`adr/0013` decision 3). Probationers, contract staff and interns hold no number until they qualify, so a record without one is **correct**, not incomplete. `NOT NULL` would produce an invented number for every intern — the failure that banned a placeholder phone number (BR-A1). **A `CONFIRMED` employee with neither is flagged, never blocked** (decision 5): blocking payroll over paperwork means somebody is not paid. ⚠ Contributions accrue meanwhile and must be settled retroactively — **Payroll's inherited requirement**, recorded so it is not discovered on a payday. |
+| tax_no | string, nullable | LHDN, for PCB and the EA Form. Nullable for the same reason as the two above. |
+| bank_name, bank_account_no | string, nullable | **Where salary is sent, never how much.** Employee Master holds no salary data at all (§10 decision 3), and reading salary is the `ACCOUNT` role's alone (`adr/0003` decision 5). The distinction is deliberate and this pair must not be read as an opening for amounts. |
 | company_id | FK, **NOT NULL** | **The payroll and legal employer — that meaning only.** Determines which company's leave entitlement, policy config, payroll and statutory rules apply. Mandatory, scoped from creation. **It no longer answers "what authority does this person have"** — `employee_roles` does (`adr/0003` decision 6). Approval scope still reads this value: a `SUPERVISOR`, `MANAGER` or `HOD` approves only for employees sharing it, shared department or not (`adr/0002` decisions 4–5) — but *which* role they hold comes from the pivot. **No `secondary_company_id` column exists and none may be added**: a person's involvement with other companies is derived by querying `employee_roles`, never stored a second time. **It additionally bounds read scope**, via the employer's position in `companies.parent_company_id` — see the read-scope note below (`adr/0004` decision 1). |
 | department_id | FK, **NOT NULL** | Approval routing resolves per **(department, company)** — an employee with no department has no HOD stage to resolve (`adr/0001` decision 3, `adr/0002` decision 4). Org assignment is **independent of `company_id` and not required to match it**: an employee may sit in a shared department belonging to no single company, or to a different one. This is valid and must not be rejected by validation (`adr/0002` decision 2). |
 | branch_id, position_id | FK, **nullable** | Not every employee has a fixed place of work or a titled position, and the legacy import carries records with neither. Same independence from `company_id` as `department_id` above. |
@@ -199,26 +212,43 @@ together and in that order.
 §3 lists them, and reading that list as four missing indexes is the mistake to avoid: a second
 index on the same column is dead weight MySQL maintains on every write.
 
-> **⚠ The column table above is INCOMPLETE as of 2026-08-14 — `adr/0013` adds twelve
-> columns.** Identity and statutory fields: `ic_no`, `passport_no`, `permit_expiry`,
-> `date_of_birth`, `gender`, `nationality_id`, `address`, `epf_no`, `socso_no`, `tax_no`,
-> `bank_name`, `bank_account_no`. `nationality_id` points at a new group-wide reference
-> table, `nationalities`.
+> **The twelve identity and statutory columns landed by a FORWARD MIGRATION** —
+> `2026_08_14_100100`, `adr/0013` decision 1. The table above is complete again; the pointer
+> that stood here between the ADR and the implementation is discharged.
 >
-> **`ic_no` and `passport_no` are both nullable and both unique, with at least one required
-> by the FormRequest** — the requirement is conditional on the other column, so it is a
-> service-layer rule and not a database constraint, the same shape as `ot_after_time` above.
-> ⚠ Uniqueness is **per column, not across the pair**.
+> **⚠ `conventions.md` §11 was available and deliberately not used, and the §11 usage log
+> therefore has no third entry.** All three of its conditions still hold, so
+> `2026_08_11_100400_create_employees_table.php` could have been edited in place at zero
+> debt. It was not, because **these columns are a new requirement found on 2026-08-14, not a
+> correction of something the creating migration should have contained**. §11 is for the
+> second case — the `(company_id, staff_status)` index below was required by the spec from
+> the start and simply never written, so dating it to 11 August told the truth. Dating
+> `date_of_birth` and the EPF and SOCSO numbers to 11 August would erase the three days in
+> which the Personal-tab gap was found and argued.
 >
-> **No `personal_phone` column is added, and none may be** — `users.phone_no` is already the
-> personal number as well as the login username (`adr/0006`), and a second would be two
-> numbers for one person. The Personal tab displays it read-only through the account.
+> **⚠ "At least one of `ic_no` or `passport_no`" is a FormRequest rule, not a database
+> constraint** — it is conditional on the other column, the same shape as `ot_after_time`
+> above, and `conventions.md` §1 puts that in the service layer. **It is not yet written**:
+> it lands with the registration form, and `adr/0013` records the deferral as a dated
+> amendment. Until then nothing enforces it.
 >
-> **No salary data is added.** `bank_name` and `bank_account_no` record where money is sent,
-> never how much (`adr/0003` decision 5).
+> **⚠ Uniqueness is per column, not across the pair.** Nothing at the database level stops
+> one person's `ic_no` matching another's `passport_no`. That is not a real identity
+> collision, and enforcing it would need a constraint spanning two columns of different
+> meaning — stated here so the two unique indexes are not read as covering more than they do.
 >
-> The full amendment lands with the implementation PR; this pointer exists so the table is
-> not read as the complete column list in the meantime.
+> **No `personal_phone` column exists and none may be added** — `users.phone_no` is already
+> the personal number as well as the login username (`adr/0006`), and a second would be two
+> numbers for one person: HR updates one, login reads the other, and an employee is locked
+> out of their own account with nothing to notice. The Personal tab displays it read-only
+> through `Employee::user()`.
+>
+> **⚠ Three columns are `NOT NULL` with no default, which assumed an empty table.** Against a
+> populated `employees` the migration would fail outright or fill implicit defaults — a date
+> of birth of `0000-00-00` — depending on `sql_mode`, and the second is worse. It did not
+> arise because no rows exist anywhere yet. **The legacy import inherits it**: a row missing
+> `date_of_birth`, `gender` or `nationality_id` cannot be created at all (`CLAUDE.md` §10
+> question (f)).
 
 > **`(company_id, staff_status)` was added on 2026-08-13 by editing the creating migration
 > in place** — it was required by `employee-master.spec.md` §3 from the start and simply
@@ -470,6 +500,43 @@ Two things deliberately **not** modeled here, because they are already other fie
 doing media work has job function `Media` and `employment_type = INTERN` — two facts, two
 fields.
 
+### `nationalities`
+`id`, `name` (string, **unique**), `created_by` (**NOT NULL**), `updated_by` (**NOT NULL**),
+timestamps, soft deletes
+
+**Where an employee holds citizenship.** A **reference table, not an enum**, because the list
+grows every time the group hires from somewhere new and an enum would mean a migration each
+time (`adr/0013` decision 6). `employees.gender` is an enum in the same ADR for the opposite
+reason — that list does not grow.
+
+Starting set, ten values: `Malaysia`, `Indonesia`, `Bangladesh`, `Myanmar`, `Nepal`, `India`,
+`Pakistan`, `Vietnam`, `Philippines`, `Thailand`.
+
+**⚠ There is no `company_id`, and that is the design.** One vocabulary for the whole group, the
+same reasoning as `job_functions` (`adr/0003` decision 2). The scope guard test skips
+`Nationality` by there being no column to scope, the same footing as `job_functions` and
+`sequences` — not by an opt-out.
+
+**⚠ HR may create entries here, and that differs from `job_functions` on purpose.** Only Master
+Admin extends the job-function vocabulary; HR extends this one, because HR meets a new
+nationality while registering an employee and a hiring that stalls until Master Admin acts is a
+rule that gets worked around (`adr/0013` decision 6). **The cost is that the structural
+guarantee is gone**: the unique index stops `Bangladesh` twice, and it does not stop `Myanmar`
+and `Burma` coexisting. The picker autocompletes as HR types, which reduces the chance without
+removing it — a mitigation, not a guarantee, and it is recorded as one.
+
+**`created_by` / `updated_by` are `NOT NULL` from the creating migration**, not nullable-then-
+corrected as `job_functions` was by `2026_08_13_100600`. New tables are born complete
+(`adr/0008` decision 4), and a null here would mean either *written before the observer existed*
+or *the observer failed*, with nothing to tell the two apart (`adr/0009` decision 3). No row on
+this table can predate the observer.
+
+**Removal is soft delete only, and deactivation IS the soft delete** — there is no `is_active`
+column and none may be added, the pattern rejected by name on `job_functions` above and five
+others. A withdrawn nationality disappears from the picker while the employees carrying it keep
+a valid `nationality_id`, and `restore()` brings it back. Hard deletion would break the FK from
+`employees.nationality_id`, which is `NOT NULL`.
+
 ### `employee_family_members`
 `id`, `company_id` (FK), `employee_id` (FK), `relationship`, `name`, `contact_no`
 (**nullable**), `is_emergency_contact` (boolean), `created_by`, `updated_by`, timestamps,
@@ -593,11 +660,11 @@ correction is a new row, not an edit. Mutability would defeat the point of the t
 > read as though the first person had uploaded the second person's file. Two rows keep both
 > facts true and preserve the version history the ledger tables already assume.
 
-`type` enum — Phase 1 starting set:
+`type` enum — **eight values** as of 2026-08-14:
 
 ```
 IC, PASSPORT, EDUCATION_CERTIFICATE, OFFER_LETTER, CONFIRMATION_LETTER,
-RESIGNATION_LETTER, OTHER
+RESIGNATION_LETTER, OTHER, PHOTO
 ```
 
 A fixed enum rather than free text, per `conventions.md` §4. **This list is a starting
@@ -605,17 +672,20 @@ set, not exhaustive** — it may be amended by a future migration when HR needs 
 `OTHER` is a deliberate escape hatch so an unanticipated document is never blocked from
 being uploaded while that migration is written.
 
-> **⚠ The enum is EIGHT values as of 2026-08-14, not seven — `adr/0013` decision 7 adds
-> `PHOTO`.** It is **readable by the employee**, joining the six they may already retrieve
-> (`adr/0004` decision 9); `OTHER` remains the only type withheld from them, which is what
-> gives it its defined purpose.
+> **`PHOTO` landed by a forward migration** — `2026_08_14_100200`, `adr/0013` decision 7. It is **readable by the employee**, joining the six they could already
+> retrieve (`adr/0004` decision 9), so **seven of the eight are theirs**. `OTHER` remains the
+> only type withheld from them, which is what gives it its defined purpose as the home for
+> internal notes and investigation material.
 >
 > An employee photo is a file, so it lands here rather than as a `photo_path` column on
 > `employees` — a second file path would be governed by none of `adr/0012`'s rules: no
 > write-once lock, no policy, no audit trail, no defined disk.
 >
-> The full amendment lands with the implementation PR; this pointer exists so the seven
-> values above are not read as the complete set in the meantime.
+> **⚠ `PHOTO` is appended after `OTHER`, not slotted in before it.** By meaning it belongs
+> beside the real document types with `OTHER` last as the escape hatch — but MySQL orders an
+> enum by declaration, and moving `OTHER` would change an existing value's stored ordinal for
+> a cosmetic gain. The list is read by name everywhere, and nothing may be written that reads
+> it by position.
 
 ### Company transfer — three cascade categories
 

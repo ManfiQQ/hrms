@@ -238,9 +238,14 @@ it('gives an employee every tab of their own record', function () {
 });
 
 /**
- * §6.3 — the employee retrieves six of the seven types. OTHER is withheld, which is what
+ * §6.3 — the employee retrieves seven of the eight types. OTHER is withheld, which is what
  * gives it a defined purpose as the home for internal notes and investigation material
  * rather than an undifferentiated bucket.
+ *
+ * ⚠ `PHOTO` joined the enum on 2026-08-14 (`adr/0013` decision 7) and is asserted here in BOTH
+ * directions on purpose. A test showing only that the employee may open their photo would pass
+ * against a policy that had stopped withholding anything at all — and the withheld type is the
+ * half that carries the rule.
  */
 it('lets an employee open their own documents except OTHER', function () {
     $employee = policyStaffAt($this->aim);
@@ -248,6 +253,7 @@ it('lets an employee open their own documents except OTHER', function () {
 
     expect($this->policy->viewDocument($account, $employee, 'IC'))->toBeTrue()
         ->and($this->policy->viewDocument($account, $employee, 'RESIGNATION_LETTER'))->toBeTrue()
+        ->and($this->policy->viewDocument($account, $employee, 'PHOTO'))->toBeTrue()
         ->and($this->policy->viewDocument($account, $employee, 'OTHER'))->toBeFalse();
 });
 

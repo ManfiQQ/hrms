@@ -7,6 +7,7 @@ use App\Models\Company;
 use App\Models\Department;
 use App\Models\Employee;
 use App\Models\EmployeeRole;
+use App\Models\Nationality;
 use App\Models\User;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Validator;
@@ -32,6 +33,9 @@ beforeEach(function () {
         ->create(['employee_id' => $hrEmployee->id]);
 
     $this->hr = User::factory()->forEmployee($hrEmployee)->create();
+
+    // The group-wide vocabulary a registration must choose from (adr/0013 decision 6).
+    $this->nationality = Nationality::factory()->named('Malaysia')->create();
 });
 
 function validStorePayload(array $overrides = []): array
@@ -40,6 +44,14 @@ function validStorePayload(array $overrides = []): array
         'company_id' => test()->aim->id,
         'full_name' => 'Nurul Aina binti Rahman',
         'phone_no' => '012-345 6789',
+
+        // ⚠ The three columns adr/0013 made NOT NULL. They are part of a COMPLETE payload
+        // from 2026-08-14 onward: a registration without them is refused by the database
+        // regardless of what the FormRequest says, so a rule that omitted them would hand the
+        // user a raw constraint violation instead of a validation message.
+        'date_of_birth' => '1995-04-12',
+        'gender' => 'FEMALE',
+        'nationality_id' => test()->nationality->id,
         'department_id' => test()->shared->id,
         'level' => 'STAFF',
         'employment_type' => 'FULL-TIME',
@@ -164,6 +176,76 @@ it('ignores an employee_no supplied by the caller', function () {
 
     expect(array_keys($request->rules()))->not->toContain('employee_no')
         ->and(array_keys($request->rules()))->not->toContain('staff_status_history');
+});
+
+/**
+ * ⚠ ONE FIELD AT A TIME, NEVER ALL THREE AT ONCE. A payload missing every identity field goes
+ * red while only one of the three rules exists, so it would prove that *a* rule is present and
+ * nothing about which. Dropping one and asserting the error set is EXACTLY that field is what
+ * makes each rule individually load-bearing.
+ *
+ * They are here because the columns are NOT NULL as of `adr/0013`: a request that omitted them
+ * would reach the insert and come back as a raw constraint violation — a 500 rather than a
+ * message naming the field.
+ */
+it('requires each of the three identity fields on its own', function () {
+    foreach (['date_of_birth', 'gender', 'nationality_id'] as $field) {
+        $payload = validStorePayload();
+        unset($payload[$field]);
+
+        expect(storeErrors($payload, $this->hr))
+            ->toBe([$field], "omitting {$field} must fail on {$field} alone");
+    }
+});
+
+it('refuses a date of birth in the future', function () {
+    // The one bound that needs no business decision. There is deliberately NO minimum-age
+    // rule: the Employment Act sets a working age, but the exact bound is a decision nobody
+    // has made here, and inventing one in a FormRequest would settle it by accident.
+    expect(storeErrors(validStorePayload(['date_of_birth' => now()->addDay()->toDateString()]), $this->hr))
+        ->toBe(['date_of_birth']);
+});
+
+/**
+ * ⚠ THE ASYMMETRY BETWEEN THE TWO REQUESTS, IN ALL FOUR DIRECTIONS — and the fourth is the one
+ * that matters. Without "an employee may not move TO a withdrawn nationality", this suite
+ * would pass just as happily against an update rule that accepted every withdrawn row, which
+ * would make the withdrawal decorative on the edit path.
+ *
+ * Registration refuses withdrawn values outright, because removing a value from the picker is
+ * what withdrawal IS. The edit path accepts exactly one: the value this employee already
+ * holds — otherwise the moment HR withdraws `Myanmar`, every employee holding it becomes
+ * uneditable, and an address change is rejected on a field the user never touched.
+ */
+it('refuses a withdrawn nationality on registration and accepts a live one', function () {
+    $withdrawn = Nationality::factory()->named('Myanmar')->create();
+    $withdrawn->delete();
+
+    expect(storeErrors(validStorePayload(['nationality_id' => $withdrawn->id]), $this->hr))
+        ->toBe(['nationality_id']);
+
+    expect(storeErrors(validStorePayload(['nationality_id' => $this->nationality->id]), $this->hr))
+        ->toBe([]);
+});
+
+it('lets an employee keep the withdrawn nationality they hold, and no other', function () {
+    $held = Nationality::factory()->named('Myanmar')->create();
+    $other = Nationality::factory()->named('Burma')->create();
+
+    $employee = Employee::factory()->forCompany($this->aim)->ofNationality($held)
+        ->create(['department_id' => $this->shared->id]);
+
+    $held->delete();
+    $other->delete();
+
+    expect(updateErrors(['nationality_id' => $held->id], $employee, $this->hr))
+        ->toBe([], 'the nationality this employee already holds stays acceptable once withdrawn');
+
+    expect(updateErrors(['nationality_id' => $other->id], $employee, $this->hr))
+        ->toBe(['nationality_id'], 'a withdrawn nationality this employee does not hold is refused');
+
+    expect(updateErrors(['nationality_id' => $this->nationality->id], $employee, $this->hr))
+        ->toBe([], 'a live nationality is always acceptable');
 });
 
 it('refuses an employee as their own supervisor', function () {

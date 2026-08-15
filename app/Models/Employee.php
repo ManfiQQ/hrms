@@ -34,6 +34,29 @@ class Employee extends Model
         'full_name',
         'nickname',
         'email',
+
+        // Identity and statutory fields — adr/0013 decision 1.
+        //
+        // ⚠ There is no `personal_phone` here and none on the table. `users.phone_no` is the
+        // personal number AND the login username (adr/0006); a second would be two numbers for
+        // one person, and the Personal tab displays the account's through user().
+        //
+        // ⚠ `bank_name` and `bank_account_no` are where salary is SENT, not how much. Employee
+        // Master holds no salary data (§10 decision 3, adr/0003 decision 5), and nothing here
+        // may be read as an opening for some.
+        'ic_no',
+        'passport_no',
+        'permit_expiry',
+        'date_of_birth',
+        'gender',
+        'nationality_id',
+        'address',
+        'epf_no',
+        'socso_no',
+        'tax_no',
+        'bank_name',
+        'bank_account_no',
+
         'branch_id',
         'department_id',
         'position_id',
@@ -60,6 +83,12 @@ class Employee extends Model
     protected function casts(): array
     {
         return [
+            // adr/0013 decision 1. `permit_expiry` is cast so the expired-permit flag compares
+            // dates rather than strings; `date_of_birth` so age — which SOCSO's rate turns on
+            // at 60 — is derived rather than parsed at each call site.
+            'permit_expiry' => 'date',
+            'date_of_birth' => 'date',
+
             'join_date' => 'date',
             'probation_end_date' => 'date',
             'confirmation_date' => 'date',
@@ -99,6 +128,21 @@ class Employee extends Model
     public function position(): BelongsTo
     {
         return $this->belongsTo(Position::class);
+    }
+
+    /**
+     * Citizenship — a group-wide reference table, not an enum (adr/0013 decisions 1 and 6).
+     *
+     * ⚠ `withTrashed()`, AND WITHOUT IT THIS RETURNS NULL FOR A WITHDRAWN NATIONALITY.
+     * Deactivation is the soft delete, so an employee hired under `Myanmar` keeps pointing at
+     * that row after HR withdraws it from the picker — the FK stays valid and `nationality_id`
+     * is NOT NULL, but the ordinary relationship would filter the parent out and the Personal
+     * tab would render a blank where a country belongs. Withdrawing a nationality must stop it
+     * being CHOSEN, never stop it being DISPLAYED on the records that already carry it.
+     */
+    public function nationality(): BelongsTo
+    {
+        return $this->belongsTo(Nationality::class)->withTrashed();
     }
 
     /**

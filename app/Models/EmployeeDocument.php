@@ -32,8 +32,14 @@ class EmployeeDocument extends Model
      * A starting set, not exhaustive — amendable by a future migration (§10 decision 4).
      *
      * ⚠ OTHER is the one type the EMPLOYEE MAY NOT SEE (employee-master.spec.md §6.3). The
-     * other six are already theirs in any real sense: they submitted the identity documents,
-     * and the letters are addressed to them.
+     * other seven are already theirs in any real sense: they submitted the identity documents
+     * and the photo, and the letters are addressed to them.
+     *
+     * ⚠ `PHOTO` joined on 2026-08-14 (adr/0013 decision 7, migration 2026_08_14_100200). An
+     * employee photo is a FILE, so it belongs to the table adr/0012 governs rather than to a
+     * `photo_path` column on `employees` that would have no write-once lock, no policy, no
+     * audit trail and no defined disk. Keep this list in step with the enum: the migration is
+     * what the database enforces, and this constant is what the application reads.
      */
     public const TYPES = [
         'IC',
@@ -43,9 +49,10 @@ class EmployeeDocument extends Model
         'CONFIRMATION_LETTER',
         'RESIGNATION_LETTER',
         'OTHER',
+        'PHOTO',
     ];
 
-    /** The six types an employee may retrieve for themselves (adr/0004 decision 9). */
+    /** The seven types an employee may retrieve for themselves (adr/0004 decision 9). */
     public const EMPLOYEE_READABLE_TYPES = [
         'IC',
         'PASSPORT',
@@ -53,6 +60,7 @@ class EmployeeDocument extends Model
         'OFFER_LETTER',
         'CONFIRMATION_LETTER',
         'RESIGNATION_LETTER',
+        'PHOTO',
     ];
 
     protected static function booted(): void

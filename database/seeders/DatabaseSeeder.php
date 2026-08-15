@@ -40,6 +40,12 @@ class DatabaseSeeder extends Seeder
         // and it will not resurrect a function that has been deactivated.
         $this->call(JobFunctionSeeder::class);
 
+        // The nationality starting set (adr/0013 decision 6). Group-wide like the job
+        // functions above and independent of the companies for the same reason — but HR
+        // extends this one, where only Master Admin extends the job functions. Idempotent,
+        // and it will not resurrect a nationality that has been withdrawn.
+        $this->call(NationalitySeeder::class);
+
         // No test/demo user is seeded. Every account other than Master Admin and Director
         // belongs to an employee and is created in the same transaction as that employee's
         // record (BR-A20). A standalone account with no employee record is a shape this

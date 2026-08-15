@@ -11,6 +11,7 @@ use App\Models\EmployeeFamilyMember;
 use App\Models\EmployeeJobFunction;
 use App\Models\EmployeeRole;
 use App\Models\JobFunction;
+use App\Models\Nationality;
 use App\Services\Audit\AuthorshipContext;
 use Illuminate\Database\Eloquent\Model;
 
@@ -56,6 +57,7 @@ class AuthorshipObserver
         EmployeeDocument::class,
         JobFunction::class,
         EmployeeJobFunction::class,
+        Nationality::class,
     ];
 
     public function creating(Model $model): void
