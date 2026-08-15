@@ -544,6 +544,36 @@ guard checked against a second copy of the same names agrees with itself forever
 guard **cannot** catch is stated in its own docblock — an unprotected **GET** registered by
 vendor code, which is the other half of the very route that prompted it. Recorded 2026-08-14.
 
+### ⚠ A RISK can be recorded without being measured — and half of this one did not exist
+
+The seven findings above are all the same shape: **a rule believed to be in force, carried by
+nothing.** This one is its mirror. Nothing was believed to be enforced — a *risk* was written
+down as observed, in a PR report, on the strength of a resemblance nobody checked.
+
+Fixing `NationalityFactory`'s Faker-uniqueness collision, the PR report noted that
+`CompanyFactory` "carries the same defect" against the six seeded companies. It was recorded as
+a finding, in the commit message and the PR body, and it was **half wrong**:
+
+| | Claimed | Measured |
+|---|---|---|
+| `companies.name` | at risk | **cannot collide.** `fake()->company()` builds from Western surnames — 200,000 draws searched for `HADDAD`, `SOFEEYA`, `ZISH`, `TURSENIA`, `SLEGHO`, `SDN BHD`: zero hits |
+| `companies.code` | at risk | **real, and worse than assumed.** `lexify('???')` reaches `AHS` and `AIM`; 843 exposed draws per suite run ≈ **9% of runs go red** |
+
+Neither number was knowable by reading. The name half needed 200,000 draws to retire, and the
+code half needed **instrumenting the factory across two full suite runs** to size — the
+frequency is what made it worth a PR at all, and a guess would have been low by an order of
+magnitude in one direction and infinite in the other.
+
+⚠ **A recorded risk is treated as a finding by the next reader**, because it arrives in the
+same sentence as things that were verified. Recording an unmeasured one costs somebody a branch
+and a wasted afternoon at best, and at worst buys a defence — a table check, an allowlist, a
+guard — against something that cannot happen, which then has to be maintained forever by people
+who assume it was needed.
+
+**So: measure before recording, or record it as unmeasured in the same breath.** "The same bug
+may exist in X, unchecked" is an honest note. "X carries the same defect" is a claim, and this
+one was 50% false. Recorded 2026-08-15, by the author of the claim.
+
 ---
 
 ## 10. Required Validation Before Calling a Module "Done"
