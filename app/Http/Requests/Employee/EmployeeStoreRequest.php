@@ -62,6 +62,31 @@ class EmployeeStoreRequest extends FormRequest
                 }
             }],
 
+            // ⚠ THE THREE NOT NULL IDENTITY COLUMNS — adr/0013 decision 1. These are here
+            // because the DATABASE now refuses the row without them: a request that omitted
+            // them would reach the insert and come back as a raw constraint violation, which
+            // is a 500 to the user rather than a message naming the field.
+            //
+            // ⚠ The conditional "at least one of ic_no or passport_no" rule (decision 2) is
+            // deliberately NOT here yet, and the difference is not arbitrary. These three
+            // restate something the schema already enforces; that one enforces something the
+            // database cannot know, and it needs the form to be tested meaningfully. adr/0013
+            // records the deferral as a dated amendment.
+            'date_of_birth' => ['required', 'date', 'before:today'],
+
+            // ⚠ NO MINIMUM AGE RULE, AND ITS ABSENCE IS DELIBERATE RATHER THAN AN OVERSIGHT.
+            // The Employment Act sets a minimum working age, but the exact bound — and what
+            // happens to a legitimate under-18 apprentice record — is a business rule nobody
+            // has decided here. `before:today` is the one bound that needs no decision: a date
+            // of birth in the future is not a policy question, it is incoherent data.
+            'gender' => ['required', Rule::in(['MALE', 'FEMALE'])],
+
+            // ⚠ WITHDRAWN NATIONALITIES ARE REFUSED ON REGISTRATION. Deactivation is the soft
+            // delete, and its whole purpose is to remove a value from the picker; a new record
+            // that could still select one would make the withdrawal decorative. The edit path
+            // answers this differently on purpose — see EmployeeUpdateRequest.
+            'nationality_id' => ['required', 'integer', Rule::exists('nationalities', 'id')->whereNull('deleted_at')],
+
             // ⚠ NO `exists:companies` COUPLING BETWEEN THESE AND company_id, DELIBERATELY.
             // BR-12: an employee of TURSENIA sitting in the shared Logistics branch is a
             // CORRECT record, and validation must not reject it. Org placement is independent

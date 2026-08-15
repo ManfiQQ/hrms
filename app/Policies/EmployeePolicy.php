@@ -260,10 +260,15 @@ class EmployeePolicy
     /**
      * May this account open a specific document? §6.3, `adr/0004` decision 9.
      *
-     * ⚠ The employee's own access is per TYPE, which no tab-level check can express. Six of
-     * the seven are already theirs in any real sense — they submitted the identity documents
-     * and the letters are addressed to them — and withholding the scans protects nothing while
-     * turning a confirmation letter for a bank loan into an HR errand.
+     * ⚠ The employee's own access is per TYPE, which no tab-level check can express. Seven of
+     * the eight are already theirs in any real sense — they submitted the identity documents
+     * and the photo, and the letters are addressed to them — and withholding the scans protects
+     * nothing while turning a confirmation letter for a bank loan into an HR errand.
+     *
+     * ⚠ Counts updated 2026-08-14 when `PHOTO` joined the enum (adr/0013 decision 7). The
+     * behaviour did not change: the check reads EMPLOYEE_READABLE_TYPES, so the list is what
+     * governs and these numbers are prose about it. They are corrected because a comment
+     * carrying a stale count is how a reader learns to distrust the comments.
      *
      * `OTHER` is withheld from the employee. It is the escape hatch for documents that do not
      * fit the fixed types, which makes it the natural home for internal notes and

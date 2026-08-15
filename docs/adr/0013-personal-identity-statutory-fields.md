@@ -240,3 +240,83 @@ them, which is what gives it its defined purpose.
   audience.
 - `adr/0012` in every respect. It decides how document bytes are
   handled; this ADR only adds a type to the enum it governs.
+
+---
+
+## Amendment — 2026-08-15, with the implementation
+
+The schema half of this ADR is built: `nationalities`
+(`2026_08_14_100000`), the twelve columns on `employees`
+(`2026_08_14_100100`) and `PHOTO` on the document enum
+(`2026_08_14_100200`), with the model, factory, seeder, casts,
+relationship and tests.
+
+**Three things this ADR decided are deliberately NOT in that PR.** They
+are recorded here rather than left to be noticed later, because a
+decision that is written but unbuilt looks exactly like a decision that
+was built, and the difference only surfaces when somebody relies on it.
+
+### 1. Both flags — expired permit, and `CONFIRMED` without EPF or SOCSO
+
+**Deferred to the screen that would show them.** Decisions 4 and 5 make
+both **display rules with no enforcement behind them**: nothing is
+blocked, nothing is gated, and the Consequences above already state that
+until the Notification Engine exists **both are seen only by somebody
+looking at the record**. No such record screen exists yet.
+
+Building them now would mean choosing where the predicate lives — a
+model accessor, a service, a view composer — before the screen that
+consumes it can argue for one. That choice would then be the hard thing
+to undo, and it would be made by the person with the least information
+about it. What is available today is the same either way: `permit_expiry`
+is a cast date, and `epf_no` / `socso_no` are nullable columns beside
+`staff_status`.
+
+⚠ **The cost, stated plainly: until they are built, an expired permit
+and a `CONFIRMED` employee with no statutory numbers are invisible.**
+Neither was ever going to raise an alarm — but "invisible because it is
+only a display rule" and "invisible because nobody wrote it" are
+different states, and this note is what keeps them distinguishable.
+
+### 2. The FormRequest rule requiring `ic_no` **or** `passport_no`
+
+**Deferred to the registration form.** The three columns decision 1 made
+`NOT NULL` — `date_of_birth`, `gender`, `nationality_id` — **did** get
+their rules in this PR, and the difference between the two groups is the
+whole reason this one waits.
+
+Those three **restate a constraint the database already enforces**. A
+request that omitted them would reach the insert and come back as a raw
+constraint violation: a 500, not a message naming the field. Writing them
+is closing a gap, not adding a rule, and they are testable today against
+the request object alone.
+
+The conditional rule **enforces something the database does not know**.
+Decision 2 accepted that uniqueness is per column and that nothing at the
+database level requires either to be present. So this rule is the only
+thing that will ever express it — which is exactly why it should be
+written where it can be exercised end to end, against a form that
+submits both fields, rather than asserted against a rules array in
+isolation.
+
+⚠ **The cost: until the form lands, an employee can be registered with
+neither an IC nor a passport, and nothing anywhere objects.** Decision 2
+reads as though that combination is refused. It is not, yet.
+
+### 3. Policy abilities for `nationalities`
+
+**Deferred to the screen that creates entries.** Decision 6 says HR may
+create nationalities and deliberately differs from `job_functions`, which
+only Master Admin may extend. **Nothing in code says so today**: the
+seeder is the only writer, and it runs as the installing Master Admin.
+
+An ability with no caller cannot be verified — the test would assert that
+a function returns what it was written to return, which is the shape
+`conventions.md` §9 calls a guard pointed at nothing. It lands with the
+picker and the maintenance screen, where "HR may, ordinary staff may not"
+is a real question asked by real code.
+
+⚠ **The cost: decision 6's asymmetry with `job_functions` currently
+exists only in this document.** Whoever builds that screen must add the
+abilities; there is no failing test to remind them, and the vocabulary is
+otherwise wide open to anything that can reach the model.

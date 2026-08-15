@@ -6,6 +6,7 @@ use App\Models\Employee;
 use App\Models\Scopes\TenantScope;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Exists;
 
 /**
  * Editing an employee record — `employee-master.spec.md` §5.1.
@@ -57,6 +58,24 @@ class EmployeeUpdateRequest extends FormRequest
             'nickname' => ['nullable', 'string', 'max:255'],
             'email' => ['nullable', 'email', 'max:255'],
 
+            // The three NOT NULL identity columns (adr/0013 decision 1). `sometimes` because
+            // this form patches — but once present they may not be emptied, since the column
+            // refuses null and a blank field would return a raw constraint violation.
+            'date_of_birth' => ['sometimes', 'required', 'date', 'before:today'],
+            'gender' => ['sometimes', 'required', Rule::in(['MALE', 'FEMALE'])],
+
+            // ⚠ THE ONE VALUE A WITHDRAWN NATIONALITY IS STILL ACCEPTED AS IS THE ONE THIS
+            // EMPLOYEE ALREADY HOLDS, and the asymmetry with EmployeeStoreRequest is the whole
+            // point. Refusing withdrawn values outright here would mean that the moment HR
+            // withdraws `Myanmar`, every employee holding it becomes UNEDITABLE — an edit to
+            // their bank account or address resubmits the nationality they already have and is
+            // rejected on a field the user never touched, with nothing on screen explaining
+            // why. Accepting withdrawn values outright would make the withdrawal decorative on
+            // this path instead.
+            //
+            // So: keep what you hold, never move to one that has been withdrawn.
+            'nationality_id' => ['sometimes', 'required', 'integer', $this->selectableNationality($employee)],
+
             // Org placement stays independent of the employer — BR-12 again, on the edit path
             // as much as on creation.
             'department_id' => ['sometimes', 'required', 'integer', 'exists:departments,id'],
@@ -88,6 +107,29 @@ class EmployeeUpdateRequest extends FormRequest
 
             'hours_enabled' => ['boolean'],
         ];
+    }
+
+    /**
+     * A nationality this employee may be saved with: any that is not withdrawn, plus the one
+     * they already hold even if it has been (adr/0013 decision 6).
+     *
+     * ⚠ The current value is read from the ROUTE MODEL, never from the request. Taking it from
+     * the payload would let a crafted request name any withdrawn row as "the one I already
+     * hold" and the exception would swallow the rule whole.
+     */
+    private function selectableNationality(?Employee $employee): Exists
+    {
+        $current = $employee?->nationality_id;
+
+        return Rule::exists('nationalities', 'id')->where(function ($query) use ($current) {
+            $query->where(function ($inner) use ($current) {
+                $inner->whereNull('deleted_at');
+
+                if ($current !== null) {
+                    $inner->orWhere('id', $current);
+                }
+            });
+        });
     }
 
     /** BR-8 — nobody reports to themselves. */
