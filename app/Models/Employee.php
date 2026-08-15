@@ -3,6 +3,10 @@
 namespace App\Models;
 
 use App\Models\Scopes\TenantScope;
+use App\Policies\EmployeePolicy;
+use App\Services\Auth\ReadScopeResolver;
+use App\Services\Auth\RoleChecker;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -13,6 +17,27 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Employee extends Model
 {
     use HasFactory, SoftDeletes;
+
+    /**
+     * The three display enums, in the order `schema.md` declares them.
+     *
+     * ⚠ WRITTEN ONCE, HERE. They were previously literal arrays inside `EmployeeStoreRequest`
+     * and `EmployeeUpdateRequest`, and the list screen would have been a third copy — three
+     * places to edit when a value is added, and nothing to catch the one that is missed.
+     */
+    public const STAFF_STATUSES = ['PROBATION', 'ACTIVE', 'CONFIRMED', 'SUSPENDED', 'RESIGNED', 'TERMINATED'];
+
+    public const EMPLOYMENT_TYPES = ['FULL-TIME', 'PART-TIME', 'CONTRACT', 'INTERN', 'FREELANCE'];
+
+    /** Display only — never an authorization or routing input (BR-9, `adr/0001` decision 1). */
+    public const LEVELS = ['STAFF', 'SUPERVISOR', 'MANAGER', 'HOD'];
+
+    /**
+     * Terminal statuses (BR-2). Reaching one freezes the account and revokes every
+     * `employee_roles` row in the same transaction (`adr/0004` decision 5), and there is no
+     * way back — a returning employee gets a new record.
+     */
+    public const TERMINAL_STATUSES = ['RESIGNED', 'TERMINATED'];
 
     /** Narrows every query to the account's read scope (adr/0005 decision 2). */
     protected static function booted(): void
@@ -96,6 +121,181 @@ class Employee extends Model
             'offday' => 'array',
             'hours_enabled' => 'boolean',
         ];
+    }
+
+    /**
+     * The employees this account may see in a LIST — `adr/0011`, spec §5.4.
+     *
+     * ⚠ THE SECOND FORM OF A RULE `EmployeePolicy::view()` ALREADY EXPRESSES, and the two must
+     * agree. `view()` answers *(actor, subject) → bool*; this answers *(actor) → set*. They
+     * cannot share an implementation — one is PHP over a loaded row, the other is SQL over
+     * rows nobody has loaded — so `EmployeeListVisibilityTest` compares their outcomes across
+     * a population. Read that test before changing either.
+     *
+     * ⚠ A LOCAL SCOPE, CALLED EXPLICITLY, AND NEVER A GLOBAL ONE. `TenantScope` is global
+     * because tenancy is a property of the table: every read of `employees` is bounded by it,
+     * including `CreateEmployee`, `TransferCompany`, the audit reader and the seeders. The
+     * supervisory narrowing is not a property of the table — it is the question ONE SCREEN
+     * asks — and a global version would answer it for every query in the system.
+     *
+     * That distinction is the whole safety argument. **A scope that must be called cannot
+     * narrow a query that does not call it**, so HR cannot silently lose rows: a wrong filter
+     * here returns fewer rows rather than erroring (`adr/0002`), and the blast radius of that
+     * failure is bounded to the callers who opted in.
+     *
+     * ⚠ THE ACTOR'S OWN RECORD IS ALWAYS INCLUDED, and it is not a courtesy. `viewTab()`
+     * returns true for the actor's own record BEFORE any role check, so a scope that omitted
+     * it would disagree with the policy and the guard would go red. A supervisor with no
+     * subordinates therefore sees exactly one row — themselves — and that is `adr/0011`
+     * decision 4 being visible rather than a defect: an employee whose BR-8 columns are empty
+     * is read by nobody below `HR`, and an empty list is the signal that they were never
+     * filled.
+     */
+    public function scopeVisibleTo(Builder $query, User $actor): void
+    {
+        // FULL and VIEW_ONLY hold no employee record, so no role check could answer for them.
+        // ReadScopeResolver has already given them every company, and TenantScope has already
+        // applied it — there is nothing further to narrow (adr/0004 decision 2).
+        if (in_array($actor->system_access, ['FULL', 'VIEW_ONLY'], true)) {
+            return;
+        }
+
+        $roles = app(RoleChecker::class);
+
+        // ⚠ The administrative tier reads every record INSIDE THE READ SCOPE, which
+        // TenantScope has already applied to this query. The role is checked across the scope
+        // companies exactly as EmployeePolicy::hasAnyRoleInScope() does — a subsidiary-employed
+        // HR holds the role at one company and reads that company, and the two facts are
+        // resolved separately.
+        foreach (app(ReadScopeResolver::class)->resolve($actor) as $companyId) {
+            if ($roles->hasAnyRole($actor, EmployeePolicy::ADMINISTRATIVE_ROLES, $companyId)) {
+                return;
+            }
+        }
+
+        $actorEmployee = $actor->employee_id === null
+            ? null
+            : self::withoutGlobalScope(TenantScope::class)->find($actor->employee_id);
+
+        // Unreachable in practice — ReadScopeResolver throws OrphanedAccountException for a
+        // STANDARD account with no employee, and TenantScope calls it before this runs. It
+        // mirrors viewTab()'s own null branch so the two stay in step if that ever changes.
+        if ($actorEmployee === null) {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+
+        // No supervisory role at their own company: their own record and nothing else. There
+        // is no STAFF role value — absence IS the staff state (adr/0003 decision 1).
+        if (! $roles->hasAnyRole($actor, EmployeePolicy::SUPERVISORY_ROLES, $actorEmployee->company_id)) {
+            $query->whereKey($actorEmployee->id);
+
+            return;
+        }
+
+        // ⚠ THE REPORTING LINE, ONE LEVEL, IN ONE DIRECTION (adr/0011 decisions 1 and 2). The
+        // SUBJECT's two BR-8 columns are compared against the ACTOR's employee id — never the
+        // reverse, which would list an employee's own supervisor. Both columns are nullable,
+        // so an employee who reports to nobody is excluded without a special case.
+        //
+        // The company bound is `employees.company_id` on both sides, never
+        // `employee_roles.company_id`: the role row says where authority applies, the employee
+        // row says who employs the person (adr/0002 decision 4, adr/0003 decision 6). A shared
+        // department is where this is most likely to be got wrong, because the two employees
+        // are visibly colleagues.
+        $query->where(function (Builder $visible) use ($actorEmployee) {
+            $visible
+                ->where(function (Builder $reporting) use ($actorEmployee) {
+                    $reporting
+                        ->where($this->qualifyColumn('company_id'), $actorEmployee->company_id)
+                        ->where(function (Builder $line) use ($actorEmployee) {
+                            $line
+                                ->where($this->qualifyColumn('direct_supervisor_id'), $actorEmployee->id)
+                                ->orWhere($this->qualifyColumn('manager_id'), $actorEmployee->id);
+                        });
+                })
+                ->orWhere($this->qualifyColumn('id'), $actorEmployee->id);
+        });
+    }
+
+    /**
+     * One search term across the four searchable fields — spec §5.4.
+     *
+     * ⚠ THE GROUP IS PARENTHESISED — AND MEASURING THE BREAK SHOWED THIS IS DEFENCE IN DEPTH,
+     * NOT THE BOUNDARY ITSELF. Four ORed conditions left at the top level would bind looser
+     * than the ANDed visibility conditions before them, and the search box would become a way
+     * around the rule — returning MORE rows rather than fewer, the failure direction nobody
+     * watches for.
+     *
+     * Removing this closure does NOT produce that bug, and the reason matters: **Laravel wraps
+     * every constraint added inside a LOCAL SCOPE in its own group** (`addNewWheresWithinGroup`),
+     * so the parentheses survive without it. Verified by reading the generated SQL, after the
+     * deliberate break came back green.
+     *
+     * What that protection depends on is the search living in a scope AT ALL. Inline the same
+     * four `orWhere`s in the Livewire component and the grouping disappears with them —
+     * `EmployeeListTest`'s leak test goes red on exactly that change, and it is the real reason
+     * §5.4 says the query lives in a model scope rather than in the caller.
+     *
+     * ⚠ SUBSTRING, NOT PREFIX, AND THE COST IS REAL. `full_name` holds full Malay names —
+     * *Nurul Aina binti Rahman* — and HR usually remembers the last name, so `LIKE 'rahman%'`
+     * would find nothing while `LIKE '%rahman%'` finds the person. **A leading wildcard cannot
+     * use an index**, so this is a full table scan; there is no index on `full_name` today
+     * either way, and the scale is hundreds of rows. **At a much larger scale this is a
+     * decision to revisit**, not a permanent answer.
+     *
+     * ⚠ `phone_no` IS NOT SEARCHABLE HERE and must not be added: the employee record holds no
+     * number at all (`adr/0006`). Searching by number means searching ACCOUNTS, which is the
+     * account management screen's question.
+     */
+    public function scopeMatchingSearch(Builder $query, string $term): void
+    {
+        $term = trim($term);
+
+        if ($term === '') {
+            return;
+        }
+
+        // `%` and `_` are wildcards to LIKE, so a search for "50%" would otherwise match
+        // everything beginning with 50 — and a search for "%" would match every row.
+        $pattern = '%'.addcslashes($term, '%_\\').'%';
+
+        $query->where(function (Builder $match) use ($pattern) {
+            $match
+                ->where($this->qualifyColumn('employee_no'), 'like', $pattern)
+                ->orWhere($this->qualifyColumn('full_name'), 'like', $pattern)
+                ->orWhere($this->qualifyColumn('nickname'), 'like', $pattern)
+                ->orWhere($this->qualifyColumn('email'), 'like', $pattern);
+        });
+    }
+
+    /**
+     * The seven filters §5.4 names, each applied only when chosen.
+     *
+     * ⚠ THESE ARE FILTERS THE READER PICKS, NEVER A BOUNDARY THE SYSTEM IMPOSES. `department`
+     * in particular reads like the old supervisory rule and is not: the bound is
+     * `visibleTo()`, which is applied separately and cannot be turned off from a form. A
+     * filter that arrived empty leaves the query alone, so an account that clears every filter
+     * still sees only what it may see.
+     *
+     * ⚠ THE KEYS ARE COLUMN NAMES AND MUST COME FROM THE CALLER, NEVER FROM REQUEST INPUT.
+     * The caller names the seven columns it supports; only the VALUES are user input. Passing
+     * a request array straight in would let a crafted key filter on any column on the table —
+     * `ic_no`, `bank_account_no` — turning a list into an oracle that answers whether a value
+     * exists.
+     *
+     * @param  array<string, mixed>  $filters  keyed by column; null or '' means "not chosen"
+     */
+    public function scopeFilteredBy(Builder $query, array $filters): void
+    {
+        foreach ($filters as $column => $value) {
+            if ($value === null || $value === '') {
+                continue;
+            }
+
+            $query->where($this->qualifyColumn($column), $value);
+        }
     }
 
     /**
@@ -283,6 +483,6 @@ class Employee extends Model
      */
     public function hasTerminalStatus(): bool
     {
-        return in_array($this->staff_status, ['RESIGNED', 'TERMINATED'], true);
+        return in_array($this->staff_status, self::TERMINAL_STATUSES, true);
     }
 }

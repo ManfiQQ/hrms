@@ -544,6 +544,34 @@ guard checked against a second copy of the same names agrees with itself forever
 guard **cannot** catch is stated in its own docblock — an unprotected **GET** registered by
 vendor code, which is the other half of the very route that prompted it. Recorded 2026-08-14.
 
+### ⚠ A guard's stated limits are not a disclaimer — they are where to look
+
+`EmployeeListVisibilityTest` shipped with *"only as wide as the test population"* written on its
+face, and **writing the breaks proved it in the same run.** The original population could not
+catch a lost company bound: for the AIM-employed supervisor it was built around, `TenantScope`
+had already excluded every other company, so deleting `employees.company_id` from the scope
+changed no rows. **The break stayed green and the guard read as sound.** A parent-employed
+supervisor — group-wide read scope, where the company comparison on both sides is the only
+thing left — made it red.
+
+Recorded 2026-08-15. The limits written on the four guards before this one were written as
+honest caveats. **This is the first time one was used as an instruction, and it found
+something.**
+
+⚠ Two smaller findings from the same session, both the same shape — *a break that produces
+green is information, not a formality*:
+
+- **`agedOver()`** was asserted with `isBefore(now()->subYears(60))`, comparing a date-cast
+  column at midnight against a time-of-day sixty years ago. A birth date landing exactly on the
+  birthday still read as "before", by hours. Fixed with `startOfDay()`.
+- **The search-leak test** could not be made red by deleting the parentheses it was written
+  about: **Laravel groups every constraint added inside a local scope** (`addNewWheresWithinGroup`),
+  so the protection survives without them. What does make it red is inlining the same
+  `orWhere`s in the caller — which is the real mistake, and the reason
+  `employee-master.spec.md` §5.4 puts the query in a scope rather than in the component. **The
+  test was kept and what makes it red is now written on it**: a guard whose break is unknown is
+  a guard nobody can maintain.
+
 ### ⚠ A RISK can be recorded without being measured — and half of this one did not exist
 
 The seven findings above are all the same shape: **a rule believed to be in force, carried by

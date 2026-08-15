@@ -70,6 +70,19 @@ Route::middleware(['auth', EnsureAccountIsActive::class, EnsurePasswordIsChanged
         ->name('accounts.manage');
 
     /*
+     * The employee list (employee-master.spec.md §5.4, §7) — same shape as the two screens
+     * below: a thin closure returning the wrapper view, with EmployeePolicy::viewAny enforced
+     * inside the Livewire component rather than by route middleware, because every Livewire
+     * action is its own request and a mount-time check would authorise once for the life of
+     * the page.
+     *
+     * ⚠ The route gate is only the door. WHICH employees the page shows is
+     * Employee::scopeVisibleTo(), and a failure there is silent — it renders fewer or more
+     * rows, correctly formatted, with nothing to report.
+     */
+    Route::get('/employees', fn () => view('employees.index'))->name('employees.index');
+
+    /*
      * Master Admin management (§5.8) — Master Admin only, enforced by
      * UserPolicy::administerMasterAdmins inside the component, and BR-A13's 3/1 limits
      * enforced inside the Actions rather than by either.
