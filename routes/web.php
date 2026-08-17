@@ -94,8 +94,26 @@ Route::middleware(['auth', EnsureAccountIsActive::class, EnsurePasswordIsChanged
      * **403** from the policy. Neither answer is a courtesy: the first withholds existence,
      * the second withholds contents.
      */
+    /*
+     * Registration (§5.1) and editing (§5.1, §6.4) — UI-3a.
+     *
+     * ⚠ /employees/create IS DECLARED BEFORE /employees/{employee}, and the order is
+     * load-bearing rather than stylistic. Laravel matches routes in declaration order, so the
+     * wildcard below would swallow "create" as an employee id — and because `Employee` carries
+     * `TenantScope`, route model binding would then answer 404 rather than anything that names
+     * the real problem.
+     *
+     * ⚠ NEITHER ROUTE CARRIES A POLICY MIDDLEWARE, for the same reason as the two screens above:
+     * every Livewire action is its own request, so a route-level check would authorise once for
+     * the life of the page. Both components authorise on mount AND again on save.
+     */
+    Route::get('/employees/create', fn () => view('employees.create'))->name('employees.create');
+
     Route::get('/employees/{employee}', fn (App\Models\Employee $employee) => view('employees.show', ['employee' => $employee]))
         ->name('employees.show');
+
+    Route::get('/employees/{employee}/edit', fn (App\Models\Employee $employee) => view('employees.edit', ['employee' => $employee]))
+        ->name('employees.edit');
 
     /*
      * Master Admin management (§5.8) — Master Admin only, enforced by

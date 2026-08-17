@@ -306,3 +306,74 @@ once: the authorship observer (`adr/0009`) refuses a write with no actor, and re
 identity claim is a write. **An importer that supersedes anything must enter
 `AuthorshipContext`**, naming the acting user and a reason. Discovered by a probe failing on it,
 not by reading the code.
+
+---
+
+## Amendment — 2026-08-17, decision 5's search as built
+
+Decision 5 said the registration form asks *"has this employee worked here before?"* and then
+searches prior records. It did not say what the search returns, and the difference between the
+two available shapes is large enough that it is recorded here rather than left to the screen.
+
+**It returns an ANSWER, not a browsable set.** `App\Services\Employee\PriorEmploymentLookup`
+takes one identifier and returns one `PriorEmployment` or null. There is no name search, no
+`LIKE`, no list and no pagination.
+
+### What it returns
+
+`employeeId`, `fullName`, `employeeNo`, `companyName`, `servedFrom`, `servedTo`. Six fields, and
+each is there for a stated reason: the id is what `previous_employee_id` is set to; the name is
+the only guard against a mistyped identifier landing on somebody else's record; the dates carry
+the disambiguation load when several prior records match.
+
+**⚠ `companyName` is returned deliberately, and removing it was argued and withdrawn on
+2026-08-17. Do not remove it on a privacy argument.** The case for removing it was that a
+subsidiary-employed `HR` reads one company only (`adr/0004` decision 1), so naming AIM to a
+TURSENIA-employed reader discloses group structure across a tenant boundary.
+
+It stays because **linking is an act, not a read.** Setting `previous_employee_id` fixes prior
+service across employers — what a Leave spec will later compute entitlement from (BR-13) — and an
+HR who links an AIM record without being shown "AIM" is performing a cross-company act blind.
+Hiding the employer hides what they are doing rather than protecting anything, and the six
+companies are not a secret: `CLAUDE.md` §5 lists them and the employee list renders them in its
+own filter.
+
+**What it does NOT return:** date of birth, IC, passport, address, bank details, statutory
+numbers, department, position, level. A caller needing those is reading a record, not asking this
+question, and that goes through `EmployeePolicy`.
+
+### Why exact match only
+
+A fuzzy or listable version turns an existence check into an identity oracle over every archived
+employee in the group. **What keeps the narrow shape safe is who may call it, not what it
+returns** — there is deliberately **no HTTP route**, and it is invoked from the registration
+component behind the same `create` gate the form is behind, re-checked on every call because
+every Livewire action is its own request.
+
+**Three keys, not one.** `ic_no` alone would be wrong for this workforce: it is nullable, and a
+non-citizen holds `passport_no` instead. `users.phone_no` is included because it is the only one
+of the three that is NOT NULL.
+
+**⚠ A blank identifier throws rather than answering null.** Measured: `where('ic_no', null)` does
+not compile to `ic_no = NULL` — Laravel compiles it to `IS NULL`, which matches **every
+passport-only employee**, and a form posting an untouched box sends exactly that null. Observed
+directly with the guards removed: the lookup returned a stranger's record.
+
+### ⚠ This is not a general read scope
+
+It releases `TenantScope` and soft deletes for **one exact-match query returning six fields**. It
+widens nothing else, and `EmployeePolicy` is untouched by it. An archived-record BROWSE — the
+wide shape decision 5 could have been read as requiring — is not built and is not authorised by
+this amendment.
+
+### The rule the FormRequest was missing
+
+Building the form exposed something neither this ADR nor `EmployeeStoreRequest` had noticed:
+**the rejoining flow could not pass validation at all.** The `unique` rules are scoped to
+`superseded_at IS NULL`, and `CreateEmployee::supersedePrior()` releases the old claim as its
+first act *inside* the transaction — so at validation time the prior record still looks live and
+the rule refuses the rejoiner their own IC and their own number.
+
+The flow was reachable through the Action directly, which is why `RejoinerIdentityTest` passed.
+It was refused by the FormRequest, which was written before any form existed to submit through
+it. Both requests now exclude the declared prior record from the live-row check.
