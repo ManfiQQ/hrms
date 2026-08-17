@@ -831,6 +831,62 @@ was solid and is carried forward:
 Report: summary of changes, files changed, migrations added, test results
 (exact pass/fail), remaining risks, rollback notes.
 
+### ⚠ Step 5 — what a healthy `npm run build` looks like here
+
+Written down because the output reads as broken when it is not, and because the first summary
+to describe it got the shape wrong. **These are measured results on this project, not
+recollection** — `vite v8.2.1`, `tailwindcss v4.3.3`, exit code 0, `✓ built in 417ms`:
+
+| Entry | Built file | Size |
+|---|---|---|
+| `resources/css/app.css` | `assets/app-<hash>.css` | **60.80 kB**, 12.54 kB gzipped |
+| `resources/js/app.js` | `assets/app-<hash>.js` | **0.00 kB** |
+
+Plus six `instrument-sans-*` font files (16–22 kB each), `fonts-C9MNnjVw.css`, `manifest.json`
+and `fonts-manifest.json`. **Eleven files, and a re-run reproduces all eleven byte for byte** —
+every md5 identical across two consecutive builds.
+
+**Both entries are NAMED, and there is no unnamed chunk to explain.** `manifest.json` records
+`"name": "app"` with `isEntry: true` for each, and Vite prints the built filename on every
+line. A summary reporting a nameless ~39 kB artefact is describing neither the CSS nor
+anything else in this build: the CSS is 60.8 kB and carries its name in the manifest. **If a
+future summary says otherwise, re-read the raw output before believing it.**
+
+**⚠ The 0.00 kB JS chunk is CORRECT and must not be "fixed".** `resources/js/app.js` contains a
+single `//`. Alpine is deliberately absent: **Livewire 3 ships its own copy**, served through
+`@livewireScripts` from the `livewire/livewire.js` route, and importing Alpine into `app.js`
+would ship two copies of it. An empty bundle here means the entry has nothing to do, not that
+something failed to bundle.
+
+**Tailwind is v4 CSS-first, so `tailwind.config.js` and `postcss.config.js` DO NOT EXIST** —
+configuration lives in `@theme` inside `app.css`. Their absence is the correct v4 shape, not a
+missing file.
+
+**One warning is expected and cosmetic:**
+`[plugin laravel:fonts] Optimized font fallbacks require the optional "fontaine" package.`
+Optional means optional.
+
+⚠ **Verifying that a class survived into the CSS is harder than it looks, and two sweeps got it
+wrong before one got it right.** Tailwind escapes its selectors — `.h-1\.5`,
+`.bg-\[\#1b1b18\]` — so a plain substring search misses them; and it emits variants as
+`.focus\:ring-2:focus`, so searching for a bare `ring-2` misses every focus-only utility. A
+first pass reported 36 classes missing, a second reported 58 including `bg-slate-800` on the
+login screen. **Both were wrong.** With backslashes stripped from the CSS **and** variant
+prefixes left intact, all **256** class tokens used across the 22 Blade views were present.
+`layouts/centred.blade.php` carries no `@vite` and needs none — it `@extends('layouts.app')`.
+
+⚠ **Two things this audit found and did not fix**, so they are not rediscovered as new:
+`public/build` is gitignored (line 17) and **no Deployer config exists in the repo**, so
+nothing written down says who runs this on the VPS — and unbuilt assets mean every screen
+renders unstyled. And `app.css` carries `@source '../../storage/framework/views/*.php'`,
+compiled Blade, which step 1's `optimize:clear` empties; v4's automatic detection still finds
+`resources/views`, which is what the 256 tokens prove, so that `@source` is not load-bearing
+today.
+
+Recorded 2026-08-17, the first time this build was run and audited — ten days after its config
+was last touched (`7d58fac`) — and after two of the audit's own verification passes flagged a
+healthy bundle as broken.
+
 ### ⚠ Step 6 is discharged by step 4 — rewritten 2026-08-17, after it destroyed the dev database
 
 **`RefreshDatabase` calls `migrate:fresh`** (`Illuminate\Foundation\Testing\RefreshDatabase`
