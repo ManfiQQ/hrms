@@ -851,6 +851,20 @@ Access differs **per tab, not per record** (`adr/0004` decision 8). The detail v
 | Roles & Functions | No | Yes | Yes | Own |
 | Status History | No | Yes | Yes | Own |
 
+> **⚠ The Personal row was tiered by field on 2026-08-17 — `adr/0014`.** The row still
+> reads **Yes**, and it is still Yes: the supervisory tier opens the tab. What it now
+> opens is **four fields** — `full_name`, `nickname`, `email` and `users.phone_no` — and
+> not the twelve identity and statutory columns `adr/0013` put behind it.
+>
+> **The matrix is per tab and this one row is no longer only that**, which is the whole
+> of the change. Every other row answers Yes or No and stops; the Personal row answers
+> Yes *and then a field list*, resolved by `EmployeePolicy::personalFieldsFor()` — from
+> which `viewTab(TAB_PERSONAL)` is **derived**, not written a second time.
+>
+> **The code does not say this yet.** `EmployeePolicy::SUPERVISORY_TABS` still grants
+> Employment and Personal without qualification and no second method exists. The full
+> amendment lands with the UI-2 PR.
+
 > **The Roles & Functions row was decided 2026-08-13** — `adr/0004` decision 8's table named
 > seven tabs while §7 lists eight, so this one had never been decided at all, and the code
 > answered `false` **silently**. See that decision's amendment note.
@@ -894,6 +908,17 @@ identity card number, or where they went to school — none of it bears on super
 Restricting them to Employment alone was rejected as too tight: a supervisor who cannot
 find a phone number in the system will find it on WhatsApp instead, and the organisation
 loses the control entirely.
+
+> **⚠ This paragraph is unchanged, and since 2026-08-17 it carries a second load —
+> `adr/0014`.** It was written when the Personal tab held `full_name`, `nickname` and
+> `email`. `adr/0013` then placed twelve identity and statutory columns behind that tab,
+> and the sentence above — *they do not need a copy of someone's IC* — became a
+> description of what the tab actually contains.
+>
+> **The argument is not overturned; it is applied.** `adr/0014` reads it as the
+> definition of the supervisory **field set**, not only of the tab list: the tier keeps
+> the tab and reads the four fields that answer *how do I reach them*. Nothing here is
+> rewritten, because nothing here was wrong.
 
 **Emergency contact is the deliberate exception.** Name and phone number only, surfaced on
 the **Employment** tab rather than behind Family — `employee_family_members` already carries

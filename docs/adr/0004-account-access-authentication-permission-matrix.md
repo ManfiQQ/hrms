@@ -358,6 +358,19 @@ Employee Master's detail view is tabbed. Access differs per tab, not per record.
 | Roles & Functions | No | Yes | Yes | Own |
 | Status History | No | Yes | Yes | Own |
 
+> **⚠ The Personal row was tiered by field on 2026-08-17 — `adr/0014`. The table above
+> is left as written.** Yes is still Yes: the supervisory tier opens the tab. It opens
+> onto **four fields** — `full_name`, `nickname`, `email`, `users.phone_no` — because
+> `adr/0013` (2026-08-14) put twelve identity and statutory columns behind a tab whose
+> access was decided when it held three.
+>
+> **Neither this table nor `adr/0013` was wrong**, which is why this is a pointer and not
+> a correction: each sentence was true when written, and the combination was not. The
+> withheld field list and the full reasoning are `adr/0014` decision 1.
+>
+> ⚠ **`EmployeePolicy` has not changed** — `SUPERVISORY_TABS` still grants both tabs
+> unqualified. The amendment lands with the UI-2 PR.
+
 > **⚠ Amended 2026-08-13 — the Roles & Functions row was added. The table shipped with seven
 > rows; `employee-master.spec.md` §7 has always listed eight tabs.**
 >
@@ -396,6 +409,16 @@ identity card number, or where they went to school — none of it bears on super
 Restricting them to Employment alone was rejected as too tight: a supervisor who cannot find
 a phone number in the system will find it on WhatsApp instead, and the organisation loses
 the control entirely. A system that blocks a legitimate need gets routed around.
+
+> **⚠ Since 2026-08-17 this paragraph defines a FIELD SET, not only a tab list —
+> `adr/0014`.** *How do I reach them* is what decision 1 of that ADR uses to draw the
+> supervisory line **inside** the Personal tab: a name and a way to contact it, and
+> nothing further. The rejection of Employment-only stands unchanged, for the reason
+> written above — a number that cannot be found in the system gets found on WhatsApp.
+>
+> ⚠ `nationality` and `gender` fall outside that line despite looking harmless. Drawing
+> it by *what would be bad to show* instead of by the question above is the point where
+> the rule stops being this paragraph and becomes an estimate.
 
 **Emergency contact is the deliberate exception.** Name and phone number only, surfaced on
 the **Employment** tab rather than behind Family. If there is an accident at work the

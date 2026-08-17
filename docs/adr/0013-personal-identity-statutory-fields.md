@@ -278,6 +278,24 @@ Neither was ever going to raise an alarm — but "invisible because it is
 only a display rule" and "invisible because nobody wrote it" are
 different states, and this note is what keeps them distinguishable.
 
+> **✅ Taken up 2026-08-17 by `adr/0014` — the screen this deferral
+> named.** Both flags are **model accessors**:
+> `Employee::hasTerminalStatus()` is the same shape and the same size,
+> and `conventions.md` §1 admits short predicates on a model. A view
+> composer was rejected — no precedent here, and something that will
+> emit an event once the Notification Engine exists does not belong in
+> a presentation layer.
+>
+> **Both render on the Employment tab, not Personal.** `adr/0014`
+> decision 1 withholds `epf_no`, `socso_no` and `permit_expiry` from
+> the supervisory tier, so a flag on Personal would be invisible to the
+> tier most likely to act on it.
+>
+> **The deferral is answered; the code is not written.** Neither
+> accessor exists yet — both land with the UI-2 PR, and until then the
+> ⚠ above holds exactly as written: an expired permit and a `CONFIRMED`
+> employee with no statutory numbers are invisible.
+
 ### 2. The FormRequest rule requiring `ic_no` **or** `passport_no`
 
 **Deferred to the registration form.** The three columns decision 1 made
