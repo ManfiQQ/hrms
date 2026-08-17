@@ -100,10 +100,79 @@ class EmployeePolicy
      * The emergency contact is the deliberate exception, and it is not a third tab: name and
      * number are surfaced ON the Employment tab, because a supervisor is likely the first
      * person present at an accident (Employee::emergencyContacts()).
+     *
+     * ⚠ PERSONAL IS ON THIS LIST BUT IS NOT OPENED WHOLE — `adr/0014`, 2026-08-17. Membership
+     * here means the tab OPENS for this tier; personalFieldsFor() decides what it opens onto,
+     * and for a supervisor that is FOUR FIELDS, not the twelve identity and statutory columns
+     * `adr/0013` put behind it.
+     *
+     * The reason is the paragraph above, unchanged and now doing a second job: it was written
+     * when the tab held `full_name`, `nickname` and `email`, and it says a supervisor does not
+     * need a copy of somebody's IC. `adr/0013` then placed exactly that behind the tab.
+     * Neither decision was wrong; the argument and the data stopped matching, and `adr/0014`
+     * reads the argument as defining the FIELD SET rather than only the tab list.
+     *
+     * ⚠ A reader consulting this constant alone will over-answer for TAB_PERSONAL. That is
+     * why viewTab() does not consult it for that tab at all — see the derivation there.
      */
     public const SUPERVISORY_TABS = [
         self::TAB_EMPLOYMENT,
         self::TAB_PERSONAL,
+    ];
+
+    /**
+     * The Personal tab's field set for the supervisory tier — `adr/0014` decision 1, §7.1.
+     *
+     * ⚠ THESE ARE DISPLAY KEYS, NOT COLUMNS, and the difference is load-bearing twice.
+     * `phone_no` is not on `employees` at all — it is the login username on `users`, reached
+     * through Employee::user() (`adr/0006`, `adr/0013` decision 1) — and `nationality` is a
+     * relation, which `adr/0014`'s prose names by its column, `nationality_id`. A list of
+     * columns would imply the model can answer for it; a list of keys says the view resolves
+     * each one.
+     *
+     * ⚠ Four fields, and the argument for each is the same one sentence: *how do I reach
+     * them*. A name, what people call them, and two ways to make contact. Nothing else on the
+     * tab answers that question.
+     */
+    public const PERSONAL_FIELDS_SUPERVISORY = [
+        'full_name',
+        'nickname',
+        'email',
+        'phone_no',
+    ];
+
+    /**
+     * The whole Personal tab — the administrative tier, FULL, VIEW_ONLY, and the employee on
+     * their own record (`adr/0014` decision 1).
+     *
+     * ⚠ BUILT BY UNPACKING THE SUPERVISORY SET, so the four are a SUBSET BY CONSTRUCTION. A
+     * field added below can never silently drop one of them, and the two lists cannot part
+     * company over a name — the same argument the derivation in viewTab() makes for the
+     * boolean.
+     *
+     * ⚠ `nationality` and `gender` are here rather than above, and they are the test of the
+     * rule. Neither looks dangerous, which is exactly why admitting them would matter:
+     * including a field because it SEEMS HARMLESS replaces the written argument with an
+     * estimate, and an estimate cannot be defended on the next field (`adr/0014` decision 1).
+     *
+     * ⚠ `bank_name` and `bank_account_no` are where salary is SENT, not how much. Employee
+     * Master holds no salary data (§10 decision 3), and their presence here is not an opening
+     * for some.
+     */
+    public const PERSONAL_FIELDS_ALL = [
+        ...self::PERSONAL_FIELDS_SUPERVISORY,
+        'ic_no',
+        'passport_no',
+        'permit_expiry',
+        'date_of_birth',
+        'gender',
+        'nationality',
+        'address',
+        'epf_no',
+        'socso_no',
+        'tax_no',
+        'bank_name',
+        'bank_account_no',
     ];
 
     /**
@@ -218,6 +287,21 @@ class EmployeePolicy
             );
         }
 
+        // ⚠ THE PERSONAL TAB IS ANSWERED BY ITS FIELD LIST, NOT BY THE BRANCHES BELOW —
+        // `adr/0014` decision 2. The boolean is DERIVED: this tab opens exactly when there is
+        // something on it to open.
+        //
+        // The call goes ONE WAY ONLY. personalFieldsFor() never asks viewTab() anything, so
+        // there is no recursion — it resolves the tier itself, in the same order the branches
+        // below use, and shares this method's supervisory bound through supervises().
+        //
+        // Deriving rather than writing the rule twice is the point. Two copies would drift and
+        // neither would look wrong alone; this way viewTab() cannot answer *yes* for a tier
+        // whose field list is empty, which is a state the two-copy version could reach.
+        if ($tab === self::TAB_PERSONAL) {
+            return $this->personalFieldsFor($actor, $employee) !== [];
+        }
+
         // FULL and VIEW_ONLY hold no employee record at all, so no role check could ever
         // answer for them — which is precisely why system_access exists as a separate
         // dimension from employee_roles (adr/0004 decision 2).
@@ -243,18 +327,34 @@ class EmployeePolicy
             return true;
         }
 
-        // ⚠ The supervisory tier is bounded TWICE — the reporting line and own company — and
-        // the company comparison reads `employees.company_id` on BOTH sides, never
-        // `employee_roles.company_id` for the subject. The role row says where authority
-        // applies; the employee row says who employs the person, and the same-company rule is
-        // about employment (adr/0002 decision 4, adr/0003 decision 6).
-        //
-        // A shared department is exactly where the company half is most likely to be got
-        // wrong, because the two employees are visibly colleagues.
         if (! in_array($tab, self::SUPERVISORY_TABS, true)) {
             return false;
         }
 
+        return $this->supervises($actor, $employee);
+    }
+
+    /**
+     * Does the actor supervise this employee? — the supervisory tier's whole bound.
+     *
+     * ⚠ EXTRACTED FROM viewTab() 2026-08-17 WITHOUT A BEHAVIOUR CHANGE, so that
+     * personalFieldsFor() reads the same rule rather than restating it. Two copies would
+     * drift, and neither copy would look wrong on its own — the reasoning that made
+     * SUPERVISORY_ROLES public in `adr/0011`. `EmployeePolicyTest` is the evidence the
+     * extraction changed nothing: 26 tests and 78 assertions before it and after it, not
+     * merely green both times.
+     *
+     * ⚠ The tier is bounded TWICE — the reporting line and own company — and the company
+     * comparison reads `employees.company_id` on BOTH sides, never `employee_roles.company_id`
+     * for the subject. The role row says where authority applies; the employee row says who
+     * employs the person, and the same-company rule is about employment (adr/0002 decision 4,
+     * adr/0003 decision 6).
+     *
+     * A shared department is exactly where the company half is most likely to be got wrong,
+     * because the two employees are visibly colleagues.
+     */
+    private function supervises(User $actor, Employee $employee): bool
+    {
         $actorEmployee = $this->employeeOf($actor);
 
         if ($actorEmployee === null) {
@@ -291,6 +391,60 @@ class EmployeePolicy
         }
 
         return $this->roles->hasAnyRole($actor, self::SUPERVISORY_ROLES, $employee->company_id);
+    }
+
+    /**
+     * Which Personal-tab fields may this account read on this record? — `adr/0014` decision 1.
+     *
+     * ⚠ THE FIRST POLICY METHOD IN THIS SYSTEM THAT RETURNS SOMETHING OTHER THAN A BOOLEAN,
+     * and that is an exception rather than a new convention. Seven tabs are genuine yes/no
+     * questions; changing all eight to return lists would tell a small lie seven times in
+     * order to tell the truth once (`adr/0014` decision 2).
+     *
+     * ⚠ AN EMPTY ARRAY IS THE REFUSAL, and viewTab() reads it as one. There is no third
+     * answer — a caller receiving `[]` was refused the tab, not handed a tab with nothing on
+     * it.
+     *
+     * ⚠ THE ORDER OF THE CHECKS IS THE ORDER OF THE DECISION and matches viewTab()'s own:
+     * system access, then the actor's own record, then read scope, then the administrative
+     * tier, then supervision. Two consequences fall out of that order rather than out of a
+     * special case — an employee reads their own IC whatever role they hold, and an account
+     * that is administrative at one company and supervisory at another resolves
+     * administrative. Holding both is not holding the lesser one.
+     *
+     * ⚠ WHAT THIS DOES NOT GUARD, stated where the design is rather than in
+     * `conventions.md` §9. A caller can still load an Employee and read `$employee->ic_no`
+     * without asking this method anything: the screens are guarded, the model is not, and
+     * nothing at the policy layer can change that. A model answering differently depending on
+     * who asked would break the Actions, the seeders and the importer. `adr/0014` records this
+     * as a known limit — it has NOT happened, and §9 holds what occurred.
+     *
+     * @return list<string> display keys from PERSONAL_FIELDS_ALL, or [] when refused
+     */
+    public function personalFieldsFor(User $actor, Employee $employee): array
+    {
+        if (in_array($actor->system_access, ['FULL', 'VIEW_ONLY'], true)) {
+            return self::PERSONAL_FIELDS_ALL;
+        }
+
+        if ($actor->employee_id === $employee->id) {
+            return self::PERSONAL_FIELDS_ALL;
+        }
+
+        if (! in_array($employee->company_id, $this->scope->resolve($actor), true)) {
+            return [];
+        }
+
+        if ($this->hasAnyRoleInScope($actor, self::ADMINISTRATIVE_ROLES)) {
+            return self::PERSONAL_FIELDS_ALL;
+        }
+
+        // ⚠ The same bound viewTab() applies, through the same method — not a second copy of
+        // the reporting-line rule. A supervisor who does not supervise this employee gets [],
+        // which is the same refusal they would get for the Family tab.
+        return $this->supervises($actor, $employee)
+            ? self::PERSONAL_FIELDS_SUPERVISORY
+            : [];
     }
 
     /**

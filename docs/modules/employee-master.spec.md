@@ -1077,6 +1077,70 @@ Blade + Livewire 3. Screens: employee list (search/filter/paginate), employee de
 (tabbed — Employment, Personal, Family, Education, Employment History, Documents,
 **Roles & Functions**, Status History), create/edit form, archive confirmation.
 
+### 7.1 What each tab displays
+
+**The record header sits outside the tabs**, because it identifies the record rather than
+describing it: `employee_no`, `full_name`, and the current `staff_status`. Anyone who may
+open the record at all sees it — the list already shows all three to the same readers
+(§5.4).
+
+**Employment.** Org assignment (`branch`, `department`, `position`, `level`), employment
+terms (`employment_type`, `staff_status`, `join_date`, `probation_end_date`,
+`confirmation_date`), the working pattern (`attendance_type`, `work_start_time`,
+`work_end_time`, `ot_after_time`, `working_days`, `offday`, `hours_enabled`),
+`fingerprint_id`, the two BR-8 reporting columns (`direct_supervisor_id`, `manager_id`,
+shown as names), and the rejoiner link where `previous_employee_id` is set (BR-13). The
+**emergency contact — name and number only** — is surfaced here rather than behind Family,
+which is §6.2's deliberate exception. The payroll employer and the derived BR-12
+cross-company line are specified below. **Both `adr/0013` flags render on this tab** — an
+expired permit, and a `CONFIRMED` employee missing an EPF **or** SOCSO number (`adr/0013`
+decisions 4 and 5, `adr/0014`). The flags state that a gap exists; the numbers themselves
+are Personal-tab data and are not shown here.
+
+**Personal.** ⚠ **This tab is tiered by field, and the two sets are not the same screen
+with things greyed out — see `adr/0014` decision 1.** The supervisory tier reads **four
+fields**: `full_name`, `nickname`, `email`, and `users.phone_no` (read-only, through
+`Employee::user()` — the employee record holds no number of its own, `adr/0006`). The
+administrative tier, `FULL`, `VIEW_ONLY`, and the employee on their own record read those
+four **plus** the twelve identity and statutory fields `adr/0013` added: `ic_no`,
+`passport_no`, `permit_expiry`, `date_of_birth`, `gender`, `nationality`, `address`,
+`epf_no`, `socso_no`, `tax_no`, `bank_name`, `bank_account_no`. The field list is resolved
+by `EmployeePolicy::personalFieldsFor()`, and `viewTab()`'s answer for this tab is derived
+from it rather than written twice.
+
+**Family.** Every `employee_family_members` row: `relationship`, `name`, `contact_no`, and
+which row carries `is_emergency_contact`. Nothing further — the emergency contact's name
+and number also appear on Employment, and that duplication is the point of §6.2's
+exception rather than an oversight.
+
+**Education.** Every `employee_education_history` row: `level`, `institution`, `year`.
+
+**Employment History.** Every `employee_employment_history` row: `company_name`,
+`position`, `start_date`, `end_date`. ⚠ **This is employment before this group, not
+movement between its entities.** A company transfer is `employee_status_history` and
+appears on the Status History tab; a reader who confuses the two will read a transfer as a
+resignation.
+
+**Documents.** ⚠ **Present as a tab, and empty.** It states that the document path is not
+built rather than listing files nothing can open. `adr/0012` decision 11 binds the serving
+controller, the routes, the FormRequests, the Actions and the submissions table to the PR
+that builds this tab, and that PR is not the one that builds the other seven. **No `PHOTO`
+is rendered anywhere on this screen, including Personal** — a photo is a file (`adr/0013`
+decision 7) and displaying one pulls in the same serving path.
+
+**Roles & Functions.** Current authority grouped by company — `role`, `effective_date`,
+and who granted it — with revoked rows available but visually separated, carrying
+`revoked_date` and who revoked them; and the job functions this person performs, per
+company. **Read-only.** Grant and revoke controls are not on this screen at all: §5.6 is
+explicit that hiding a control is presentation while the authorisation is the rule, and a
+control that was never rendered cannot be one the policy has to reject. **Who may grant or
+revoke, per role and per company, is §6's matrix** — this tab neither restates it nor
+depends on it, and the controls land with the create/edit screens.
+
+**Status History.** The merged chronological timeline specified below — each entry
+carrying its date, its label, its source, the company it happened at, and who made it.
+**Read-only**, reinforcing §5.3 at the interface level.
+
 Status History tab is **read-only** in the UI — reinforcing §5.3 at the interface level.
 
 **Roles & Functions tab** shows current authority grouped by company, with revoked rows

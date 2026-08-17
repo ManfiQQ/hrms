@@ -250,6 +250,22 @@ index on the same column is dead weight MySQL maintains on every write.
 > `date_of_birth`, `gender` or `nationality_id` cannot be created at all (`CLAUDE.md` §10
 > question (f)).
 
+> **⚠ The `epf_no, socso_no` row above says *"with neither"*, and that is NARROWER than the
+> rule — corrected 2026-08-17, `adr/0014`.** The row stands as written; this is what it
+> means. **`adr/0013` decision 5 is the binding statement, and the flag rises when EITHER
+> number is missing.**
+>
+> EPF and SOCSO are **two separate registrations with two different agencies**, so
+> half-complete is an ordinary state rather than an edge case — and it is the state that
+> matters, because it means one of two applications has stalled. Under the narrower reading an
+> employee registered with EPF but not SOCSO raises nothing, **while SOCSO contributions
+> accrue unpaid**: exactly the retroactive settlement the row above hands to Payroll, made
+> invisible at the moment it starts.
+>
+> Implemented as `Employee::hasIncompleteStatutoryRegistration()`, which also treats an empty
+> string as an absent number. **Still not a gate in either direction** — no block on
+> `ChangeEmployeeStatus`, none on payroll (`adr/0013` decision 5).
+
 > **`(company_id, staff_status)` was added on 2026-08-13 by editing the creating migration
 > in place** — it was required by `employee-master.spec.md` §3 from the start and simply
 > never written. The in-place edit was available because no migration has yet run against

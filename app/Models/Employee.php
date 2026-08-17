@@ -485,4 +485,55 @@ class Employee extends Model
     {
         return in_array($this->staff_status, self::TERMINAL_STATUSES, true);
     }
+
+    /**
+     * An expired work permit — `adr/0013` decision 4, rendered on the Employment tab (§7.1).
+     *
+     * ⚠ A DISPLAY RULE WITH NO ENFORCEMENT BEHIND IT, DELIBERATELY. An expired permit does not
+     * stop anyone working and does not stop this record being used: renewal is the response,
+     * not suspension. Nothing may gate on this method, and a caller that does has turned a
+     * flag into a block that `adr/0013` refused to create.
+     *
+     * ⚠ AN EMPTY DATE IS NEVER FLAGGED, and that is the direct cost of decision 4's
+     * nullability rather than an oversight. A non-citizen whose permit is in process, or who
+     * holds a different pass, has no date here — the system knows nothing about their permit
+     * and does not pretend to. Requiring the date would have produced a fabricated one, which
+     * is worse in a permit field for the same reason it is worse in a phone field (BR-A1).
+     *
+     * The comparison is a date comparison because `permit_expiry` is cast; comparing strings
+     * would sort `2026-09-01` against `2026-10-01` correctly and everything else by luck.
+     */
+    public function hasExpiredPermit(): bool
+    {
+        return $this->permit_expiry !== null && $this->permit_expiry->isPast();
+    }
+
+    /**
+     * A CONFIRMED employee whose EPF or SOCSO registration is incomplete — `adr/0013`
+     * decision 5, rendered on the Employment tab (§7.1).
+     *
+     * ⚠ EITHER NUMBER MISSING RAISES IT, NOT BOTH, and this is the reading `adr/0014`
+     * settled on 2026-08-17. EPF and SOCSO are **two separate registrations with two
+     * different agencies**, so half-complete is a real state rather than an edge case — and
+     * it is precisely the state HR must see, because it means one of two applications has
+     * stalled. Under the narrower reading, an employee registered with EPF but not SOCSO is
+     * invisible while SOCSO contributions accrue unpaid.
+     *
+     * ⚠ `schema.md`'s row for these columns said *"with neither"*, which is narrower than
+     * decision 5 and is now carried under a dated pointer there. The ADR binds.
+     *
+     * ⚠ NOT A GATE, in either direction. There is no block on `ChangeEmployeeStatus` and none
+     * on payroll: registration takes a month or two, and blocking payroll over paperwork
+     * means somebody is not paid. Contributions accruing in the meantime must be settled
+     * retroactively, and that is **Payroll's inherited requirement** — this module holds none
+     * of the figures it would need.
+     *
+     * `blank()` rather than `=== null`: an empty string is an absent number wearing a value,
+     * and the flag exists to show what is missing.
+     */
+    public function hasIncompleteStatutoryRegistration(): bool
+    {
+        return $this->staff_status === 'CONFIRMED'
+            && (blank($this->epf_no) || blank($this->socso_no));
+    }
 }
