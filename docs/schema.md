@@ -1055,6 +1055,22 @@ nullable), `activation_token` (string, unique, nullable), `activation_expires_at
 login username, `adr/0006`), `failed_login_attempts` (unsigned integer,
 **NOT NULL, default 0**), `locked_until` (timestamp, nullable).
 
+> **⚠ `phone_no` unique blocks every rejoining employee — found 2026-08-17.** A rejoiner brings
+> the same number, because it is theirs. `User` has **no soft deletes**, and a terminal status
+> freezes and expires the account (BR-A15, BR-A17) without removing the row, so the old row goes
+> on holding that number for ever. `CreateEmployee` therefore fails on
+> `users_phone_no_unique` **inside its transaction, as a raw 1062** — a 500 rather than a
+> message naming a field, because **nothing validates it in advance**: no `unique:users,phone_no`
+> exists anywhere in `app/`.
+>
+> Every way out is closed by a rule that is right on its own — no second number (`adr/0006`
+> decision 7), no placeholder (BR-A1), no reactivation (BR-A18), no employee without an account
+> (BR-A20), and deleting the old row would destroy the audit trail the freeze exists to keep.
+>
+> **This is the same question as `ic_no` above** (`adr/0003` decision 9), and the two must be
+> decided together — fixing either alone leaves the flow blocked. Recorded at BR-A18 in
+> `auth-rbac.spec.md`. **No ADR exists yet.**
+
 > **BR-A3's throttle state — added 2026-08-12**
 > (`2026_08_12_100200_add_login_throttle_to_users_table.php`). The spec described four tiers
 > and a counter that resets on success, and gave them nowhere to live.

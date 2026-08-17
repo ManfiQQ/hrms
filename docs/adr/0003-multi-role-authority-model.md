@@ -454,8 +454,18 @@ unbroken employment, a rejoin is two separate ones.
 > cause this and does not worsen it — it converts a raw constraint violation into a message
 > naming the field. **The block is the index.**
 >
-> **It needs an ADR of its own and one has not been written.** Recorded in `schema.md` under
-> `ic_no` as well, since that is where somebody hits it.
+> **⚠ And `ic_no` is not the only one — `users.phone_no` blocks the same flow, and worse.** A
+> rejoiner brings the same phone number; it is NOT NULL and unique; `User` has no soft deletes,
+> so the old account row survives its freeze and expiry still holding that number. There is no
+> validation rule for it anywhere, so `CreateEmployee` fails **inside its transaction as a raw
+> 1062 — a 500, not a field message**. A second number is refused by `adr/0006` decision 7, a
+> placeholder by BR-A1, reactivation by BR-A18, and skipping the account by BR-A20. Recorded at
+> BR-A18 in `auth-rbac.spec.md`.
+>
+> **The two are one question.** `passport_no` and `fingerprint_id` sit on the same index shape
+> and inherit it. Deciding `ic_no` alone leaves the flow exactly as blocked, so the ADR this
+> needs covers **every unique identity column, `users.phone_no` included**. It has not been
+> written. Recorded in `schema.md` under `ic_no` as well, since that is where somebody hits it.
 
 **`employees.previous_employee_id`** — self-FK, nullable — links a rejoiner's new record to
 their old one. BR-2 already requires reinstatement to reference the prior record but no

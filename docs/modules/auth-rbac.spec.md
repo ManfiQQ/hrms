@@ -363,6 +363,25 @@ found. Implemented 2026-08-12; see §5.2.
 **BR-A18 — No reactivation after a terminal status, by anyone, including Master Admin.**
 A rejoining employee gets a new employee record, a new `employee_no`, and a new account.
 
+> **⚠ THE NEW ACCOUNT CANNOT BE CREATED, AND NOTHING ANYWHERE SAYS SO — found 2026-08-17.**
+>
+> A rejoiner brings **the same phone number**, because it is their number. `users.phone_no` is
+> NOT NULL and **unique**, `User` carries **no soft deletes**, and a terminal status freezes and
+> expires the old account (BR-A15, BR-A17) without ever removing the row. So the old row still
+> holds that number, and `CreateEmployee`'s `$user->save()` hits
+> `users_phone_no_unique` — **inside the transaction, as a raw 1062, which surfaces as a 500
+> rather than a message naming a field.** Nothing validates it in advance: no rule anywhere in
+> `app/` checks `unique:users,phone_no`.
+>
+> **Every escape is closed by a rule that is correct on its own.** A second number is refused
+> (`adr/0006` decision 7). A placeholder is refused (BR-A1). Reactivating the old account is
+> refused — by this rule. Skipping the account is refused (BR-A20). Deleting the old row would
+> destroy the audit trail that the freeze and expiry exist to preserve.
+>
+> This is the **second** blocker on the rejoining flow. The first is `employees.ic_no`, recorded
+> in `schema.md` and `adr/0003` decision 9. **They are one question and must be decided
+> together**, because deciding either alone leaves the flow just as blocked. Neither has an ADR.
+
 **BR-A19 — The countdown is visible on five dashboards** — the employee's own, HR's,
 Account's, Master Admin's, and the employee's manager or supervisor's. This is the
 correction mechanism for a status set in error; there is no cancel path.
