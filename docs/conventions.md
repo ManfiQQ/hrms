@@ -625,6 +625,27 @@ being run to confirm a new guard, and finding this was incidental — which is t
 top of §9 restated from the other end: watching a break is how the shape of the existing
 coverage becomes visible at all. Recorded 2026-08-17.
 
+### ⚠ Two tables have two id sequences, and a merged sort can pass on coincidence
+
+`StatusTimelineTest`'s tie-break guard went **green with the rank map deleted.** The break was
+in place — checked first, per the rule at the top of §9 — and **the guard was the weak half.**
+
+`employee_status_history` and `employee_roles` number **independently from 1**, so the
+same-day ledger row and the first role row carried the same id. With the rank gone their sort
+keys were identical, a stable sort preserved merge order, and merge order happened to be the
+expected order.
+
+**The guard was asserting the answer, not the mechanism that produces it.**
+
+Fixed by forcing the ledger id above the role ids — in a **loop, not by a fixed count**,
+because MySQL does not rewind auto-increment on a rolled-back test and the gap between the two
+sequences differs per run. A fixed number would have made the guard **flaky instead of weak,
+which is worse**: a guard that fails sometimes gets re-run until it passes.
+
+⚠ **Any merge of two tables is exposed to this.** Ids from separate sequences are not
+comparable, and a test whose fixture happens to produce the expected order proves the fixture,
+not the code. Recorded 2026-08-17.
+
 ---
 
 ## 10. Required Validation Before Calling a Module "Done"
