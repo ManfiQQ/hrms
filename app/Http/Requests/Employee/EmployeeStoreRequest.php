@@ -48,6 +48,23 @@ class EmployeeStoreRequest extends FormRequest
             // decision 6).
             'email' => ['nullable', 'email', 'max:255'],
 
+            // ⚠ THE REJOINER LINK — BR-13, adr/0003 decision 9. A rejoining employee gets a
+            // NEW record with a NEW employee_no, never a reactivated one, and this column is
+            // what ties the two together. BR-2 has required that reference since before the
+            // column existed; until this rule landed there was no way to supply it.
+            //
+            // ⚠ NEITHER TENANT-SCOPED NOR FILTERED ON deleted_at, both deliberately. `exists`
+            // runs on the query builder, so TenantScope does not apply — a rejoiner may return
+            // to a different group entity, and the prior record belongs to whoever employed
+            // them then. An archived prior record is the ordinary case rather than an error.
+            //
+            // ⚠ NOTHING REQUIRES THE PRIOR RECORD TO HOLD A TERMINAL STATUS, and nothing makes
+            // the link unique. Both are real questions — whether a rejoiner from an ACTIVE
+            // record is a contradiction, whether two records may claim one predecessor — and
+            // neither is decided anywhere. Inventing either here would put a business rule
+            // nobody agreed to in the validation layer.
+            'previous_employee_id' => ['nullable', 'integer', 'exists:employees,id'],
+
             // ⚠ THE LOGIN USERNAME, and it belongs to the ACCOUNT, not to this record
             // (adr/0006). It is required because BR-A20 creates an account in the same
             // transaction, and decision 7 requires every employee to hold one so they can
@@ -67,11 +84,44 @@ class EmployeeStoreRequest extends FormRequest
             // them would reach the insert and come back as a raw constraint violation, which
             // is a 500 to the user rather than a message naming the field.
             //
-            // ⚠ The conditional "at least one of ic_no or passport_no" rule (decision 2) is
-            // deliberately NOT here yet, and the difference is not arbitrary. These three
-            // restate something the schema already enforces; that one enforces something the
-            // database cannot know, and it needs the form to be tested meaningfully. adr/0013
-            // records the deferral as a dated amendment.
+            // ⚠ AT LEAST ONE OF THE TWO — adr/0013 decision 2, whose 2026-08-15 amendment
+            // deferred this rule to "the registration form" and recorded the cost of its
+            // absence: *"an employee can be registered with neither an IC nor a passport, and
+            // nothing anywhere objects."* That is closed here. It is not a timing rule — it is
+            // the requirement that every person carry one form of identification.
+            //
+            // ⚠ IMPLICIT, AND THAT IS WHY IT IS `required_without` RATHER THAN A CLOSURE.
+            // `required_without` sits in Validator::$implicitRules, so it fires even though
+            // `nullable` stands beside it and even when the value arrives as null or as the
+            // empty string a form posts for an untouched box. A closure would not fire at all
+            // in those cases — `nullable` skips non-implicit rules on a null value — and the
+            // null submission is precisely the case worth catching.
+            //
+            // Symmetric on purpose: with both missing, both boxes carry the message, because
+            // either one satisfies the rule and the form should say so on both.
+            //
+            // ⚠ NO FORMAT RULE AND NO NORMALISATION, AND THE SECOND IS A KNOWN HOLE. An IC is
+            // written with dashes about as often as without, and nothing normalises it the way
+            // App\Support\Auth\PhoneNumber normalises the login username — so `900101-14-5501`
+            // and `900101145501` are two values that both pass the unique index and are one
+            // person. Recorded in conventions.md §9; fixing it changes stored values, which is
+            // a migration and an ADR rather than a rule.
+            //
+            // ⚠ THE UNIQUE RULE BLOCKS EVERY REJOINER, AND IT IS NOT THE CAUSE. adr/0003
+            // decision 9 gives a rejoiner a new record; they bring the same IC; the unique
+            // INDEX refuses it with or without this line. All this rule changes is a raw
+            // constraint violation into a message naming the field. See schema.md under
+            // `ic_no` and adr/0003 decision 9 — the contradiction needs an ADR and has none.
+            'ic_no' => ['nullable', 'required_without:passport_no', 'string', 'max:255', 'unique:employees,ic_no'],
+            'passport_no' => ['nullable', 'required_without:ic_no', 'string', 'max:255', 'unique:employees,passport_no'],
+
+            // ⚠ NO `after:today` BOUND, AND ADDING ONE WOULD BREAK A DECISION. An expired
+            // permit blocks nothing, suspends nobody, and stops no record being used — it
+            // raises a flag and, once the Notification Engine exists, notifies HR and the
+            // employee (adr/0013 decision 4). Renewal is the response. A future-date rule here
+            // would make a record that legitimately exists impossible to save.
+            'permit_expiry' => ['nullable', 'date'],
+
             'date_of_birth' => ['required', 'date', 'before:today'],
 
             // ⚠ NO MINIMUM AGE RULE, AND ITS ABSENCE IS DELIBERATE RATHER THAN AN OVERSIGHT.
@@ -86,6 +136,44 @@ class EmployeeStoreRequest extends FormRequest
             // that could still select one would make the withdrawal decorative. The edit path
             // answers this differently on purpose — see EmployeeUpdateRequest.
             'nationality_id' => ['required', 'integer', Rule::exists('nationalities', 'id')->whereNull('deleted_at')],
+
+            // ⚠ SIX NULLABLE COLUMNS, ON BOTH FORMS, AND THE REASON IS OPERATIONAL RATHER THAN
+            // TECHNICAL. This information arrives IN STAGES: a bank number in the first week,
+            // an EPF number a month later, SOCSO a week after that — three separate visits to
+            // the edit form, each filling one field. Any one of them marked required would
+            // block the HR clerk who came to enter a SOCSO number because the tax number is
+            // still empty. adr/0013 decision 3 says the same thing from the schema's side: a
+            // record without these is CORRECT, not incomplete.
+            //
+            // ⚠ AND THEY ARE ON THE REGISTRATION FORM, NOT ONLY THE EDIT FORM. EPF and SOCSO
+            // numbers do not change with employer, so an experienced hire holds both on day
+            // one; it is the first-time employee who has neither. Withholding the five until
+            // the edit form would block the majority to accommodate the minority.
+            //
+            // ⚠ NO UNIQUENESS ON epf_no OR socso_no. The table carries no unique index on
+            // either, and a uniqueness rule the database does not share holds only where it is
+            // called — which is nowhere the importer or a seeder goes.
+            //
+            // ⚠ NO FORMAT RULES. EPF, SOCSO and LHDN formats vary by era and by registration
+            // route, and nobody has decided which shapes are legitimate. A guessed regex here
+            // rejects real numbers, which is worse than accepting an odd one.
+            //
+            // `address` is one text column and never parsed into components (adr/0013
+            // decision 1). ⚠ `max:65535` restates the TEXT column, and the two do not measure
+            // the same thing: MySQL bounds TEXT in BYTES, this rule counts CHARACTERS, so a
+            // multibyte address at the extreme passes here and fails on insert. Real addresses
+            // are nowhere near it, and a lower invented bound would be a business rule nobody
+            // decided.
+            'address' => ['nullable', 'string', 'max:65535'],
+            'epf_no' => ['nullable', 'string', 'max:255'],
+            'socso_no' => ['nullable', 'string', 'max:255'],
+            'tax_no' => ['nullable', 'string', 'max:255'],
+
+            // Where salary is SENT, never how much — Employee Master holds no salary at all
+            // (§10 decision 3, adr/0003 decision 5), and neither column may become an opening
+            // for some.
+            'bank_name' => ['nullable', 'string', 'max:255'],
+            'bank_account_no' => ['nullable', 'string', 'max:255'],
 
             // ⚠ NO `exists:companies` COUPLING BETWEEN THESE AND company_id, DELIBERATELY.
             // BR-12: an employee of TURSENIA sitting in the shared Logistics branch is a
@@ -165,6 +253,17 @@ class EmployeeStoreRequest extends FormRequest
         return [
             'ot_after_time.required_if' => 'An OT threshold is required for FIXED attendance. '
                 .'It is left empty only for FLEXIBLE, where overtime is applied by a human.',
+
+            // ⚠ Both keys carry the SAME sentence, and it names the pair rather than the
+            // field. Laravel's own wording — "the ic no field is required when passport no is
+            // not present" — states the mechanism and hides the rule; what HR needs to read is
+            // that either box will do.
+            'ic_no.required_without' => 'An employee must hold at least one form of '
+                .'identification: fill in either the IC number or the passport number '
+                .'(adr/0013 decision 2).',
+            'passport_no.required_without' => 'An employee must hold at least one form of '
+                .'identification: fill in either the IC number or the passport number '
+                .'(adr/0013 decision 2).',
         ];
     }
 }

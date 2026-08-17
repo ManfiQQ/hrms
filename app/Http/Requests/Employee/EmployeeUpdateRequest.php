@@ -58,6 +58,33 @@ class EmployeeUpdateRequest extends FormRequest
             'nickname' => ['nullable', 'string', 'max:255'],
             'email' => ['nullable', 'email', 'max:255'],
 
+            // The rejoiner link (BR-13, adr/0003 decision 9) — editable because it is
+            // routinely discovered after registration, when somebody recognises the returning
+            // employee. See EmployeeStoreRequest for why it is neither tenant-scoped nor
+            // filtered on deleted_at, and for the two rules deliberately not written.
+            'previous_employee_id' => ['nullable', 'integer', 'exists:employees,id', $this->notPreviouslyThemselves($id)],
+
+            // ⚠ AT LEAST ONE OF THE TWO, EVALUATED AGAINST THE RECORD'S FINAL STATE — adr/0013
+            // decision 2. See identityDocumentRule() below for the whole of the reasoning; the
+            // short version is that this form PATCHES, so the rule cannot ask what the payload
+            // contains. It has to ask what the record will hold once the payload is applied.
+            'ic_no' => [$this->identityDocumentRule($employee), 'string', 'max:255', Rule::unique('employees', 'ic_no')->ignore($id)],
+            'passport_no' => [$this->identityDocumentRule($employee), 'string', 'max:255', Rule::unique('employees', 'passport_no')->ignore($id)],
+
+            // No `after:today` bound — an expired permit is a flag, never a block (adr/0013
+            // decision 4). Same reasoning as EmployeeStoreRequest.
+            'permit_expiry' => ['nullable', 'date'],
+
+            // The six that arrive in stages, over weeks — see EmployeeStoreRequest. This is
+            // the form they arrive ON: a bank number one week, EPF the next month, SOCSO after
+            // that, each a separate visit filling one field.
+            'address' => ['nullable', 'string', 'max:65535'],
+            'epf_no' => ['nullable', 'string', 'max:255'],
+            'socso_no' => ['nullable', 'string', 'max:255'],
+            'tax_no' => ['nullable', 'string', 'max:255'],
+            'bank_name' => ['nullable', 'string', 'max:255'],
+            'bank_account_no' => ['nullable', 'string', 'max:255'],
+
             // The three NOT NULL identity columns (adr/0013 decision 1). `sometimes` because
             // this form patches — but once present they may not be emptied, since the column
             // refuses null and a blank field would return a raw constraint violation.
@@ -107,6 +134,85 @@ class EmployeeUpdateRequest extends FormRequest
 
             'hours_enabled' => ['boolean'],
         ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            // ⚠ `required` is the MECHANISM, not the rule, so the default wording — "the ic no
+            // field is required" — would be a lie about a nullable column. Both keys carry the
+            // same sentence, and it names the pair.
+            'ic_no.required' => 'An employee must hold at least one form of identification: '
+                .'this record would be left with neither an IC number nor a passport number '
+                .'(adr/0013 decision 2).',
+            'passport_no.required' => 'An employee must hold at least one form of '
+                .'identification: this record would be left with neither an IC number nor a '
+                .'passport number (adr/0013 decision 2).',
+        ];
+    }
+
+    /**
+     * `required` or `nullable` for `ic_no` and `passport_no` — adr/0013 decision 2, on a form
+     * that patches.
+     *
+     * ⚠ THE RULE IS ABOUT THE RECORD'S FINAL STATE, NOT ABOUT THE PAYLOAD. `required_without`,
+     * which is what EmployeeStoreRequest uses, reads the payload alone — correct there, because
+     * a registration IS the whole record. Here it would reject an edit to a bank account number
+     * for holding no IC, on a record that has held one for a year.
+     *
+     * So the final state is computed first: the submitted value where a key is present, the
+     * STORED value where it is not. The stored half is read from the ROUTE MODEL, never from
+     * the request — the same defence selectableNationality() makes, and for the same reason.
+     *
+     * ⚠ IT RETURNS `required` RATHER THAN A CLOSURE BECAUSE `required` IS IMPLICIT. Laravel
+     * skips a non-implicit rule when the value is null and `nullable` is present, and it skips
+     * it entirely when the key is absent — which are the two cases that matter here. A closure
+     * would be silent in exactly the situation it was written for: HR clearing the last
+     * identity document by submitting it empty.
+     *
+     * ⚠ AND IT FIRES ONLY WHEN THE PAYLOAD TOUCHES ONE OF THE TWO. An edit that names neither
+     * passes, even on a record holding neither. That is deliberate, and it is two arguments:
+     *
+     *   A record can only ENTER that state by having a document emptied, which means the field
+     *   was submitted, which means this rule ran. Every good → bad transition is covered.
+     *
+     *   Checking unconditionally would make a record that already holds neither — a legacy
+     *   import, `CLAUDE.md` §10 question (f) — permanently UNEDITABLE, rejecting an address
+     *   correction on a field the user never touched with nothing on screen to explain it. That
+     *   is the failure selectableNationality() exists to avoid, one column over.
+     *
+     * Validation constrains what arrives next; it does not repair what is already stored.
+     */
+    private function identityDocumentRule(?Employee $employee): string
+    {
+        if (! $this->has('ic_no') && ! $this->has('passport_no')) {
+            return 'nullable';
+        }
+
+        $ic = $this->has('ic_no') ? $this->input('ic_no') : $employee?->ic_no;
+        $passport = $this->has('passport_no') ? $this->input('passport_no') : $employee?->passport_no;
+
+        return blank($ic) && blank($passport) ? 'required' : 'nullable';
+    }
+
+    /**
+     * BR-13 — a rejoiner's new record points at their OLD one, so it can never point at itself.
+     *
+     * ⚠ notSelf() is NOT reused here despite doing the same comparison. Its message reads "an
+     * employee cannot be their own supervisor or manager (BR-8)", which would be a false
+     * statement about a different rule shown to whoever typed this field.
+     */
+    private function notPreviouslyThemselves(?int $id): callable
+    {
+        return function (string $attribute, mixed $value, callable $fail) use ($id) {
+            if ($id !== null && (int) $value === $id) {
+                $fail('An employee cannot be their own previous record. A rejoiner is a new '
+                    .'record referencing the old one (BR-13, adr/0003 decision 9).');
+            }
+        };
     }
 
     /**

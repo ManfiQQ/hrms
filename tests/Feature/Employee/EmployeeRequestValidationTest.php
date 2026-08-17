@@ -26,6 +26,16 @@ beforeEach(function () {
 
     $this->shared = Department::factory()->shared()->create(['name' => 'Logistics']);
 
+    // The group-wide vocabulary a registration must choose from (adr/0013 decision 6).
+    //
+    // ⚠ CREATED BEFORE THE FIRST EMPLOYEE, AND THE ORDER IS LOAD-BEARING — fixed 2026-08-17
+    // after this file failed roughly one run in seven. EmployeeFactory resolves its
+    // nationality as `Nationality::query()->value('id') ?? Nationality::factory()`, so against
+    // an empty table it DRAWS A RANDOM COUNTRY — and roughly one draw in two hundred and fifty
+    // is `Malaysia`, which the line below then inserts a second time. Creating it first means
+    // the employee reuses this row and nothing is ever drawn.
+    $this->nationality = Nationality::factory()->named('Malaysia')->create();
+
     // Employed by AHS, so the read scope is the whole group.
     $hrEmployee = Employee::factory()->forCompany($this->ahs)
         ->create(['department_id' => $this->shared->id]);
@@ -33,9 +43,6 @@ beforeEach(function () {
         ->create(['employee_id' => $hrEmployee->id]);
 
     $this->hr = User::factory()->forEmployee($hrEmployee)->create();
-
-    // The group-wide vocabulary a registration must choose from (adr/0013 decision 6).
-    $this->nationality = Nationality::factory()->named('Malaysia')->create();
 });
 
 function validStorePayload(array $overrides = []): array
@@ -51,6 +58,12 @@ function validStorePayload(array $overrides = []): array
         // user a raw constraint violation instead of a validation message.
         'date_of_birth' => '1995-04-12',
         'gender' => 'FEMALE',
+
+        // ⚠ ONE IDENTITY DOCUMENT IS PART OF A COMPLETE PAYLOAD FROM 2026-08-17 ONWARD
+        // (adr/0013 decision 2). Unlike the three above it is not the database asking — both
+        // columns are nullable — it is the rule that every person carry one form of
+        // identification. Tests that prove the rule remove it explicitly.
+        'ic_no' => '950412-14-5501',
         'nationality_id' => test()->nationality->id,
         'department_id' => test()->shared->id,
         'level' => 'STAFF',
@@ -70,7 +83,15 @@ function storeErrors(array $payload, User $actor): array
     $request = EmployeeStoreRequest::create('/employees', 'POST', $payload);
     $request->setUserResolver(fn () => $actor);
 
-    return Validator::make($payload, $request->rules())->errors()->keys();
+    return Validator::make($payload, $request->rules(), $request->messages())->errors()->keys();
+}
+
+function storeValidated(array $payload, User $actor): array
+{
+    $request = EmployeeStoreRequest::create('/employees', 'POST', $payload);
+    $request->setUserResolver(fn () => $actor);
+
+    return Validator::make($payload, $request->rules(), $request->messages())->validated();
 }
 
 function updateErrors(array $payload, Employee $employee, User $actor): array
@@ -83,7 +104,20 @@ function updateErrors(array $payload, Employee $employee, User $actor): array
     $route->setParameter('employee', $employee);
     $request->setRouteResolver(fn () => $route);
 
-    return Validator::make($payload, $request->rules())->errors()->keys();
+    return Validator::make($payload, $request->rules(), $request->messages())->errors()->keys();
+}
+
+function updateValidated(array $payload, Employee $employee, User $actor): array
+{
+    $request = EmployeeUpdateRequest::create('/employees/'.$employee->id, 'PATCH', $payload);
+    $request->setUserResolver(fn () => $actor);
+
+    $route = new Route(['PATCH'], '/employees/{employee}', []);
+    $route->bind($request);
+    $route->setParameter('employee', $employee);
+    $request->setRouteResolver(fn () => $route);
+
+    return Validator::make($payload, $request->rules(), $request->messages())->validated();
 }
 
 it('accepts a complete payload', function () {
@@ -306,4 +340,248 @@ it('exposes no rule for the four fields that are not profile edits', function ()
         ->not->toContain('employee_no')
         ->not->toContain('staff_status')
         ->not->toContain('company_id');
+});
+
+/**
+ * The nine columns `adr/0013` added and neither request could accept — 2026-08-17.
+ *
+ * ⚠ A FIELD WITH NO RULE DOES NOT REACH validated(), SO IT CANNOT BE SAVED AT ALL. That is why
+ * these assert the validated payload rather than an empty error set: the bug was never that the
+ * fields were rejected — nothing rejected them. They were dropped, silently, by the layer whose
+ * output the Action writes.
+ */
+it('carries every identity and statutory column through registration', function () {
+    $submitted = [
+        'ic_no' => '950412-14-5501',
+        'passport_no' => 'A12345678',
+        'permit_expiry' => '2027-03-31',
+        'address' => 'No 12, Jalan Melur 3, 68000 Ampang, Selangor',
+        'epf_no' => '14725836',
+        'socso_no' => 'B1472583',
+        'tax_no' => 'SG 10234567890',
+        'bank_name' => 'Maybank',
+        'bank_account_no' => '512345678901',
+        'previous_employee_id' => null,
+    ];
+
+    $validated = storeValidated(validStorePayload($submitted), $this->hr);
+
+    foreach ($submitted as $field => $value) {
+        expect(array_key_exists($field, $validated))
+            ->toBeTrue("{$field} must survive validation, not be dropped");
+        expect($validated[$field] ?? null)
+            ->toBe($value, "{$field} must arrive at the Action unchanged");
+    }
+});
+
+it('carries every identity and statutory column through an edit', function () {
+    $employee = Employee::factory()->forCompany($this->aim)
+        ->create(['department_id' => $this->shared->id, 'ic_no' => '880101-10-1234']);
+
+    $submitted = [
+        'passport_no' => 'B98765432',
+        'permit_expiry' => '2028-01-15',
+        'address' => 'No 5, Lorong Damai, 43000 Kajang, Selangor',
+        'epf_no' => '96385274',
+        'socso_no' => 'C9638527',
+        'tax_no' => 'OG 20987654321',
+        'bank_name' => 'CIMB',
+        'bank_account_no' => '700123456789',
+    ];
+
+    $validated = updateValidated($submitted, $employee, $this->hr);
+
+    foreach ($submitted as $field => $value) {
+        expect(array_key_exists($field, $validated))
+            ->toBeTrue("{$field} must survive validation on the edit path");
+        expect($validated[$field] ?? null)
+            ->toBe($value, "{$field} must arrive at the Action unchanged");
+    }
+});
+
+/**
+ * ⚠ adr/0013 decision 2, and the amendment of 2026-08-15 recorded the cost of its absence:
+ * *"an employee can be registered with neither an IC nor a passport, and nothing anywhere
+ * objects."* These four close it.
+ *
+ * ⚠ EACH CASE IS ITS OWN ASSERTION AND NOT ONE COMBINED PAYLOAD. Both positives matter
+ * separately: a rule written as "ic_no is required" would pass the IC case and fail the
+ * passport case, and a suite that only ever submitted an IC could not tell the two apart.
+ */
+it('registers an employee holding an IC and no passport', function () {
+    expect(storeErrors(validStorePayload(['ic_no' => '950412-14-5501', 'passport_no' => null]), $this->hr))
+        ->toBe([]);
+});
+
+it('registers an employee holding a passport and no IC', function () {
+    expect(storeErrors(validStorePayload(['ic_no' => null, 'passport_no' => 'A12345678']), $this->hr))
+        ->toBe([]);
+});
+
+it('refuses a registration carrying neither identity document, naming both fields', function () {
+    $payload = validStorePayload();
+    unset($payload['ic_no']);
+
+    expect(storeErrors($payload, $this->hr))
+        ->toBe(['ic_no', 'passport_no'], 'either field satisfies the rule, so the form must say so on both');
+});
+
+/**
+ * ⚠ THE MESSAGE IS PART OF THE RULE HERE, NOT DECORATION, AND IT WAS UNTESTED UNTIL THIS TEST
+ * EXISTED. Laravel's own wording states the mechanism and hides the rule — *"the ic no field is
+ * required when passport no is not present"* on registration, and on the edit path the bare
+ * *"the ic no field is required"* about a column that is nullable, which is simply untrue.
+ *
+ * Found 2026-08-17 by probing what the harness actually produced: the four helpers were calling
+ * `Validator::make($payload, $rules)` with no third argument, so `messages()` existed, shipped,
+ * and was exercised by nothing. The helpers now pass it, which is also what the real FormRequest
+ * pipeline does.
+ */
+it('tells HR that either identity document will do, on both paths', function () {
+    $payload = validStorePayload();
+    unset($payload['ic_no']);
+
+    $request = EmployeeStoreRequest::create('/employees', 'POST', $payload);
+    $request->setUserResolver(fn () => $this->hr);
+
+    expect(Validator::make($payload, $request->rules(), $request->messages())->errors()->first('ic_no'))
+        ->toContain('at least one form of identification');
+
+    $employee = Employee::factory()->forCompany($this->aim)
+        ->create(['department_id' => $this->shared->id, 'ic_no' => '880101-10-1234']);
+
+    $body = ['ic_no' => null];
+    $update = EmployeeUpdateRequest::create('/employees/'.$employee->id, 'PATCH', $body);
+    $update->setUserResolver(fn () => $this->hr);
+    $route = new Route(['PATCH'], '/employees/{employee}', []);
+    $route->bind($update);
+    $route->setParameter('employee', $employee);
+    $update->setRouteResolver(fn () => $route);
+
+    expect(Validator::make($body, $update->rules(), $update->messages())->errors()->first('ic_no'))
+        ->toContain('would be left with neither');
+});
+
+/**
+ * ⚠ THE EMPTY STRING IS WHAT A FORM ACTUALLY POSTS for a box nobody typed in — an omitted key
+ * is what a test or an API sends. A rule that catches only the second is one the registration
+ * screen walks straight past, which is the whole reason this rule lives on the form.
+ */
+it('treats an empty identity field as absent, not as a value', function () {
+    expect(storeErrors(validStorePayload(['ic_no' => '', 'passport_no' => '']), $this->hr))
+        ->toBe(['ic_no', 'passport_no']);
+});
+
+/**
+ * The edit path asks a different question from the registration path, and the difference is the
+ * whole of `identityDocumentRule()`: what will this record HOLD once the payload is applied.
+ */
+it('refuses an edit that would empty the last identity document', function () {
+    $employee = Employee::factory()->forCompany($this->aim)
+        ->create(['department_id' => $this->shared->id, 'ic_no' => '880101-10-1234']);
+
+    expect(updateErrors(['ic_no' => null], $employee, $this->hr))
+        ->toBe(['ic_no', 'passport_no'], 'the record would be left with no identification at all');
+});
+
+it('permits clearing a passport from an employee who still holds an IC', function () {
+    $employee = Employee::factory()->forCompany($this->aim)->create([
+        'department_id' => $this->shared->id,
+        'ic_no' => '880101-10-1234',
+        'passport_no' => 'A00000001',
+    ]);
+
+    expect(updateErrors(['passport_no' => null], $employee, $this->hr))
+        ->toBe([], 'the IC is read from the route model, and it still identifies this person');
+});
+
+/**
+ * ⚠ THE DELIBERATE HOLE, AND IT IS A DECISION RATHER THAN AN OVERSIGHT — 2026-08-17.
+ *
+ * The rule fires only when the payload TOUCHES one of the two columns. A record that already
+ * holds neither — a legacy import, `CLAUDE.md` §10 question (f) — stays editable, because
+ * rejecting an unrelated edit on a field the user never touched is the failure
+ * selectableNationality() exists one column over to avoid.
+ *
+ * Nothing is lost by it: a record can only ENTER that state by having a document emptied, which
+ * means the field was submitted, which means the rule above ran. Validation constrains what
+ * arrives next; it does not repair what is already stored.
+ */
+it('lets an unrelated edit through on a record that already holds no identity document', function () {
+    $employee = Employee::factory()->forCompany($this->aim)
+        ->create(['department_id' => $this->shared->id, 'ic_no' => null, 'passport_no' => null]);
+
+    expect(updateErrors(['bank_name' => 'Maybank'], $employee, $this->hr))
+        ->toBe([], 'an address or bank correction must not be rejected on a field nobody touched');
+});
+
+/**
+ * ⚠ adr/0013 decision 4 — an expired permit blocks NOTHING. It raises a flag and, once the
+ * Notification Engine exists, notifies; renewal is the response, not suspension. This test
+ * exists to keep a well-meaning `after:today` out of the rules: the record it would refuse is
+ * one that legitimately exists.
+ */
+it('accepts a permit that has already expired', function () {
+    expect(storeErrors(validStorePayload(['permit_expiry' => '2020-01-31']), $this->hr))
+        ->toBe([]);
+
+    expect(storeErrors(validStorePayload(['permit_expiry' => 'not-a-date']), $this->hr))
+        ->toBe(['permit_expiry'], 'nullable and unbounded is not the same as unvalidated');
+});
+
+/**
+ * ⚠ THE UNIQUE RULE IS NOT THE THING THAT BLOCKS A REJOINER — the INDEX is, and it does so with
+ * or without this rule (schema.md under `ic_no`, adr/0003 decision 9). What the rule changes is
+ * a raw constraint violation into a message naming the field. The contradiction between the two
+ * Accepted ADRs needs an ADR of its own and does not have one.
+ */
+it('refuses an IC another employee already holds, and accepts the one this employee holds', function () {
+    $held = Employee::factory()->forCompany($this->aim)
+        ->create(['department_id' => $this->shared->id, 'ic_no' => '770707-07-7777']);
+
+    expect(storeErrors(validStorePayload(['ic_no' => '770707-07-7777']), $this->hr))
+        ->toBe(['ic_no']);
+
+    expect(updateErrors(['ic_no' => '770707-07-7777'], $held, $this->hr))
+        ->toBe([], 'resubmitting the value this record already holds is not a collision');
+
+    $other = Employee::factory()->forCompany($this->aim)
+        ->create(['department_id' => $this->shared->id, 'ic_no' => '660606-06-6666']);
+
+    expect(updateErrors(['ic_no' => '770707-07-7777'], $other, $this->hr))
+        ->toBe(['ic_no'], 'another employee holds it');
+});
+
+/**
+ * BR-13 and `adr/0003` decision 9 — a rejoiner is a NEW record pointing at the old one. The
+ * column has existed since 2026-08-12 and nothing could write to it until now.
+ *
+ * ⚠ An ARCHIVED prior record is the ordinary case, not an error: the old employment ended. The
+ * `exists` rule filters neither `deleted_at` nor tenant scope, and both are deliberate — a
+ * rejoiner may return to a different group entity.
+ */
+it('links a rejoiner to a prior record, including an archived one at another company', function () {
+    $prior = Employee::factory()->forCompany($this->tursenia)
+        ->create(['department_id' => $this->shared->id]);
+    $prior->delete();
+
+    expect(storeErrors(validStorePayload(['previous_employee_id' => $prior->id]), $this->hr))
+        ->toBe([], 'an archived record at another company is exactly what a rejoiner points at');
+
+    expect(storeErrors(validStorePayload(['previous_employee_id' => 999999]), $this->hr))
+        ->toBe(['previous_employee_id']);
+});
+
+it('refuses an employee as their own previous record', function () {
+    $employee = Employee::factory()->forCompany($this->aim)
+        ->create(['department_id' => $this->shared->id, 'ic_no' => '880101-10-1234']);
+
+    expect(updateErrors(['previous_employee_id' => $employee->id], $employee, $this->hr))
+        ->toBe(['previous_employee_id']);
+
+    $prior = Employee::factory()->forCompany($this->aim)
+        ->create(['department_id' => $this->shared->id]);
+
+    expect(updateErrors(['previous_employee_id' => $prior->id], $employee, $this->hr))
+        ->toBe([]);
 });

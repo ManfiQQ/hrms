@@ -174,7 +174,7 @@ in a way the code cannot explain.
 | full_name | string, **NOT NULL** | Every other record in the system identifies a person by this. An employee master where the name is optional cannot do its one job. |
 | nickname, email | string, nullable | `email` is **nullable and frequently absent** — much of this workforce (factory crew, studio staff, live hosts) has no company email. That is precisely why login runs on `phone_no` and not on email (`adr/0004` decision 6). |
 | ~~phone_no~~ | **Not a column on this table** | **Moved to `users.phone_no` on 2026-08-12 (`adr/0006`).** The login username lives on the account, not on the employee record, and there is no `contact_no` here either (decision 7). This row is kept as a pointer so a reader scanning only the column table does not conclude the number is missing — see § `users` and the note directly below this table. |
-| ic_no | string, **nullable**, unique | Malaysian identity card. Every statutory integration asks for it by its Malaysian name — EPF, SOCSO and the EA Form all want *No. KP* — which is why this is its own column and not half of an `identity_no` + `identity_type` pair (`adr/0013` decision 2). |
+| ic_no | string, **nullable**, unique | Malaysian identity card. Every statutory integration asks for it by its Malaysian name — EPF, SOCSO and the EA Form all want *No. KP* — which is why this is its own column and not half of an `identity_no` + `identity_type` pair (`adr/0013` decision 2). ⚠ **The unique index blocks every rejoiner — see the note below.** |
 | passport_no | string, **nullable**, unique | Non-citizens. ⚠ **A passport number is never stored in `ic_no`** — with both columns present that would be one value in two places, and the unique index on a column called `ic_no` would silently be enforcing a rule about passports. |
 | permit_expiry | date, nullable | Work permit. **An expired permit blocks nothing** — it raises a flag and, once the Notification Engine exists, notifies HR and the employee. Renewal is the response, not suspension (`adr/0013` decision 4). ⚠ The flag covers only records that **carry** a date; a non-citizen with this empty is never flagged, which is the direct cost of the nullability. |
 | date_of_birth | date, **NOT NULL** | SOCSO's contribution rate changes at 60 and EIS eligibility turns on age, so Payroll cannot compute a contribution without it. ⚠ **Blocks the legacy import where absent** — `CLAUDE.md` §10 question (f) — but is fixable by data entry from an IC scan or personnel file, unlike a phone number that was never collected. |
@@ -236,6 +236,25 @@ index on the same column is dead weight MySQL maintains on every write.
 > one person's `ic_no` matching another's `passport_no`. That is not a real identity
 > collision, and enforcing it would need a constraint spanning two columns of different
 > meaning — stated here so the two unique indexes are not read as covering more than they do.
+>
+> **⚠ `ic_no` unique contradicts `adr/0003` decision 9, and it blocks every rejoiner —
+> found 2026-08-17.** Two Accepted ADRs disagree, and neither is wrong on its own; this is
+> the same shape as `adr/0006` and `adr/0007`, where no single document contained the error.
+>
+> A rejoining employee gets **a new record with a new `employee_no`** — never a reactivated
+> one (`adr/0003` decision 9, BR-2, BR-13). They bring **the same `ic_no`**, because a
+> person has one. The unique index knows nothing about `deleted_at` and nothing about a
+> terminal `staff_status`, so **the second record cannot be created at all**. The only way
+> through is to empty `ic_no` on the old record, which destroys the identity on the
+> historical row — and that row is the one BR-2 requires the new record to reference.
+>
+> **The `unique` validation rule added on 2026-08-17 does not make this worse.** It turns a
+> raw constraint violation into a message naming the field; the block is the index, and the
+> index predates the rule. Neither the rule nor its removal changes the outcome.
+>
+> **This needs an ADR and one has not been written.** The candidates — a composite index
+> including `deleted_at`, a partial index MySQL 8 does not support, or accepting that a
+> rejoiner's IC moves to the live record — are a decision, not an implementation detail.
 >
 > **No `personal_phone` column exists and none may be added** — `users.phone_no` is already
 > the personal number as well as the login username (`adr/0006`), and a second would be two
