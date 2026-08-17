@@ -646,6 +646,28 @@ which is worse**: a guard that fails sometimes gets re-run until it passes.
 comparable, and a test whose fixture happens to produce the expected order proves the fixture,
 not the code. Recorded 2026-08-17.
 
+### ⚠ A test helper can quietly validate something other than what ships
+
+`EmployeeRequestValidationTest`'s four helpers called
+`Validator::make($payload, $request->rules())` — **two arguments**. The real FormRequest
+pipeline passes three: `rules()`, `messages()`, `attributes()`. So every custom message in both
+employee requests was written, shipped, and **exercised by nothing**, for as long as the file
+had existed.
+
+Nothing failed and nothing could. The assertions were on error KEYS, which are identical either
+way, so the helper was validating a *different object* from the one production builds and
+agreeing with it on everything the tests happened to ask.
+
+⚠ **The cost was not theoretical.** The edit path's conditional rule surfaces as `required`, so
+Laravel's default wording for it was *"the ic no field is required"* — about a **nullable**
+column, to an HR clerk who had just cleared a passport. The custom message existed precisely to
+prevent that sentence, and no test would ever have noticed it was absent.
+
+Found 2026-08-17 by writing a throwaway probe that PRINTED the rule array and the resulting
+messages, rather than by asserting on them. ⚠ **A helper that reconstructs part of a framework
+pipeline is a second implementation of it**, and it drifts in the direction of whatever the
+tests do not look at. Recorded 2026-08-17.
+
 ### ⚠ A fixture guard can be directional, and this one was
 
 `NationalityFactory::unusedCountryName()` checks the table before drawing, and its docblock says
