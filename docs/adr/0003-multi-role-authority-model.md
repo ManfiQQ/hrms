@@ -466,6 +466,24 @@ unbroken employment, a rejoin is two separate ones.
 > and inherit it. Deciding `ic_no` alone leaves the flow exactly as blocked, so the ADR this
 > needs covers **every unique identity column, `users.phone_no` included**. It has not been
 > written. Recorded in `schema.md` under `ic_no` as well, since that is where somebody hits it.
+>
+> > **✅ Written 2026-08-17 — `adr/0015`, covering all four columns as this note demanded.**
+> >
+> > **The rejoining bullet above is not amended, and that is the outcome rather than a
+> > detail of it.** `adr/0015` decision 1 keeps a rejoiner on a new record with a new
+> > `employee_no` and `previous_employee_id` pointing at the old one; it changes the
+> > indexes, not this design. Reactivating the old record was considered again and rejected
+> > again — the old record carries `join_date` from the first employment, so leave would
+> > accrue from a date years before the person returned, which is exactly what BR-2 makes
+> > the break terminal to prevent.
+> >
+> > A nullable `superseded_at` on `employees` and `users` releases the identity claim
+> > without emptying the value, so the historical row keeps the IC that
+> > `previous_employee_id` needs it to be identifiable by. **The bullet becomes
+> > implementable with its wording intact.**
+> >
+> > ⚠ **Decided, not built** — no migration, no column, no change to `CreateEmployee`. Until
+> > it is built the ⚠ above holds in full.
 
 **`employees.previous_employee_id`** — self-FK, nullable — links a rejoiner's new record to
 their old one. BR-2 already requires reinstatement to reference the prior record but no

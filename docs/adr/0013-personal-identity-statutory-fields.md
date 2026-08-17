@@ -108,6 +108,23 @@ constraint spanning two columns of different meaning. It is left to the
 FormRequest, and it is written here so nobody reads the unique indexes as
 covering more than they do.
 
+> **⚠ There was a second cost, it was not accepted here, and it was not
+> noticed — `adr/0015`, 2026-08-17.** Making `ic_no` and `passport_no` unique
+> **blocked every rejoining employee**, because a person brings the same IC to
+> their second employment and `adr/0003` decision 9 gives them a new record.
+> Neither ADR was wrong read alone; nothing read them together, which is the
+> `adr/0006` and `adr/0007` shape again.
+>
+> `adr/0015` keeps both columns and both indexes and changes what they are
+> indexed over: a nullable `superseded_at` on `employees`, and
+> `UNIQUE ((IF(superseded_at IS NULL, ic_no, NULL)))` with the same for
+> `passport_no`. **Decisions 1 and 2 above stand as written** — two columns, both
+> nullable, both unique, at least one required — and the per-column caveat in
+> this paragraph is untouched by it.
+>
+> ⚠ **Decided, not built.** The columns are as this ADR shipped them, and a
+> rejoiner cannot be registered today.
+
 ### 3. `epf_no`, `socso_no` and `tax_no` are nullable, and that is a fact, not a compromise
 
 **Probationers, contract staff and interns do not have EPF or SOCSO numbers**

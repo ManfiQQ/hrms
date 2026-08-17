@@ -750,6 +750,36 @@ which matches on `employee_no` today and has no such rule for identity — inher
 Found 2026-08-17 while writing the FormRequest rules for the nine unvalidated `adr/0013`
 columns, from asking why `ic_no` carries no format rule. Recorded 2026-08-17.
 
+> **⚠ `adr/0015` rebuilt this index on 2026-08-17 and deliberately did NOT fix this.** Its
+> closing line says so outright: *normalisation stays a separate question, and it is its own
+> ADR.* That ADR replaces `UNIQUE (ic_no)` with
+> `UNIQUE ((IF(superseded_at IS NULL, ic_no, NULL)))` so a rejoiner can be registered — it
+> changes **which rows** the index constrains, never **which strings** it treats as equal.
+>
+> **So the finding above survives an index migration untouched**, which is the part worth
+> recording: `900101-14-5501` and `900101145501` remain two strings and one person, before
+> and after. The reason is unchanged and is the one this entry already gives — a rule
+> constrains what arrives next, a normaliser rewrites what is already stored, and the second
+> is a data change with a backfill position.
+>
+> **⚠ But the cost is now narrower than this entry states, on one path.** `adr/0015`
+> decision 3 settles the storage form — `ic_no` and `passport_no` hold **digits and letters
+> only, no dashes and no spaces** — and the registration form renders the separators as its
+> own boxes, six, two and four. **The separator is never typed, so only one form can arrive
+> through the form.** That is not a normaliser; it is a shape the input cannot leave, and on
+> that path it does the same job.
+>
+> ⚠ **The import path is untouched and is now the whole of the exposure.** An import does not
+> go through the form, and the legacy file has never been seen (`employee-master.spec.md`
+> §5.5, `CLAUDE.md` §10 question (d)) — so nothing here can say what shape its ICs arrive in.
+> The normalisation ADR stays open for that path, and it is the path that writes rows in bulk.
+>
+> ⚠ **What is exposed there is worse than a failed lookup**, because `adr/0015` decision 5
+> makes the registration form search prior records on identity. An imported row typed one way
+> and a rejoiner entered the other way give **two contradictory answers at once**: the search
+> reports no prior employment, and the unique index refuses the IC as already taken. Neither
+> is right, and nothing on either record explains the disagreement.
+
 ---
 
 ## 10. Required Validation Before Calling a Module "Done"
