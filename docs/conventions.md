@@ -602,6 +602,29 @@ who assume it was needed.
 may exist in X, unchecked" is an honest note. "X carries the same defect" is a claim, and this
 one was 50% false. Recorded 2026-08-15, by the author of the claim.
 
+### ⚠ A guard suite can look complete and cover three cases in eight
+
+Before `adr/0014`, `EmployeePolicy::viewTab()` could be made to return `true`
+**unconditionally** for `TAB_PERSONAL` — including for a subject outside the actor's read
+scope — and **all 26 policy tests stayed green.** The existing tab tests exercise
+`EMPLOYMENT`, `FAMILY` and `DOCUMENTS`; **five of the eight tab constants had never been
+asserted against at all.**
+
+**Nothing was wrong in the code, and nothing failed.** What was wrong was the confidence: a
+test file named for a policy reads as covering that policy, and **the count of tests says
+nothing about which branches they reach.** Twenty-six is a number that invites trust and
+answers a different question.
+
+This differs from the empty-guard family above, where each assertion was pointed at nothing.
+Here every assertion was sound and pointed at something real — there were simply **five
+branches nobody had written one for**, and no artefact anywhere records which branches a
+suite reaches.
+
+Found 2026-08-17 by **running a deliberate break, not by reading the file.** The break was
+being run to confirm a new guard, and finding this was incidental — which is the rule at the
+top of §9 restated from the other end: watching a break is how the shape of the existing
+coverage becomes visible at all. Recorded 2026-08-17.
+
 ---
 
 ## 10. Required Validation Before Calling a Module "Done"
