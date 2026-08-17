@@ -68,8 +68,30 @@ class EmployeeUpdateRequest extends FormRequest
             // decision 2. See identityDocumentRule() below for the whole of the reasoning; the
             // short version is that this form PATCHES, so the rule cannot ask what the payload
             // contains. It has to ask what the record will hold once the payload is applied.
-            'ic_no' => [$this->identityDocumentRule($employee), 'string', 'max:255', Rule::unique('employees', 'ic_no')->ignore($id)],
-            'passport_no' => [$this->identityDocumentRule($employee), 'string', 'max:255', Rule::unique('employees', 'passport_no')->ignore($id)],
+            //
+            // ⚠ THE STORAGE FORM AND THE LIVE-ROW SCOPE, BOTH FROM adr/0015 — see
+            // EmployeeStoreRequest for the full reasoning. `digits:12` for an IC because that is
+            // the format's definition; letters and digits with no length bound for a passport,
+            // because passport length varies by issuing country.
+            //
+            // ⚠ `->ignore($id)` AND `whereNull('superseded_at')` DO DIFFERENT JOBS AND BOTH ARE
+            // NEEDED. `ignore` stops a record colliding with ITSELF on an unchanged value; the
+            // scope stops it colliding with a SUPERSEDED record, which the index no longer
+            // constrains. Drop the scope and editing a rejoiner's IC is refused because their own
+            // prior record still holds it — an edit blocked by history.
+            'ic_no' => [
+                $this->identityDocumentRule($employee),
+                'string',
+                'digits:12',
+                Rule::unique('employees', 'ic_no')->ignore($id)->whereNull('superseded_at'),
+            ],
+            'passport_no' => [
+                $this->identityDocumentRule($employee),
+                'string',
+                'max:255',
+                'regex:/^[A-Za-z0-9]+$/',
+                Rule::unique('employees', 'passport_no')->ignore($id)->whereNull('superseded_at'),
+            ],
 
             // No `after:today` bound — an expired permit is a flag, never a block (adr/0013
             // decision 4). Same reasoning as EmployeeStoreRequest.
@@ -109,7 +131,14 @@ class EmployeeUpdateRequest extends FormRequest
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
             'position_id' => ['nullable', 'integer', 'exists:positions,id'],
 
-            'fingerprint_id' => ['nullable', 'string', 'max:255', Rule::unique('employees', 'fingerprint_id')->ignore($id)],
+            // Scoped to live rows for the same reason as `ic_no` above — a re-enrolment on the
+            // same reader must not collide with the person's own superseded record.
+            'fingerprint_id' => [
+                'nullable',
+                'string',
+                'max:255',
+                Rule::unique('employees', 'fingerprint_id')->ignore($id)->whereNull('superseded_at'),
+            ],
 
             'level' => ['sometimes', 'required', Rule::in(Employee::LEVELS)],
             'employment_type' => ['sometimes', 'required', Rule::in(Employee::EMPLOYMENT_TYPES)],
@@ -151,6 +180,12 @@ class EmployeeUpdateRequest extends FormRequest
             'passport_no.required' => 'An employee must hold at least one form of '
                 .'identification: this record would be left with neither an IC number nor a '
                 .'passport number (adr/0013 decision 2).',
+
+            // The stored form, named rather than the rule — see EmployeeStoreRequest.
+            'ic_no.digits' => 'A Malaysian IC is 12 digits and is stored without dashes or '
+                .'spaces — 900101145501, not 900101-14-5501 (adr/0015 decision 3).',
+            'passport_no.regex' => 'A passport number is stored as letters and digits only, '
+                .'with no dashes or spaces (adr/0015 decision 3).',
         ];
     }
 

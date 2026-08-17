@@ -386,12 +386,18 @@ impossible, since a derived value cannot be edited.
 > giving the value up. `CreateEmployee` sets it on the prior record and its account **before**
 > writing the new rows, in the transaction it already opens — order is load-bearing.
 >
-> ⚠ **Two things this leaves for whoever builds registration.** §8 test 22 below requires a
-> rejoiner to get a new record with `previous_employee_id` set: **that test cannot pass today**
-> and is not merely unwritten. And `adr/0015` decision 5 makes the form ask *"has this employee
-> worked here before?"* before searching prior records — **a search this module cannot
-> currently perform**, since the employee list shows no soft-deleted row and cannot cross a
-> tenant boundary.
+> **✅ BUILT 2026-08-17.** `superseded_at` is on both tables, the four unique indexes are
+> functional, and `CreateEmployee` releases the prior claim as its first act inside the
+> transaction. **§8 test 22 now passes** — `RejoinerIdentityTest` exercises it end to end,
+> carrying the same IC and the same phone number, and asserts that the prior record keeps both
+> values.
+>
+> ⚠ **ONE THING IS STILL NOT BUILT, and it is the user-facing half.** `adr/0015` decision 5
+> makes the form ask *"has this employee worked here before?"* and then search prior records.
+> **That search does not exist**: a prior record is routinely soft-deleted and may sit under a
+> former employer, so it needs a scope the employee list deliberately does not have. Until the
+> registration screen lands, **the rejoiner path is reachable only through `CreateEmployee`
+> directly** — the constraint is fixed, the workflow is not.
 
 **`employees.previous_employee_id`** — self-FK, nullable — is the thread from a rejoiner's
 new record back to the old one. BR-2 already required reinstatement to reference the prior

@@ -398,10 +398,17 @@ A rejoining employee gets a new employee record, a new `employee_no`, and a new 
 > > trail this freeze exists to preserve survives, and none of the five closed escapes above
 > > is reopened.
 > >
-> > ⚠ **Decided, not built. Nothing in `app/` has changed** — `superseded_at` does not
-> > exist, no `unique:users,phone_no` rule was added, and `CreateEmployee` still fails on
-> > `users_phone_no_unique` as a raw 1062 inside its transaction. The ⚠ above describes the
-> > system as it stands today.
+> > **✅ BUILT 2026-08-17** — `2026_08_17_100100` and `CreateEmployee::supersedePrior()`.
+> > **BR-A18 itself is still unchanged**: no reactivation, by anyone. The rejoiner gets a new
+> > account, and the frozen old one keeps its number, its row and its audit trail while
+> > releasing only its claim on the unique index.
+> >
+> > ⚠ **The missing validation is closed too.** `EmployeeStoreRequest` now refuses a number a
+> > LIVE account holds, naming the field instead of returning a 500. It is a closure rather than
+> > `unique:users,phone_no`, because the stored value is normalised (BR-A1) and a declarative
+> > rule would compare the raw input, match nothing, pass, and collide at the insert.
+> >
+> > ⚠ **The ⚠ block above describes the state BEFORE that migration** and is deliberately kept.
 
 **BR-A19 — The countdown is visible on five dashboards** — the employee's own, HR's,
 Account's, Master Admin's, and the employee's manager or supervisor's. This is the

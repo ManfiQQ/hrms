@@ -38,6 +38,8 @@
 | `nationalities` | `2026_08_14_100000_create_nationalities_table.php` |
 | `employees` — twelve identity and statutory columns | `2026_08_14_100100_add_personal_identity_fields_to_employees_table.php` |
 | `employee_documents.type` — eighth value | `2026_08_14_100200_add_photo_to_document_type_enum.php` |
+| `employees` — `superseded_at`, three unique indexes rebuilt as functional | `2026_08_17_100000_add_superseded_at_to_employees_table.php` |
+| `users` — `superseded_at`, `phone_no` unique index rebuilt as functional | `2026_08_17_100100_add_superseded_at_to_users_table.php` |
 
 > **⚠ `cache` and `jobs` are Laravel scaffolding, not designed here, and deliberately have no
 > per-table section below.**
@@ -171,11 +173,12 @@ in a way the code cannot explain.
 | id | bigint PK | |
 | employee_no | string, unique | **Group-wide unique**, format `AHS-0001` — `AHS` prefix + sequential zero-padded number. ⚠ The prefix is **always `AHS`**, the parent company, **regardless of which subsidiary employs the person** — an AIM employee is still `AHS-0042`. Numbering is a single group-wide sequence, not per-company. |
 | previous_employee_id | FK → employees, self-referencing, nullable | Links a **rejoiner's** new record to their old one. `RESIGNED` and `TERMINATED` are terminal (`business-rules.md` BR-2), so a returning employee gets a **new record with a new `employee_no`** — never a reactivated one — and this column is the only thread back. BR-2 already required the reference; no column existed for it, leaving the rule unimplementable. Employee Master **stores** the link only: whether prior service counts toward leave entitlement is a Leave-spec decision, and it cannot be made at all unless the link is captured now. See `adr/0003` decision 9. |
+| superseded_at | timestamp, nullable | **A later record has taken over this person's identity values** (`adr/0015` decision 2). NULL = this row still holds its claim on `ic_no`, `passport_no` and `fingerprint_id` in the unique indexes below. ⚠ **NOT a soft delete and not a status** — a superseded record is fully present, fully readable, and still the answer to every question about the employment it describes; `deleted_at` exists on this table and means something else. ⚠ **A recorded fact, not a derived one** — it is not computable from a terminal `staff_status` or from account expiry, and an index cannot compute anything. ⚠ **Written by `CreateEmployee` alone**, absent from `$fillable`, because a wrongly-set value releases an identity **silently**. See `adr/0015` decision 4. |
 | full_name | string, **NOT NULL** | Every other record in the system identifies a person by this. An employee master where the name is optional cannot do its one job. |
 | nickname, email | string, nullable | `email` is **nullable and frequently absent** — much of this workforce (factory crew, studio staff, live hosts) has no company email. That is precisely why login runs on `phone_no` and not on email (`adr/0004` decision 6). |
 | ~~phone_no~~ | **Not a column on this table** | **Moved to `users.phone_no` on 2026-08-12 (`adr/0006`).** The login username lives on the account, not on the employee record, and there is no `contact_no` here either (decision 7). This row is kept as a pointer so a reader scanning only the column table does not conclude the number is missing — see § `users` and the note directly below this table. |
-| ic_no | string, **nullable**, unique | Malaysian identity card. Every statutory integration asks for it by its Malaysian name — EPF, SOCSO and the EA Form all want *No. KP* — which is why this is its own column and not half of an `identity_no` + `identity_type` pair (`adr/0013` decision 2). ⚠ **The unique index blocks every rejoiner — see the note below.** |
-| passport_no | string, **nullable**, unique | Non-citizens. ⚠ **A passport number is never stored in `ic_no`** — with both columns present that would be one value in two places, and the unique index on a column called `ic_no` would silently be enforcing a rule about passports. |
+| ic_no | string, **nullable**, **unique among LIVE rows** | Malaysian identity card. Every statutory integration asks for it by its Malaysian name — EPF, SOCSO and the EA Form all want *No. KP* — which is why this is its own column and not half of an `identity_no` + `identity_type` pair (`adr/0013` decision 2). **Stored as 12 digits with no dashes and no spaces** (`adr/0015` decision 3) — an index only constrains values stored identically. ⚠ **The unique index blocked every rejoiner until `adr/0015`; it is now `UNIQUE ((IF(superseded_at IS NULL, ic_no, NULL)))` — see the note below.** |
+| passport_no | string, **nullable**, **unique among LIVE rows** | Non-citizens. **Stored as letters and digits only, no dashes and no spaces, and with no length bound** — passport length varies by issuing country, so a guessed bound would reject valid documents (`adr/0015` decision 3). Scoped to live rows since `adr/0015`, the same shape as `ic_no`. ⚠ **A passport number is never stored in `ic_no`** — with both columns present that would be one value in two places, and the unique index on a column called `ic_no` would silently be enforcing a rule about passports. |
 | permit_expiry | date, nullable | Work permit. **An expired permit blocks nothing** — it raises a flag and, once the Notification Engine exists, notifies HR and the employee. Renewal is the response, not suspension (`adr/0013` decision 4). ⚠ The flag covers only records that **carry** a date; a non-citizen with this empty is never flagged, which is the direct cost of the nullability. |
 | date_of_birth | date, **NOT NULL** | SOCSO's contribution rate changes at 60 and EIS eligibility turns on age, so Payroll cannot compute a contribution without it. ⚠ **Blocks the legacy import where absent** — `CLAUDE.md` §10 question (f) — but is fixable by data entry from an IC scan or personnel file, unlike a phone number that was never collected. |
 | gender | enum: MALE, FEMALE, **NOT NULL** | EA Form; maternity entitlement. **An enum where `nationality` is a table**, and that is `conventions.md` §4 applied twice: this list does not grow, and nationality does (`adr/0013` decision 1). |
@@ -187,7 +190,7 @@ in a way the code cannot explain.
 | company_id | FK, **NOT NULL** | **The payroll and legal employer — that meaning only.** Determines which company's leave entitlement, policy config, payroll and statutory rules apply. Mandatory, scoped from creation. **It no longer answers "what authority does this person have"** — `employee_roles` does (`adr/0003` decision 6). Approval scope still reads this value: a `SUPERVISOR`, `MANAGER` or `HOD` approves only for employees sharing it, shared department or not (`adr/0002` decisions 4–5) — but *which* role they hold comes from the pivot. **No `secondary_company_id` column exists and none may be added**: a person's involvement with other companies is derived by querying `employee_roles`, never stored a second time. **It additionally bounds read scope**, via the employer's position in `companies.parent_company_id` — see the read-scope note below (`adr/0004` decision 1). |
 | department_id | FK, **NOT NULL** | Approval routing resolves per **(department, company)** — an employee with no department has no HOD stage to resolve (`adr/0001` decision 3, `adr/0002` decision 4). Org assignment is **independent of `company_id` and not required to match it**: an employee may sit in a shared department belonging to no single company, or to a different one. This is valid and must not be rejected by validation (`adr/0002` decision 2). |
 | branch_id, position_id | FK, **nullable** | Not every employee has a fixed place of work or a titled position, and the legacy import carries records with neither. Same independence from `company_id` as `department_id` above. |
-| fingerprint_id | string, unique, nullable | Matches NGTime attendance export ID. **HR-managed on this record; current value only.** Phase 1 keeps no enrolment history — a re-enrolment overwrites the value in place. If historical punch-to-employee resolution later proves necessary, that is a Phase 2 Attendance decision, not a Phase 1 table. |
+| fingerprint_id | string, **unique among LIVE rows**, nullable | Matches NGTime attendance export ID. ⚠ **Scoped to live rows since `adr/0015` although this is NOT an identity column** — it is a device id, unique for a different reason, but a rejoiner re-enrolling on the same reader hit the same wall, so it takes the same shape (decision 3). **HR-managed on this record; current value only.** Phase 1 keeps no enrolment history — a re-enrolment overwrites the value in place. If historical punch-to-employee resolution later proves necessary, that is a Phase 2 Attendance decision, not a Phase 1 table. |
 | level | enum: STAFF, SUPERVISOR, MANAGER, HOD | **Display field only** — org chart, directory grouping, seniority tier. Never drives an authorization or routing decision. `ADMIN` deliberately excluded: it conflated a system permission with an org-seniority tier — see `adr/0001`. Where a single headline value is needed for display, this is it — which is why no `primary_role` column exists on `employees` (`adr/0003` decision 1). |
 | employment_type | enum: FULL-TIME, PART-TIME, CONTRACT, INTERN, FREELANCE | |
 | staff_status | enum: PROBATION, ACTIVE, CONFIRMED, SUSPENDED, RESIGNED, TERMINATED | **Setting `RESIGNED` or `TERMINATED` has an immediate effect on the user account and on `employee_roles`, in the same transaction** — see § Account lifecycle under `users` (`adr/0004` decision 5). |
@@ -202,22 +205,40 @@ in a way the code cannot explain.
 | created_by, updated_by | FK → users, nullable | |
 | timestamps, soft deletes | | |
 
-**Indexes: `employee_no` (unique, group-wide), `fingerprint_id` (unique, nullable), and
-`(company_id, staff_status)`** — the last is the default employee-list read, which is always
-narrowed to the account's read scope and then filtered by status, so the two columns are used
-together and in that order.
+**Indexes: `employee_no` (unique, group-wide), `(company_id, staff_status)`, and three
+functional unique indexes over `superseded_at`** — described below. `(company_id, staff_status)`
+is the default employee-list read, which is always narrowed to the account's read scope and then
+filtered by status, so the two columns are used together and in that order.
 
-> **⚠ Three of the unique indexes on this table are due to be rebuilt as functional indexes
-> — decided 2026-08-17 by `adr/0015`, not yet built.** `ic_no`, `passport_no` and
-> `fingerprint_id` become `UNIQUE ((IF(superseded_at IS NULL, <column>, NULL)))` so that a
-> superseded record stops competing for a value it keeps. `employee_no` is **not** among
-> them: it is never reissued and a rejoiner gets a new one, so it has no rejoiner problem to
-> solve (`adr/0003` decision 9, BR-13).
+> **Three unique indexes are FUNCTIONAL, not plain — built 2026-08-17 by
+> `2026_08_17_100000`, `adr/0015` decision 3.**
 >
-> **`fingerprint_id` is included although it is not an identity column** — it is a device id
-> from NGTime, unique for a different reason, but a rejoiner re-enrolling on the same reader
-> hits the same wall. See the note under `ic_no` above for what is decided and what is still
-> only decided.
+> ```
+> UNIQUE ((IF(superseded_at IS NULL, ic_no, NULL)))
+> UNIQUE ((IF(superseded_at IS NULL, passport_no, NULL)))
+> UNIQUE ((IF(superseded_at IS NULL, fingerprint_id, NULL)))
+> ```
+>
+> MySQL treats every NULL in a unique index as distinct from every other, so a superseded row
+> indexes to NULL and stops competing while **live rows are constrained exactly as before**.
+> Nothing is emptied and nothing is deleted.
+>
+> ⚠ **The double parentheses are required** — MySQL reads `(expr)` as a column list and
+> `((expr))` as a functional key part. ⚠ **Laravel's schema builder cannot express this**;
+> `Blueprint::unique()` quotes its argument as a column identifier, so the migration uses raw
+> `DB::statement`.
+>
+> ⚠ **The composite `UNIQUE (ic_no, superseded_at)` was tested and rejected — it CANCELS the
+> constraint.** It is created successfully and then accepts two LIVE rows with the same IC,
+> because both carry NULL and NULLs are distinct. It also refuses two *superseded* rows marked
+> in the same second, so it is wrong in both directions. A partial index is a syntax error;
+> MySQL has no filtered indexes. Both verified on MySQL 8.4.11 against this project, and
+> `EmployeeIndexesTest` asserts the stored **expression**, not just the index name — a
+> name-only check cannot tell the cancellation from the real thing.
+>
+> **`employee_no` is NOT among them, and its absence is the decision.** It is never reissued
+> and a rejoiner gets a new one (`adr/0003` decision 9, BR-13), so it has no rejoiner problem
+> to solve — and scoping it would release a number that must stay retired for ever.
 
 `department_id`, `direct_supervisor_id`, `manager_id` and `previous_employee_id` are indexed
 **implicitly** by their foreign keys and carry no separate declaration. `employee-master.spec.md`
@@ -288,10 +309,21 @@ index on the same column is dead weight MySQL maintains on every write.
 > > both carrying NULL are distinct. It reads as a narrowing and is a cancellation. The
 > > partial index is a syntax error, as this paragraph already suspected.
 > >
-> > ⚠ **Decided, not built.** No migration exists, `superseded_at` is on neither table, and
-> > the four indexes are still the plain ones described above. **Every sentence of this note
-> > therefore still describes the database as it stands** — a rejoiner cannot be registered
-> > today. The rows in the table above are unchanged for the same reason.
+> > **✅ BUILT 2026-08-17** — `2026_08_17_100000` and `2026_08_17_100100`. `superseded_at` is on
+> > both tables, all four indexes are functional, `CreateEmployee` releases the prior claim as
+> > its first act inside the transaction, and the FormRequests scope their `unique` rules to
+> > live rows so the validation layer does not become the last thing blocking the flow.
+> >
+> > ⚠ **The paragraphs above this line describe the state BEFORE that migration**, and they are
+> > kept rather than rewritten because the contradiction they record is the reason the index has
+> > the shape it now has. **A rejoiner can be registered today** — `RejoinerIdentityTest` proves
+> > it end to end, carrying the same IC and the same phone number.
+> >
+> > ⚠ **What is still not built: the registration form itself.** Decision 5 requires it to ask
+> > *"has this employee worked here before?"* and then search prior records — and that search
+> > needs a scope the employee list does not have, since a prior record is routinely
+> > soft-deleted and may sit under a former employer. Until it exists, the rejoiner path is
+> > reachable only through `CreateEmployee` directly.
 >
 
 > **No `personal_phone` column exists and none may be added** — `users.phone_no` is already
@@ -1091,7 +1123,28 @@ nullable), `activation_token` (string, unique, nullable), `activation_expires_at
 (timestamp, nullable), `activation_downloaded_at` (timestamp, nullable),
 `activation_used_at` (timestamp, nullable), `phone_no` (string, **NOT NULL, unique** — the
 login username, `adr/0006`), `failed_login_attempts` (unsigned integer,
-**NOT NULL, default 0**), `locked_until` (timestamp, nullable).
+**NOT NULL, default 0**), `locked_until` (timestamp, nullable), `superseded_at` (timestamp,
+nullable — see below).
+
+**`superseded_at`** — added 2026-08-17 by `2026_08_17_100100`, `adr/0015` decision 2. **A later
+account belonging to the same person now holds this row's `phone_no` as its login username.**
+NULL = this account still holds the claim. ⚠ **Not a soft delete** — this table has none and is
+not gaining one: the row stays, stays queryable, and stays attached to the audit trail its freeze
+exists to keep. ⚠ **Not an authentication check either** — a superseded account was already frozen
+and expired by `AccountExpiry`, and nothing in the login path reads this; gating login on it would
+put a second answer beside one that already exists. ⚠ **Written by `CreateEmployee` alone** and
+absent from `User`'s `#[Fillable]` list, because a wrongly-set value releases a **credential**
+silently and two live accounts then become able to share one username.
+
+**The unique index on `phone_no` is functional, not plain:**
+
+```
+UNIQUE ((IF(superseded_at IS NULL, phone_no, NULL)))
+```
+
+⚠ **`email` and `activation_token` are NOT scoped and must not be.** Neither is an identity a
+rejoiner brings back: `email` is nullable and authenticates nothing (`adr/0006`), and an
+`activation_token` dies the moment it is redeemed (BR-A21).
 
 > **⚠ `phone_no` unique blocks every rejoining employee — found 2026-08-17.** A rejoiner brings
 > the same number, because it is theirs. `User` has **no soft deletes**, and a terminal status
@@ -1121,10 +1174,20 @@ login username, `adr/0006`), `failed_login_attempts` (unsigned integer,
 > > load-bearing**: the new `users` row cannot be written while the old one still binds the
 > > number.
 > >
-> > ⚠ **Decided, not built.** `superseded_at` does not exist, the index is still the plain
-> > one, `CreateEmployee` does nothing of the sort, and **there is still no
-> > `unique:users,phone_no` rule anywhere in `app/`** — so the failure remains a raw 1062
-> > inside the transaction, exactly as described above.
+> > **✅ BUILT 2026-08-17** — `2026_08_17_100100`. `users.superseded_at` exists, the index is
+> > `UNIQUE ((IF(superseded_at IS NULL, phone_no, NULL)))`, and `CreateEmployee` releases the
+> > prior account's claim before it writes the new one. **Order is load-bearing**: the new row
+> > cannot be written while the old one still binds the number, verified by moving the call and
+> > watching nine tests go red on 1062.
+> >
+> > ⚠ **The missing validation is also closed.** `EmployeeStoreRequest` now refuses a number a
+> > LIVE account holds, with a message naming the field instead of a 500. It is a closure rather
+> > than `unique:users,phone_no` because the stored value is normalised (BR-A1) and the
+> > declarative rule would compare the raw input — `012-345 6789` would match nothing, pass, and
+> > collide at the insert.
+> >
+> > ⚠ **The row is still never deleted.** The frozen account keeps its number and its audit
+> > trail; only the claim is released, so BR-A15 and BR-A17 are untouched.
 
 > **BR-A3's throttle state — added 2026-08-12**
 > (`2026_08_12_100200_add_login_throttle_to_users_table.php`). The spec described four tiers

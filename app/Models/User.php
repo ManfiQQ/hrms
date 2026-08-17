@@ -39,6 +39,20 @@ class User extends Authenticatable
             // reached the fourth tier. Both are read through LoginThrottle, never by hand.
             'locked_until' => 'datetime',
             'failed_login_attempts' => 'integer',
+
+            // adr/0015 decision 2 — this account has released its claim on `phone_no`, because a
+            // later account belonging to the same person now holds that number as its username.
+            //
+            // ⚠ NOT A SOFT DELETE. This table has none and is not gaining one: the row stays,
+            // stays queryable, and stays attached to the audit trail its freeze exists to keep
+            // (BR-A15, BR-A17). ⚠ NOT AN AUTHENTICATION CHECK EITHER — a superseded account was
+            // already frozen and expired by AccountExpiry, and nothing in the login path reads
+            // this. Gating login on it would put a second answer beside one that already exists.
+            //
+            // ⚠ ABSENT FROM THE #[Fillable] LIST ABOVE, and that absence is the enforcement.
+            // adr/0015 decision 4: one Action, one path. A wrongly-set value releases a USERNAME
+            // silently — nothing errors, and two live accounts simply become able to share one.
+            'superseded_at' => 'datetime',
         ];
     }
 

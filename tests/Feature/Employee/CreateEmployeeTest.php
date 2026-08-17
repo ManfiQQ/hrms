@@ -176,6 +176,19 @@ it('audits the registration against the employee', function () {
         ->and($audit->auditable_id)->toBe($result['employee']->id);
 });
 
+/**
+ * ⚠ `superseded_at` ON BOTH MODELS SINCE adr/0015, and the second entry is not redundant. On
+ * `Employee` the audit row records that a historical record released its identity numbers; on
+ * `User` it records that an account released a LOGIN USERNAME — the security-relevant half, since
+ * a wrongly-set value there lets two live accounts share one. An audit trail showing only the
+ * employee half would name the event without naming the credential it moved.
+ *
+ * Both pairs must also appear in App\Support\Audit\AuditedFields — AuditAuthorshipTest fails in
+ * both directions, so an entry here with no registry entry is caught, and vice versa.
+ */
 it('declares every field it audits', function () {
-    expect(CreateEmployee::AUDITS)->toBe([Employee::class => ['employee_no']]);
+    expect(CreateEmployee::AUDITS)->toBe([
+        Employee::class => ['employee_no', 'superseded_at'],
+        User::class => ['superseded_at'],
+    ]);
 });

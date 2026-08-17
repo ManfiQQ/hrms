@@ -114,6 +114,18 @@ class Employee extends Model
             'permit_expiry' => 'date',
             'date_of_birth' => 'date',
 
+            // adr/0015 decision 2. Cast so "is this record superseded" is a null check on a
+            // Carbon instance rather than a string comparison, the same reason permit_expiry is
+            // cast above.
+            //
+            // ⚠ DELIBERATELY ABSENT FROM $fillable, and that absence is the enforcement.
+            // adr/0015 decision 4: this column is written by ONE Action on ONE path, because a
+            // second writer would be a second definition of what "superseded" means. Mass
+            // assignment would let it arrive from request input — and a wrongly-set value
+            // RELEASES AN IDENTITY CLAIM SILENTLY, with nothing erroring and two live accounts
+            // simply becoming able to share a username. Same reasoning as company_id.
+            'superseded_at' => 'datetime',
+
             'join_date' => 'date',
             'probation_end_date' => 'date',
             'confirmation_date' => 'date',
@@ -484,6 +496,24 @@ class Employee extends Model
     public function hasTerminalStatus(): bool
     {
         return in_array($this->staff_status, self::TERMINAL_STATUSES, true);
+    }
+
+    /**
+     * Has a later record taken over this person's identity values? — `adr/0015` decision 2.
+     *
+     * ⚠ THIS IS NOT "IS THIS RECORD DELETED" AND NOT "IS THIS EMPLOYMENT OVER". A superseded
+     * record is fully present and fully readable, and it remains the answer to every question
+     * about the employment it describes — including the one `previous_employee_id` on the newer
+     * record asks. What it has given up is its claim on `ic_no`, `passport_no` and
+     * `fingerprint_id` in the unique indexes, and nothing else.
+     *
+     * ⚠ IT OVERLAPS WITH TERMINAL AND SOFT-DELETED WITHOUT MEANING EITHER. A superseded record
+     * is normally also terminal, because only a terminal record may be superseded at all. A
+     * terminal record is NOT superseded until somebody actually rejoins — most never are.
+     */
+    public function isSuperseded(): bool
+    {
+        return $this->superseded_at !== null;
     }
 
     /**

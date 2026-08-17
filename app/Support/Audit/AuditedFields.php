@@ -51,14 +51,25 @@ class AuditedFields
         // employee's EPF, SOCSO and EA Form between two legal entities (§5.7). When a filing
         // is queried later, this row is what shows WHO made that so — the only thing
         // distinguishing an ordinary HR transfer from a Master Admin support intervention.
-        \App\Models\Employee::class => ['staff_status', 'employee_no', 'position_id', 'department_id', 'level', 'company_id'],
+        //
+        // ⚠ `superseded_at` joined on 2026-08-17 with `adr/0015`, written by CreateEmployee when
+        // a rejoiner's registration releases the prior record's claim on `ic_no`, `passport_no`
+        // and `fingerprint_id`. It is audited because a wrongly-set value FREES AN IDENTITY
+        // SILENTLY — nothing errors, and the only trace of who released it is this row.
+        \App\Models\Employee::class => ['staff_status', 'employee_no', 'position_id', 'department_id', 'level', 'company_id', 'superseded_at'],
 
         // ⚠ Account operations, and note what is NOT here: `password` and
         // `activation_token`. audit_logs is readable by HR and ASSISTANT_DIRECTOR within
         // their read scope (BR-AT9), so auditing a credential's VALUE would hand it to every
         // reader of that screen. The derived facts below record that the operation happened,
         // which is the accountable part; the secret is not.
-        \App\Models\User::class => ['phone_no', 'password_changed_at', 'locked_until', 'activation_expires_at', 'system_access'],
+        //
+        // ⚠ `superseded_at` joined on 2026-08-17 with `adr/0015`. It sits beside `phone_no` above
+        // for a reason: what this column releases IS that column's value as a login username. The
+        // Employee half of the same event records that a historical record gave up its identity
+        // numbers; this half records that an account gave up a CREDENTIAL, and only this one
+        // would show two live accounts becoming able to share one.
+        \App\Models\User::class => ['phone_no', 'password_changed_at', 'locked_until', 'activation_expires_at', 'system_access', 'superseded_at'],
 
         // ⚠ EmployeeDocument IS MISSING ON PURPOSE, AND IT IS COMING — adr/0012 decision 9.
         //
