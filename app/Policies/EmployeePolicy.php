@@ -197,6 +197,37 @@ class EmployeePolicy
      * BR-10 is untouched and still governs approval routing, which resolves
      * `(department, company) → HOD` from the role row.
      */
+    /**
+     * Personal-tab keys that NO edit form may write, whoever is asking — `writableFieldsFor()`
+     * subtracts these from the readable set.
+     *
+     * ⚠ ONE ENTRY, AND IT IS HERE BECAUSE IT ALREADY HAS ITS OWN WRITE PATH rather than because
+     * it is sensitive. `phone_no` is the LOGIN USERNAME, and it does not live on `employees` at
+     * all — it is on `users`, reached through Employee::user() (`adr/0006`). It is a credential,
+     * so it is changed from the account management screen by `HR` or Master Admin and never from
+     * the employee form, which §6.4 says renders no such field at all (`adr/0004` decision 6,
+     * `adr/0006` decision 7). Writing it here would be a second path to one credential.
+     *
+     * ⚠ IT IS READABLE AND NOT WRITABLE, WHICH IS WHY THIS CONSTANT HAS TO EXIST. It is the only
+     * key in PERSONAL_FIELDS_SUPERVISORY and PERSONAL_FIELDS_ALL that both tiers may read and
+     * nobody may write, so subtraction is the only thing that expresses it — the readable set
+     * cannot.
+     *
+     * ⚠ `employee_no` WAS THE FIRST ENTRY HERE AND WAS REMOVED THE SAME DAY: it is not a
+     * Personal-tab key, so it is not in the set this subtracts from, and listing it subtracted
+     * nothing while reading as a protection. That is the `conventions.md` §9 empty guard, written
+     * by hand. It is Master Admin's alone and audited (BR-13, `adr/0003` decision 9), and what
+     * withholds it is that no form renders it.
+     *
+     * ⚠ Same for `staff_status`, `company_id`, `position_id`, `department_id`, `level` and
+     * `superseded_at` — none is a Personal-tab key, so none can be subtracted here.
+     * `ChangeEmployeeStatus`, `TransferCompany`, `ChangeEmployeeAssignment` and `CreateEmployee`
+     * own them, and the edit form reaches them through those Actions or not at all.
+     */
+    public const NEVER_WRITABLE_ON_THIS_FORM = [
+        'phone_no',
+    ];
+
     public const SUPERVISORY_ROLES = ['SUPERVISOR', 'MANAGER', 'HOD'];
 
     /**
@@ -492,6 +523,46 @@ class EmployeePolicy
         }
 
         return $this->hasAnyRoleInScope($actor, self::WRITE_ROLES);
+    }
+
+    /**
+     * Personal fields this account may WRITE — `adr/0014` extended to the edit form.
+     *
+     * ⚠ THIS CLOSES NO EXISTING HOLE, AND CLAIMING OTHERWISE WOULD BE THE `conventions.md` §9
+     * FAILURE OF A COMMENT CITING A PROTECTION THAT DOES NOT EXIST. Today WRITE_ROLES is a
+     * SUBSET of ADMINISTRATIVE_ROLES, and the administrative tier reads the whole tab — so
+     * there is no field anybody can write and not read. The supervisory tier, which `adr/0014`
+     * withholds twelve fields from, holds no write ability at all: §6's matrix never gave them
+     * edit, and `adr/0014` is a READ rule.
+     *
+     * ⚠ WHAT IT DOES IS MAKE THAT HOLE UNOPENABLE. The two lists currently overlap by
+     * coincidence of their contents; after this they overlap by construction. Add a role to
+     * WRITE_ROLES that reads a narrower field set and the write set narrows with it, with no
+     * second place to remember.
+     *
+     * ⚠ READABLE IS THE CEILING, NEVER A PARALLEL LIST. The set is derived from
+     * personalFieldsFor() by subtraction — the same technique PERSONAL_FIELDS_ALL uses on the
+     * supervisory set. Writing a second literal list is the shape this project has refused by
+     * name: two records of one fact, and the copy is what goes stale.
+     *
+     * @return list<string> display keys, a subset of personalFieldsFor(), or [] when refused
+     */
+    public function writableFieldsFor(User $actor, Employee $employee): array
+    {
+        // ⚠ THE RECORD-LEVEL GATE FIRST, AND IT IS NOT REDUNDANT. personalFieldsFor() answers a
+        // READ question: VIEW_ONLY reads the whole group, and the employee reads their own
+        // record in full. Neither may write anything here — VIEW_ONLY by `adr/0004` decision 2,
+        // and the employee because correcting your own record is Employee Self-Service, a module
+        // of its own that does not exist (`CLAUDE.md` §10). Skipping this call would hand both
+        // of them the full write set.
+        if (! $this->update($actor, $employee)) {
+            return [];
+        }
+
+        return array_values(array_diff(
+            $this->personalFieldsFor($actor, $employee),
+            self::NEVER_WRITABLE_ON_THIS_FORM,
+        ));
     }
 
     /** May this account edit this employee's record? `ASSISTANT_DIRECTOR` may (§6.4). */

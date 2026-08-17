@@ -113,9 +113,16 @@ class EmployeeStoreRequest extends FormRequest
                     // `UNIQUE ((IF(superseded_at IS NULL, phone_no, NULL)))` since adr/0015, so an
                     // unscoped check would refuse every rejoiner the database now accepts — and
                     // this rule, not the index, would be the last thing blocking the flow.
+                    // ⚠ THE PRIOR ACCOUNT IS EXCLUDED WHEN A REJOINER LINK IS DECLARED, for the
+                    // same reason as `ic_no` above: it is superseded inside the Action, after this
+                    // runs, so without the exclusion every rejoiner is refused their own number.
                     $taken = User::query()
                         ->where('phone_no', $normalised)
                         ->whereNull('superseded_at')
+                        ->when(
+                            $this->input('previous_employee_id'),
+                            fn ($query, $priorId) => $query->where('employee_id', '!=', $priorId),
+                        )
                         ->exists();
 
                     if ($taken) {
@@ -177,12 +184,30 @@ class EmployeeStoreRequest extends FormRequest
             // unscoped rule here would refuse every rejoiner the database now accepts. Before
             // adr/0015 the index refused them with or without these lines; now the rule would be
             // the only thing left blocking the flow, which is the opposite of what it is for.
+            // ⚠ THE PRIOR RECORD IS IGNORED WHEN ONE IS DECLARED, AND WITHOUT THIS LINE THE
+            // REJOINING FLOW CANNOT PASS VALIDATION AT ALL — found 2026-08-17, when the
+            // registration screen met these rules for the first time.
+            //
+            // `CreateEmployee::supersedePrior()` releases the old claim as its FIRST act inside the
+            // transaction, so at validation time the prior record still carries
+            // `superseded_at IS NULL` and the scoped unique rule finds it. The flow was reachable
+            // through the Action directly — RejoinerIdentityTest proves that — and refused by the
+            // FormRequest, which was written before any form existed to submit through it.
+            //
+            // ⚠ `ignore()` HERE IS NOT THE EDIT FORM'S `ignore($id)`. That one stops a record
+            // colliding with ITSELF; this one says *this value may exist on the record we are
+            // about to supersede*. A crafted `previous_employee_id` gains nothing: the value must
+            // still be free of every OTHER live record, `CreateEmployee` refuses a non-terminal
+            // predecessor (`adr/0015` decision 6), and the functional index refuses two live rows
+            // whatever this rule says.
             'ic_no' => [
                 'nullable',
                 'required_without:passport_no',
                 'string',
                 'digits:12',
-                Rule::unique('employees', 'ic_no')->whereNull('superseded_at'),
+                Rule::unique('employees', 'ic_no')
+                    ->whereNull('superseded_at')
+                    ->ignore($this->input('previous_employee_id')),
             ],
             'passport_no' => [
                 'nullable',
@@ -190,7 +215,9 @@ class EmployeeStoreRequest extends FormRequest
                 'string',
                 'max:255',
                 'regex:/^[A-Za-z0-9]+$/',
-                Rule::unique('employees', 'passport_no')->whereNull('superseded_at'),
+                Rule::unique('employees', 'passport_no')
+                    ->whereNull('superseded_at')
+                    ->ignore($this->input('previous_employee_id')),
             ],
 
             // ⚠ NO `after:today` BOUND, AND ADDING ONE WOULD BREAK A DECISION. An expired
@@ -269,7 +296,9 @@ class EmployeeStoreRequest extends FormRequest
                 'nullable',
                 'string',
                 'max:255',
-                Rule::unique('employees', 'fingerprint_id')->whereNull('superseded_at'),
+                Rule::unique('employees', 'fingerprint_id')
+                    ->whereNull('superseded_at')
+                    ->ignore($this->input('previous_employee_id')),
             ],
 
             // Display only — never an authorization or routing input (BR-9).
