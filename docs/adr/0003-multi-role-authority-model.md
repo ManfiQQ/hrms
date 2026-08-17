@@ -482,8 +482,14 @@ unbroken employment, a rejoin is two separate ones.
 > > `previous_employee_id` needs it to be identifiable by. **The bullet becomes
 > > implementable with its wording intact.**
 > >
-> > ⚠ **Decided, not built** — no migration, no column, no change to `CreateEmployee`. Until
-> > it is built the ⚠ above holds in full.
+> > **✅ BUILT 2026-08-17** — `2026_08_17_100000`, `2026_08_17_100100`, and the release logic in
+> > `CreateEmployee::supersedePrior()`. **The rejoining bullet above is now executable with its
+> > wording untouched**, which was the whole aim: a new record, a new number, a new account,
+> > `previous_employee_id` set, and the historical row still carrying the IC that makes it
+> > identifiable.
+> >
+> > ⚠ **The ⚠ block above describes the state BEFORE that migration** and is kept rather than
+> > rewritten, because the contradiction it records is why the index has the shape it now has.
 
 **`employees.previous_employee_id`** — self-FK, nullable — links a rejoiner's new record to
 their old one. BR-2 already requires reinstatement to reference the prior record but no

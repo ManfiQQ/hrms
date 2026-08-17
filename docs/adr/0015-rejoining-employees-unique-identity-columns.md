@@ -227,3 +227,82 @@ The guard is over the data, not over the caller: **no `users` row may carry
   the old account keeps its number, and the audit trail keeps its subject.
 - Normalisation stays a separate question. IC is stored digits-only
   with no dashes, and that is its own ADR.
+
+---
+
+## Amendment — 2026-08-17, with the implementation
+
+Built by `2026_08_17_100000` (employees), `2026_08_17_100100` (users), and the release logic in
+`CreateEmployee::supersedePrior()`. Twenty-six tests. **A rejoining employee can be registered,
+end to end, carrying the same IC and the same phone number.**
+
+Four things are recorded here because they changed, sharpened or were discovered during the
+build — not to restate what the decisions already say.
+
+### 1. Decision 6 is now an explicit caller rule, not only a rule over the data
+
+Decision 6 states the invariant over the rows: **no `users` row may carry `superseded_at` while
+its employee holds a non-terminal `staff_status`.** It said nothing about who must refuse to
+create that state, and the difference matters.
+
+**A guard over data alone would have documented the failure rather than prevented it.** It runs
+over rows that already exist; nothing stopped the front door producing them. `conventions.md` §9
+is explicit that a guard asserting something the code cannot produce is a guard pointed at
+nothing — and the inverse is worse: a guard asserting something the code *can* produce, with no
+gate in front of it, reports the breach after the username has already been released.
+
+So **`CreateEmployee` refuses a non-terminal predecessor**, and the refusal is part of this ADR
+rather than an implementation detail of it. It also enforces BR-2 at the one place it bites here:
+a prior record still `ACTIVE` is not a rejoin, it is a duplicate person — the exact thing the
+unique index has always existed to catch. If it is genuinely the same unbroken employment, it is
+a transfer (§5.7), not a rejoin.
+
+Both layers exist and they are not duplicates: the Action stops the state being created, the data
+guard asserts no other path created it. Removing the Action's check was run as a deliberate break
+and **the data guard's own test went red on a real violation** — `superseded_at` set on a live
+record — which is what proves it prevents rather than describes.
+
+### 2. The already-superseded record keeps its original timestamp
+
+Decision 4 says the prior record is marked; it does not say what happens when that record is
+**already** marked, which occurs the moment somebody claims a predecessor a third employment has
+already superseded.
+
+**It is left exactly as it is.** Whether two records may claim one predecessor is undecided —
+nothing makes `previous_employee_id` unique, and `EmployeeStoreRequest` says so in as many words.
+Overwriting the timestamp would answer that question silently **and** destroy the date of the
+first supersession, which is the older fact. Leaving it alone answers nothing and loses nothing.
+
+### 3. The composite is wrong in BOTH directions, not just one
+
+Decision 3 records that `UNIQUE (ic_no, superseded_at)` cancels the constraint: two live rows
+both carry NULL, NULLs are distinct, both are accepted. Running it as a deliberate break
+confirmed that — and surfaced a second defect the decision did not anticipate.
+
+It **also refuses two legitimately superseded rows** marked within the same second, failing on a
+composite key of the value and the timestamp. Somebody who leaves and returns twice has three
+records; under the composite, two of those supersessions colliding on a shared timestamp is a
+registration that dies for no reason a reader could diagnose.
+
+**So the composite is not a weaker version of the functional index. It is wrong at both ends**,
+and only one of those ends was argued when it was rejected.
+
+### 4. What this ADR decided and this PR did NOT build
+
+- **The registration form.** Decision 5's checkbox and prior-record search do not exist. ⚠ **The
+  constraint is fixed and the workflow is not** — the rejoiner path is reachable only through
+  `CreateEmployee` directly, so no HR user can yet register a rejoiner through a screen.
+- **The archived-record search itself**, which decision 5 already named as a capability the
+  screen must build rather than call. A prior record is routinely soft-deleted and may sit under
+  a former employer, so it needs a scope the employee list deliberately does not have.
+- **Normalisation.** Decision 3 closes the **form** path: `ic_no` is validated at 12 digits,
+  `passport_no` at letters and digits, both separator-free. It does not touch the **import**
+  path, which does not come through a form and whose file has never been seen (§5.5, `CLAUDE.md`
+  §10 question (d)). ⚠ **That path is now the whole of the exposure**, and it is the one that
+  writes rows in bulk. Recorded in `conventions.md` §9.
+
+⚠ **One thing the build revealed about the legacy importer**, since it will meet all of this at
+once: the authorship observer (`adr/0009`) refuses a write with no actor, and releasing an
+identity claim is a write. **An importer that supersedes anything must enter
+`AuthorshipContext`**, naming the acting user and a reason. Discovered by a probe failing on it,
+not by reading the code.

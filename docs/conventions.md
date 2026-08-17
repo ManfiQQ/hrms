@@ -750,6 +750,37 @@ which matches on `employee_no` today and has no such rule for identity — inher
 Found 2026-08-17 while writing the FormRequest rules for the nine unvalidated `adr/0013`
 columns, from asking why `ic_no` carries no format rule. Recorded 2026-08-17.
 
+### ⚠ A break can be red for the right rule and the wrong reason
+
+A break can be red for the right rule and the wrong reason, and **the message is the only way to
+tell.** The first deliberate break of `adr/0015` moved `supersedePrior()` below the two inserts in
+`CreateEmployee`, and both of its guards went red — **but neither failed on the rule it was
+testing.**
+
+The *"prior record is not terminal"* guard failed on a raw **1062** from the identity index. The
+*"link matches no employee record"* guard failed on a **1452 foreign-key violation**. Both
+refusals came from the database, reached before either guard ran, and both tests report a pass/fail
+that looks identical to the intended one from the outside.
+
+**The guards were sound. The break reached a different gate standing in front of the one under
+test.**
+
+⚠ **Any lookup of an archived or superseded record is exposed to this, and the exposure is
+structural rather than incidental.** A bare `Employee::find()` carries `TenantScope` and excludes
+trashed rows, so a superseded predecessor sitting under a former employer is invisible to it.
+`CreateEmployee` releases both scopes deliberately — that carve-out is the only reason the lookup
+sees the record at all, and any future path that forgets it gets *"not found"* where it expects a
+rule to fire.
+
+⚠ **A test that asserts only THAT something failed proves that something refused, not that the
+right thing refused.** Assert on the message. Both guards above were caught only because their
+`toThrow()` names the sentence, not just the class.
+
+This is the mirror of the entry above it: **a break that stays green means suspect the break
+first; a break that is red for the wrong reason means the guard is untested too.**
+
+Found 2026-08-17 while implementing `adr/0015`. Recorded 2026-08-17.
+
 > **⚠ `adr/0015` rebuilt this index on 2026-08-17 and deliberately did NOT fix this.** Its
 > closing line says so outright: *normalisation stays a separate question, and it is its own
 > ADR.* That ADR replaces `UNIQUE (ic_no)` with

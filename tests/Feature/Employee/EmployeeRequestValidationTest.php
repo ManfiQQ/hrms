@@ -63,7 +63,13 @@ function validStorePayload(array $overrides = []): array
         // (adr/0013 decision 2). Unlike the three above it is not the database asking — both
         // columns are nullable — it is the rule that every person carry one form of
         // identification. Tests that prove the rule remove it explicitly.
-        'ic_no' => '950412-14-5501',
+        //
+        // ⚠ WRITTEN WITHOUT DASHES SINCE adr/0015 decision 3, AND IT WAS WRITTEN WITH THEM
+        // UNTIL THEN. This fixture was `950412-14-5501`, and twelve tests in this file went red
+        // the moment `digits:12` landed — which is the rule working, not the fixture being
+        // awkward. The dashed form was flowing through every one of those payloads, and the
+        // separator-free form is what the column now holds.
+        'ic_no' => '950412145501',
         'nationality_id' => test()->nationality->id,
         'department_id' => test()->shared->id,
         'level' => 'STAFF',
@@ -352,7 +358,7 @@ it('exposes no rule for the four fields that are not profile edits', function ()
  */
 it('carries every identity and statutory column through registration', function () {
     $submitted = [
-        'ic_no' => '950412-14-5501',
+        'ic_no' => '950412145501',
         'passport_no' => 'A12345678',
         'permit_expiry' => '2027-03-31',
         'address' => 'No 12, Jalan Melur 3, 68000 Ampang, Selangor',
@@ -376,7 +382,7 @@ it('carries every identity and statutory column through registration', function 
 
 it('carries every identity and statutory column through an edit', function () {
     $employee = Employee::factory()->forCompany($this->aim)
-        ->create(['department_id' => $this->shared->id, 'ic_no' => '880101-10-1234']);
+        ->create(['department_id' => $this->shared->id, 'ic_no' => '880101101234']);
 
     $submitted = [
         'passport_no' => 'B98765432',
@@ -409,7 +415,7 @@ it('carries every identity and statutory column through an edit', function () {
  * passport case, and a suite that only ever submitted an IC could not tell the two apart.
  */
 it('registers an employee holding an IC and no passport', function () {
-    expect(storeErrors(validStorePayload(['ic_no' => '950412-14-5501', 'passport_no' => null]), $this->hr))
+    expect(storeErrors(validStorePayload(['ic_no' => '950412145501', 'passport_no' => null]), $this->hr))
         ->toBe([]);
 });
 
@@ -448,7 +454,7 @@ it('tells HR that either identity document will do, on both paths', function () 
         ->toContain('at least one form of identification');
 
     $employee = Employee::factory()->forCompany($this->aim)
-        ->create(['department_id' => $this->shared->id, 'ic_no' => '880101-10-1234']);
+        ->create(['department_id' => $this->shared->id, 'ic_no' => '880101101234']);
 
     $body = ['ic_no' => null];
     $update = EmployeeUpdateRequest::create('/employees/'.$employee->id, 'PATCH', $body);
@@ -478,7 +484,7 @@ it('treats an empty identity field as absent, not as a value', function () {
  */
 it('refuses an edit that would empty the last identity document', function () {
     $employee = Employee::factory()->forCompany($this->aim)
-        ->create(['department_id' => $this->shared->id, 'ic_no' => '880101-10-1234']);
+        ->create(['department_id' => $this->shared->id, 'ic_no' => '880101101234']);
 
     expect(updateErrors(['ic_no' => null], $employee, $this->hr))
         ->toBe(['ic_no', 'passport_no'], 'the record would be left with no identification at all');
@@ -487,7 +493,7 @@ it('refuses an edit that would empty the last identity document', function () {
 it('permits clearing a passport from an employee who still holds an IC', function () {
     $employee = Employee::factory()->forCompany($this->aim)->create([
         'department_id' => $this->shared->id,
-        'ic_no' => '880101-10-1234',
+        'ic_no' => '880101101234',
         'passport_no' => 'A00000001',
     ]);
 
@@ -537,18 +543,18 @@ it('accepts a permit that has already expired', function () {
  */
 it('refuses an IC another employee already holds, and accepts the one this employee holds', function () {
     $held = Employee::factory()->forCompany($this->aim)
-        ->create(['department_id' => $this->shared->id, 'ic_no' => '770707-07-7777']);
+        ->create(['department_id' => $this->shared->id, 'ic_no' => '770707077777']);
 
-    expect(storeErrors(validStorePayload(['ic_no' => '770707-07-7777']), $this->hr))
+    expect(storeErrors(validStorePayload(['ic_no' => '770707077777']), $this->hr))
         ->toBe(['ic_no']);
 
-    expect(updateErrors(['ic_no' => '770707-07-7777'], $held, $this->hr))
+    expect(updateErrors(['ic_no' => '770707077777'], $held, $this->hr))
         ->toBe([], 'resubmitting the value this record already holds is not a collision');
 
     $other = Employee::factory()->forCompany($this->aim)
-        ->create(['department_id' => $this->shared->id, 'ic_no' => '660606-06-6666']);
+        ->create(['department_id' => $this->shared->id, 'ic_no' => '660606066666']);
 
-    expect(updateErrors(['ic_no' => '770707-07-7777'], $other, $this->hr))
+    expect(updateErrors(['ic_no' => '770707077777'], $other, $this->hr))
         ->toBe(['ic_no'], 'another employee holds it');
 });
 
@@ -574,7 +580,7 @@ it('links a rejoiner to a prior record, including an archived one at another com
 
 it('refuses an employee as their own previous record', function () {
     $employee = Employee::factory()->forCompany($this->aim)
-        ->create(['department_id' => $this->shared->id, 'ic_no' => '880101-10-1234']);
+        ->create(['department_id' => $this->shared->id, 'ic_no' => '880101101234']);
 
     expect(updateErrors(['previous_employee_id' => $employee->id], $employee, $this->hr))
         ->toBe(['previous_employee_id']);
@@ -584,4 +590,133 @@ it('refuses an employee as their own previous record', function () {
 
     expect(updateErrors(['previous_employee_id' => $prior->id], $employee, $this->hr))
         ->toBe([]);
+});
+
+// ─── adr/0015 — the stored form, and uniqueness scoped to live rows ──────────────────────────
+
+/**
+ * ⚠ adr/0015 decision 3. An index only constrains values stored IDENTICALLY, so the storage form
+ * is part of the constraint rather than a presentation choice. `900101-14-5501` and
+ * `900101145501` are two strings and one person.
+ *
+ * ⚠ AND THE FAILURE IS WORSE THAN A MISSED MATCH. Decision 5 makes the rejoiner search match on
+ * identity, so one person written two ways yields TWO CONTRADICTORY ANSWERS: the search reports
+ * no prior employment while the unique index refuses the IC as already taken.
+ */
+it('refuses a dashed IC and accepts the separator-free form', function () {
+    expect(storeErrors(validStorePayload(['ic_no' => '950412-14-5501']), $this->hr))
+        ->toContain('ic_no');
+
+    expect(storeErrors(validStorePayload(['ic_no' => '950412145501']), $this->hr))
+        ->toBe([]);
+});
+
+/**
+ * ⚠ TWELVE DIGITS IS THE FORMAT'S DEFINITION, NOT AN ASSUMPTION ABOUT IT — a Malaysian IC is
+ * YYMMDD-PB-###G. `digits` also means digits-only, so it replaces a character rule rather than
+ * sitting beside one, which is why no separate regex exists for this column.
+ */
+it('refuses an IC that is not twelve digits', function () {
+    expect(storeErrors(validStorePayload(['ic_no' => '95041214550']), $this->hr))->toContain('ic_no')
+        ->and(storeErrors(validStorePayload(['ic_no' => '9504121455011']), $this->hr))->toContain('ic_no')
+        ->and(storeErrors(validStorePayload(['ic_no' => '95041214550A']), $this->hr))->toContain('ic_no');
+});
+
+/**
+ * ⚠ THE PASSPORT RULE IS DELIBERATELY DIFFERENT, AND APPLYING THE IC RULE HERE WOULD REJECT REAL
+ * DOCUMENTS. Passport numbers mix letters and digits, and their length varies by issuing country —
+ * so there is no length bound at all, for the same reason this file gives no format rule to the
+ * EPF and LHDN numbers: a guessed bound rejects valid values.
+ */
+it('accepts a passport of letters and digits and refuses one carrying a separator', function () {
+    $payload = fn (string $passport) => validStorePayload(['ic_no' => null, 'passport_no' => $passport]);
+
+    expect(storeErrors($payload('A12345678'), $this->hr))->toBe([])
+        ->and(storeErrors($payload('X9'), $this->hr))->toBe([])
+        ->and(storeErrors($payload('A-1234567'), $this->hr))->toContain('passport_no')
+        ->and(storeErrors($payload('A 1234567'), $this->hr))->toContain('passport_no');
+});
+
+/**
+ * ⚠ THE RULE MUST MATCH THE INDEX OR IT BECOMES THE LAST THING BLOCKING THE FLOW. The index is
+ * `UNIQUE ((IF(superseded_at IS NULL, ic_no, NULL)))` since adr/0015, so an unscoped rule here
+ * would refuse every rejoiner the database is now willing to accept — and the FormRequest, not
+ * the constraint, would be what made the rejoining flow impossible.
+ */
+it('ignores a superseded record when checking the IC is free', function () {
+    $this->actingAs($this->hr);
+
+    $prior = Employee::factory()->forCompany($this->aim)->resigned()
+        ->create(['department_id' => $this->shared->id, 'ic_no' => '770707077777']);
+
+    expect(storeErrors(validStorePayload(['ic_no' => '770707077777']), $this->hr))
+        ->toContain('ic_no');
+
+    $prior->superseded_at = now();
+    $prior->save();
+
+    expect(storeErrors(validStorePayload(['ic_no' => '770707077777']), $this->hr))
+        ->toBe([]);
+});
+
+/**
+ * ⚠ THE RULE THAT DID NOT EXIST ANYWHERE IN `app/` UNTIL 2026-08-17, and its absence is a defect
+ * adr/0015's own Context records: `CreateEmployee` failed on `users_phone_no_unique` INSIDE its
+ * transaction as a raw 1062, which reaches the user as a 500 rather than a message naming a
+ * field. Leaving it out would have fixed half of the problem the ADR names.
+ */
+it('names the phone number field when a live account already holds it', function () {
+    $holder = Employee::factory()->forCompany($this->aim)
+        ->create(['department_id' => $this->shared->id]);
+    User::factory()->forEmployee($holder)->create(['phone_no' => '0123456789']);
+
+    expect(storeErrors(validStorePayload(['phone_no' => '012-345 6789']), $this->hr))
+        ->toContain('phone_no');
+});
+
+/**
+ * ⚠ THE SAME SCOPE AS THE INDEX. A rejoiner's own frozen account holds their number; it has
+ * released the claim, so the rule must not treat it as a collision.
+ */
+it('ignores a superseded account when checking the phone number is free', function () {
+    $this->actingAs($this->hr);
+
+    $holder = Employee::factory()->forCompany($this->aim)->resigned()
+        ->create(['department_id' => $this->shared->id]);
+    $account = User::factory()->forEmployee($holder)->create(['phone_no' => '0123456789']);
+
+    expect(storeErrors(validStorePayload(['phone_no' => '0123456789']), $this->hr))
+        ->toContain('phone_no');
+
+    $account->superseded_at = now();
+    $account->save();
+
+    expect(storeErrors(validStorePayload(['phone_no' => '0123456789']), $this->hr))
+        ->toBe([]);
+});
+
+/**
+ * ⚠ WHY THE CHECK IS A CLOSURE AND NOT `unique:users,phone_no`. The stored value is normalised
+ * (BR-A1), so a declarative rule would compare the RAW input against a normalised column:
+ * `012-345 6789` matches nothing, passes, and then collides at the insert — the exact split
+ * BR-A1's one-normaliser rule exists to prevent. Adding a `where()` clause does not repair it
+ * either; it ANDs a second condition onto the same column rather than replacing the first.
+ */
+it('normalises the phone number before checking whether it is taken', function () {
+    $holder = Employee::factory()->forCompany($this->aim)
+        ->create(['department_id' => $this->shared->id]);
+    User::factory()->forEmployee($holder)->create(['phone_no' => '0123456789']);
+
+    // ⚠ Pest's toContain takes NEEDLES, not a failure message — a second argument here would be
+    // asserted as a second needle and pass for the wrong reason. Which form failed is recovered
+    // by collecting them instead, so the assertion names the written form that got through.
+    $accepted = [];
+
+    foreach (['012-345 6789', '+60123456789', '60123456789', '0123456789'] as $written) {
+        if (! in_array('phone_no', storeErrors(validStorePayload(['phone_no' => $written]), $this->hr), true)) {
+            $accepted[] = $written;
+        }
+    }
+
+    expect($accepted)->toBe([]);
 });

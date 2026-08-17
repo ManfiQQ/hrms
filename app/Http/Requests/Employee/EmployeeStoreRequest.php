@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Employee;
 
 use App\Models\Employee;
+use App\Models\User;
 use App\Services\Auth\ReadScopeResolver;
 use App\Support\Auth\PhoneNumber;
 use Illuminate\Foundation\Http\FormRequest;
@@ -72,12 +73,59 @@ class EmployeeStoreRequest extends FormRequest
             //
             // ⚠ A placeholder is not the workaround. It would occupy the unique index and
             // hand one employee's username to another (BR-A1).
-            'phone_no' => ['required', 'string', function (string $attribute, mixed $value, callable $fail) {
-                if (! PhoneNumber::isValid(PhoneNumber::normalise((string) $value))) {
-                    $fail('The phone number must be '.PhoneNumber::MIN_DIGITS.'–'.PhoneNumber::MAX_DIGITS
-                        .' digits after normalisation. It is the login username (BR-A1).');
-                }
-            }],
+            //
+            // ⚠ THE UNIQUENESS RULE THAT DID NOT EXIST ANYWHERE UNTIL 2026-08-17, and its
+            // absence was a defect `adr/0015`'s own Context records. Without it
+            // `CreateEmployee` failed on `users_phone_no_unique` INSIDE its transaction as a raw
+            // 1062 — a 500 rather than a message naming a field — and nothing in `app/` checked
+            // the number in advance. Leaving it out would have fixed half of the problem
+            // `adr/0015` names.
+            //
+            // ⚠ SCOPED TO LIVE ACCOUNTS, MATCHING THE INDEX EXACTLY. The index is now
+            // `UNIQUE ((IF(superseded_at IS NULL, phone_no, NULL)))`, so an unscoped rule here
+            // would refuse every rejoiner that the database is now willing to accept — and the
+            // rule, not the index, would be the last thing blocking the flow.
+            //
+            // ⚠ NORMALISED BEFORE COMPARING, because the stored value is normalised. A raw
+            // `012-345 6789` would be checked against `0123456789` and find nothing, then
+            // collide at the insert — the exact split BR-A1's one-normaliser rule exists to
+            // prevent.
+            // ⚠ BOTH CHECKS LIVE IN ONE CLOSURE BECAUSE BOTH NEED THE NORMALISED VALUE, and a
+            // declarative `unique:users,phone_no` cannot have it. That rule would compare the RAW
+            // input against a normalised column: `012-345 6789` would match nothing, pass, and
+            // then collide at the insert — the exact split BR-A1's one-normaliser rule exists to
+            // prevent. Adding a `where()` clause does not repair it either; it ANDs a second
+            // condition onto the same column rather than replacing the first.
+            'phone_no' => [
+                'required',
+                'string',
+                function (string $attribute, mixed $value, callable $fail) {
+                    $normalised = PhoneNumber::normalise((string) $value);
+
+                    if (! PhoneNumber::isValid($normalised)) {
+                        $fail('The phone number must be '.PhoneNumber::MIN_DIGITS.'–'.PhoneNumber::MAX_DIGITS
+                            .' digits after normalisation. It is the login username (BR-A1).');
+
+                        return;
+                    }
+
+                    // ⚠ SCOPED TO LIVE ACCOUNTS, MATCHING THE INDEX EXACTLY. It is
+                    // `UNIQUE ((IF(superseded_at IS NULL, phone_no, NULL)))` since adr/0015, so an
+                    // unscoped check would refuse every rejoiner the database now accepts — and
+                    // this rule, not the index, would be the last thing blocking the flow.
+                    $taken = User::query()
+                        ->where('phone_no', $normalised)
+                        ->whereNull('superseded_at')
+                        ->exists();
+
+                    if ($taken) {
+                        $fail('That phone number is already the login username of an active '
+                            .'account (BR-A1). If this person has worked here before, link the '
+                            .'prior record — their old account releases the number when the new '
+                            .'one is created (adr/0015). A placeholder is not the workaround.');
+                    }
+                },
+            ],
 
             // ⚠ THE THREE NOT NULL IDENTITY COLUMNS — adr/0013 decision 1. These are here
             // because the DATABASE now refuses the row without them: a request that omitted
@@ -100,20 +148,50 @@ class EmployeeStoreRequest extends FormRequest
             // Symmetric on purpose: with both missing, both boxes carry the message, because
             // either one satisfies the rule and the form should say so on both.
             //
-            // ⚠ NO FORMAT RULE AND NO NORMALISATION, AND THE SECOND IS A KNOWN HOLE. An IC is
-            // written with dashes about as often as without, and nothing normalises it the way
-            // App\Support\Auth\PhoneNumber normalises the login username — so `900101-14-5501`
-            // and `900101145501` are two values that both pass the unique index and are one
-            // person. Recorded in conventions.md §9; fixing it changes stored values, which is
-            // a migration and an ADR rather than a rule.
+            // ⚠ THE STORAGE FORM IS NOW ENFORCED — adr/0015 decision 3. Both columns hold the
+            // separator-free form, and the two rules differ because the two documents do:
             //
-            // ⚠ THE UNIQUE RULE BLOCKS EVERY REJOINER, AND IT IS NOT THE CAUSE. adr/0003
-            // decision 9 gives a rejoiner a new record; they bring the same IC; the unique
-            // INDEX refuses it with or without this line. All this rule changes is a raw
-            // constraint violation into a message naming the field. See schema.md under
-            // `ic_no` and adr/0003 decision 9 — the contradiction needs an ADR and has none.
-            'ic_no' => ['nullable', 'required_without:passport_no', 'string', 'max:255', 'unique:employees,ic_no'],
-            'passport_no' => ['nullable', 'required_without:ic_no', 'string', 'max:255', 'unique:employees,passport_no'],
+            //   `digits:12` — a Malaysian IC is YYMMDD-PB-###G. Twelve digits is the DEFINITION
+            //   of the format, not an assumption about it, and `digits` also means digits-only,
+            //   so it replaces a separate character rule rather than sitting beside one.
+            //
+            //   letters AND digits for a passport — passport numbers genuinely mix the two, so
+            //   the IC rule applied here would reject real documents. ⚠ AND NO LENGTH BOUND:
+            //   passport length varies by issuing country, and a guessed bound rejects valid
+            //   values. Same reasoning this file already gives for the EPF and LHDN formats.
+            //
+            // ⚠ WHY THE FORM MATTERS TO THE INDEX: an index only constrains values stored
+            // IDENTICALLY. `900101-14-5501` and `900101145501` are two strings and one person, so
+            // without a fixed form the unique index below is unique in the index and not unique
+            // in fact (conventions.md §9). Worse, adr/0015 decision 5 makes the rejoiner search
+            // match on identity — so one person written two ways yields TWO CONTRADICTORY
+            // ANSWERS: the search reports no prior employment while the index refuses the IC as
+            // already taken, and nothing on either record explains the disagreement.
+            //
+            // ⚠ THIS CLOSES THE FORM PATH AND NOT THE IMPORT PATH. An import does not come
+            // through here, and the legacy file has never been seen (§5.5, CLAUDE.md §10
+            // question (d)). Normalisation — rewriting values already stored — stays its own ADR.
+            //
+            // ⚠ THE UNIQUE RULES ARE SCOPED TO LIVE ROWS, MATCHING THE INDEXES EXACTLY. Since
+            // adr/0015 they are `UNIQUE ((IF(superseded_at IS NULL, <column>, NULL)))`, so an
+            // unscoped rule here would refuse every rejoiner the database now accepts. Before
+            // adr/0015 the index refused them with or without these lines; now the rule would be
+            // the only thing left blocking the flow, which is the opposite of what it is for.
+            'ic_no' => [
+                'nullable',
+                'required_without:passport_no',
+                'string',
+                'digits:12',
+                Rule::unique('employees', 'ic_no')->whereNull('superseded_at'),
+            ],
+            'passport_no' => [
+                'nullable',
+                'required_without:ic_no',
+                'string',
+                'max:255',
+                'regex:/^[A-Za-z0-9]+$/',
+                Rule::unique('employees', 'passport_no')->whereNull('superseded_at'),
+            ],
 
             // ⚠ NO `after:today` BOUND, AND ADDING ONE WOULD BREAK A DECISION. An expired
             // permit blocks nothing, suspends nobody, and stops no record being used — it
@@ -183,7 +261,16 @@ class EmployeeStoreRequest extends FormRequest
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
             'position_id' => ['nullable', 'integer', 'exists:positions,id'],
 
-            'fingerprint_id' => ['nullable', 'string', 'max:255', 'unique:employees,fingerprint_id'],
+            // ⚠ SCOPED TO LIVE ROWS for the same reason as `ic_no` above, and `fingerprint_id` is
+            // in adr/0015 although it is NOT an identity column — it is a device id from the
+            // NGTime export, unique for a different reason, and a rejoiner re-enrolling on the
+            // same reader hit the same wall.
+            'fingerprint_id' => [
+                'nullable',
+                'string',
+                'max:255',
+                Rule::unique('employees', 'fingerprint_id')->whereNull('superseded_at'),
+            ],
 
             // Display only — never an authorization or routing input (BR-9).
             'level' => ['required', Rule::in(Employee::LEVELS)],
@@ -264,6 +351,14 @@ class EmployeeStoreRequest extends FormRequest
             'passport_no.required_without' => 'An employee must hold at least one form of '
                 .'identification: fill in either the IC number or the passport number '
                 .'(adr/0013 decision 2).',
+
+            // ⚠ THE MESSAGE NAMES THE STORED FORM, not the rule. Laravel's own "must be 12
+            // digits" leaves an HR clerk who typed the dashes wondering whether the number is
+            // wrong. It is not — the separators are.
+            'ic_no.digits' => 'A Malaysian IC is 12 digits and is stored without dashes or '
+                .'spaces — 900101145501, not 900101-14-5501 (adr/0015 decision 3).',
+            'passport_no.regex' => 'A passport number is stored as letters and digits only, '
+                .'with no dashes or spaces (adr/0015 decision 3).',
         ];
     }
 }

@@ -122,8 +122,16 @@ covering more than they do.
 > nullable, both unique, at least one required — and the per-column caveat in
 > this paragraph is untouched by it.
 >
-> ⚠ **Decided, not built.** The columns are as this ADR shipped them, and a
-> rejoiner cannot be registered today.
+> **✅ BUILT 2026-08-17** — `2026_08_17_100000`. Decisions 1 and 2 above are
+> unchanged: two columns, both nullable, both unique, at least one required. What
+> changed is what the indexes are computed over, and the per-column caveat in the
+> paragraph above this note still holds exactly as written.
+>
+> ⚠ **`adr/0015` decision 3 also settles a form this ADR never specified:** `ic_no`
+> holds **12 digits, no separators**, `passport_no` holds **letters and digits, no
+> separators and no length bound**. Both are now FormRequest rules. That is the
+> answer to the *"NO FORMAT RULE"* note the registration rules carried until then —
+> on the form path only. Normalising values already stored remains its own ADR.
 
 ### 3. `epf_no`, `socso_no` and `tax_no` are nullable, and that is a fact, not a compromise
 
