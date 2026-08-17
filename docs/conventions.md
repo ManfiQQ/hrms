@@ -646,6 +646,41 @@ which is worse**: a guard that fails sometimes gets re-run until it passes.
 comparable, and a test whose fixture happens to produce the expected order proves the fixture,
 not the code. Recorded 2026-08-17.
 
+### ⚠ A verification step destroyed what it was meant to protect
+
+**§10 step 6 asked for a migration run against an empty test database. Running it dropped the
+DEV database** — every company, the Master Admin account, the policy configurations, the job
+functions and the nationalities — on 2026-08-17, during the checklist of PR #56.
+
+The command was `sail artisan migrate:fresh --database=mysql --env=testing`. Every part of it
+looks deliberate, and the wrong part is the part that looks safest:
+
+- **`--env=testing` reads `.env.testing`.** This repo has none, so Laravel falls back to `.env`,
+  where `DB_DATABASE=laravel`.
+- **The `testing` database is declared only in `phpunit.xml`**, which PHPUnit reads and
+  `artisan` never does. The two configuration files agree on the word `testing` and disagree on
+  what reads them.
+- **`--database=mysql` names a CONNECTION, not a database.** It reinforced the impression that
+  the target had been stated explicitly when nothing about the target had been stated at all.
+
+Nothing failed. `migrate:fresh` reported every migration DONE, because it did exactly what it
+was asked to do to the wrong database, and the loss was invisible until somebody counted rows
+two days later for an unrelated question.
+
+**Two things this is not.** It is not a missing safeguard — Laravel has one, the production
+confirmation prompt, and it is skipped precisely because `APP_ENV=local`. And it is not an
+argument for a `--force`-style habit: the checklist step itself was redundant with `php artisan
+test`, so the safest form of this command was never to need it. §10 step 6 now says so.
+
+⚠ **A checklist step that verifies by MUTATING is a different kind of step from the rest**, and
+the others on that list are reads: `optimize:clear`, `php -l`, `route:list`, the sensitive-file
+scan. This one wrote, and it wrote to whatever the config resolved to rather than to what the
+line in the checklist said. **Where a step must mutate, the target belongs in the command and
+the command belongs in the document** — not in the reader's assumption about a flag.
+
+Recovered with `sail artisan db:seed` and verified by querying the tables rather than by reading
+the seeder's output. Recorded 2026-08-17.
+
 ### ⚠ A test helper can quietly validate something other than what ships
 
 `EmployeeRequestValidationTest`'s four helpers called
@@ -727,13 +762,40 @@ was solid and is carried forward:
 3. `php artisan route:list --no-ansi` — sanity check routes registered correctly
 4. `php artisan test`
 5. `npm run build` if any frontend file changed
-6. Migration test against an **empty test database** — never against a database with
-   real or seeded production-like data
+6. Migration against an **empty database** — **satisfied by step 4, and not run separately.**
+   See below before typing any `migrate:fresh` of your own
 7. Sensitive-file check — confirm no `.env`, credentials, employee documents, salary
    files, or database dumps are staged for commit
 
 Report: summary of changes, files changed, migrations added, test results
 (exact pass/fail), remaining risks, rollback notes.
+
+### ⚠ Step 6 is discharged by step 4 — rewritten 2026-08-17, after it destroyed the dev database
+
+**`RefreshDatabase` calls `migrate:fresh`** (`Illuminate\Foundation\Testing\RefreshDatabase`
+line 119), against the database named by `phpunit.xml`'s `<env name="DB_DATABASE" value="testing"/>`
+— which is empty by construction. So **every `php artisan test` already migrates the full
+stack from nothing**, and step 6 was asking for a second time what step 4 does every run.
+
+What it is **not** is a test of `down()`. Nothing exercises the rollback path, and
+`conventions.md` §11 is the reason that is tolerable rather than an oversight: while the
+in-place-edit window is open, a bad migration is edited, not reversed.
+
+**If you have a genuine reason to run one by hand, the flag you would reach for is the wrong
+one.** These are the measured results on this project, not recollection:
+
+| Command | Database actually hit |
+|---|---|
+| `sail artisan migrate:fresh` | **`laravel` — the dev database** |
+| `sail artisan migrate:fresh --env=testing` | **`laravel` — the dev database** |
+| `sail exec -e DB_DATABASE=testing laravel.test php artisan migrate:fresh` | `testing` |
+
+⚠ **`--env=testing` reads `.env.testing`, and this repo has none**, so it falls back to `.env`
+and `DB_DATABASE=laravel`. `phpunit.xml` is read by PHPUnit and by nothing else — never by
+`artisan`. The flag looks like the safe one and is the destructive one.
+
+**Before any manual `migrate:fresh`, print the target and read it:**
+`sail artisan tinker --execute="echo DB::connection()->getDatabaseName();"`
 
 ---
 
