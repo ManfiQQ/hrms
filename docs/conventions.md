@@ -646,6 +646,75 @@ which is worse**: a guard that fails sometimes gets re-run until it passes.
 comparable, and a test whose fixture happens to produce the expected order proves the fixture,
 not the code. Recorded 2026-08-17.
 
+### ⚠ A test helper can quietly validate something other than what ships
+
+`EmployeeRequestValidationTest`'s four helpers called
+`Validator::make($payload, $request->rules())` — **two arguments**. The real FormRequest
+pipeline passes three: `rules()`, `messages()`, `attributes()`. So every custom message in both
+employee requests was written, shipped, and **exercised by nothing**, for as long as the file
+had existed.
+
+Nothing failed and nothing could. The assertions were on error KEYS, which are identical either
+way, so the helper was validating a *different object* from the one production builds and
+agreeing with it on everything the tests happened to ask.
+
+⚠ **The cost was not theoretical.** The edit path's conditional rule surfaces as `required`, so
+Laravel's default wording for it was *"the ic no field is required"* — about a **nullable**
+column, to an HR clerk who had just cleared a passport. The custom message existed precisely to
+prevent that sentence, and no test would ever have noticed it was absent.
+
+Found 2026-08-17 by writing a throwaway probe that PRINTED the rule array and the resulting
+messages, rather than by asserting on them. ⚠ **A helper that reconstructs part of a framework
+pipeline is a second implementation of it**, and it drifts in the direction of whatever the
+tests do not look at. Recorded 2026-08-17.
+
+### ⚠ A fixture guard can be directional, and this one was
+
+`NationalityFactory::unusedCountryName()` checks the table before drawing, and its docblock says
+why: *"an intermittent failure in a fixture, which is the most expensive kind to diagnose."* The
+guard is real and it works. **It only looks one way.**
+
+It stops the factory's random draw from colliding with a row that **already exists**. It cannot
+stop a row created **afterwards** from colliding with the draw — and that is what
+`EmployeeRequestValidationTest` did: its `beforeEach` created an employee first (whose factory,
+against an empty table, draws a random country) and named `Malaysia` second. Roughly one draw in
+250 is `Malaysia`, across 30 tests a run, so the file failed **about one run in seven** with a
+duplicate-key error attributed to whichever test happened to be next.
+
+**Two things made it survive:** the error names the *test that was running*, never the fixture
+that set it up, and a suite that passes six times out of seven reads as green. It was found only
+because a break was being watched — the same way the coverage gap above was found.
+
+Fixed by creating the named row **before** the first employee, so the factory reuses it and
+draws nothing. ⚠ **Any factory that lazily creates a shared reference row has this shape**: the
+guard belongs on both sides, or the fixture order does. Recorded 2026-08-17.
+
+### ⚠ A unique index without a normaliser admits the same person twice
+
+`employees.ic_no` is unique. `900101-14-5501` and `900101145501` are **two different strings**,
+both pass that index, and they are **one person** — so the column that identifies an employee
+can hold them twice, with no error anywhere and nothing on either record to suggest it.
+
+**The repo already contains the answer to this, which is what makes it worth recording.**
+`App\Support\Auth\PhoneNumber` exists for exactly this reason on `users.phone_no`: BR-A1
+normalises before storing, because *"an employee registered under one normalisation cannot log
+in under the other."* An IC is written with dashes about as often as without. **The same
+argument applies and the same mechanism was not built.**
+
+**It is not fixed, and the reason is the difference between a rule and a migration.** A
+validation rule constrains what arrives next; a normaliser **changes the value that gets
+stored**, so it reaches every row already written, the seeders and factories that wrote them,
+and any comparison made against an un-normalised copy elsewhere. That is a data change with a
+backfill position, which is an ADR and a PR of its own — the same reasoning that kept the
+`created_by` mechanism out of a module slice (`employee-master.spec.md` §5.1, now `adr/0009`).
+
+⚠ **The cost until then, stated plainly: `ic_no` is unique in the index and not unique in
+fact.** Any code that later treats it as a person's identifier — the legacy importer above all,
+which matches on `employee_no` today and has no such rule for identity — inherits that.
+
+Found 2026-08-17 while writing the FormRequest rules for the nine unvalidated `adr/0013`
+columns, from asking why `ic_no` carries no format rule. Recorded 2026-08-17.
+
 ---
 
 ## 10. Required Validation Before Calling a Module "Done"

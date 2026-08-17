@@ -437,6 +437,26 @@ group-wide and not composite with `company_id`.
 The dividing line is **continuity of employment**, not which entity pays: a transfer is one
 unbroken employment, a rejoin is two separate ones.
 
+> **⚠ The rejoining bullet is currently unimplementable — found 2026-08-17, and it is a
+> contradiction with `adr/0013`, not a gap in this one.**
+>
+> `adr/0013` decision 1 made `employees.ic_no` **unique**. A rejoiner gets a new record and
+> brings **the same IC**, because a person has one. The unique index knows nothing about
+> `deleted_at` and nothing about a terminal `staff_status`, so **the second record cannot be
+> created**. The only way through is to empty `ic_no` on the old record — which destroys the
+> identity on the historical row, and that row is precisely the one `previous_employee_id`
+> below is required to point at.
+>
+> Both ADRs are Accepted and neither is wrong read alone: one says a rejoin is a new record,
+> the other says an IC identifies one person. **Nothing in either notices that the two meet.**
+>
+> The `unique` validation rule added to the two employee FormRequests on 2026-08-17 does not
+> cause this and does not worsen it — it converts a raw constraint violation into a message
+> naming the field. **The block is the index.**
+>
+> **It needs an ADR of its own and one has not been written.** Recorded in `schema.md` under
+> `ic_no` as well, since that is where somebody hits it.
+
 **`employees.previous_employee_id`** — self-FK, nullable — links a rejoiner's new record to
 their old one. BR-2 already requires reinstatement to reference the prior record but no
 column existed for it, leaving the rule unimplementable. Employee Master only **stores**
