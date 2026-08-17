@@ -4,6 +4,7 @@ namespace App\Livewire\Employees;
 
 use App\Models\Employee;
 use App\Policies\EmployeePolicy;
+use App\Services\Employee\StatusTimeline;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Url;
@@ -223,6 +224,24 @@ class EmployeeDetail extends Component
             fn (array $labels) => array_values(array_unique(array_filter($labels))),
             array_filter($service, fn ($labels, $company) => $company !== null, ARRAY_FILTER_USE_BOTH)
         );
+    }
+
+    /**
+     * The merged Status History timeline — `adr/0003` decision 8, §7.
+     *
+     * ⚠ Built only for the tab that shows it. It reads two tables, one of them with its
+     * tenant scope released, and paying for that on the Employment tab would be six wasted
+     * queries for a panel nobody is looking at.
+     *
+     * @return Collection<int, \App\Services\Employee\TimelineEntry>
+     */
+    public function getStatusTimelineProperty(): Collection
+    {
+        if ($this->activeTab !== EmployeePolicy::TAB_STATUS_HISTORY) {
+            return collect();
+        }
+
+        return app(StatusTimeline::class)->for($this->employee);
     }
 
     /** Revoked authority for the Roles & Functions tab — history, kept visibly apart. */

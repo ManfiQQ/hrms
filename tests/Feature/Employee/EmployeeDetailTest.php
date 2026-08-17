@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Models\Department;
 use App\Models\Employee;
 use App\Models\EmployeeRole;
+use App\Models\EmployeeStatusHistory;
 use App\Models\PolicyConfiguration;
 use App\Models\User;
 use App\Policies\EmployeePolicy;
@@ -200,6 +201,54 @@ it('renders no write control on any tab the administrative tier can open', funct
             ->assertDontSee('Archive')
             ->assertDontSee('<form', false);
     }
+});
+
+/**
+ * ⚠ THIS GUARD EXISTS BECAUSE THE ALTERNATIVE FAILS ON THE FIRST USER, NOT THE FIRST
+ * DEVELOPER. A key added to `PERSONAL_FIELDS_ALL` without a label here is an undefined-index
+ * error — loud, but only once somebody renders the Personal tab as a reader entitled to that
+ * field. It ships green until then, and `conventions.md` §9's newest finding is the evidence
+ * that "some tab, some tier, some reader" is not a path a suite necessarily walks.
+ *
+ * Both directions. An orphan label is a field that was REMOVED with its label left behind,
+ * which is how a list starts describing a column that no longer exists.
+ */
+it('has a Personal label for every policy field, and no orphans', function () {
+    $fields = EmployeePolicy::PERSONAL_FIELDS_ALL;
+    $labelled = array_keys(EmployeeDetail::PERSONAL_LABELS);
+
+    expect($fields)->not->toBeEmpty()
+        ->and(array_diff($fields, $labelled))->toBe([])
+        ->and(array_diff($labelled, $fields))->toBe([]);
+});
+
+it('renders the merged timeline on the Status history tab, both sources at once', function () {
+    $subject = detailStaffAt($this->aim);
+
+    EmployeeStatusHistory::factory()->create([
+        'employee_id' => $subject->id,
+        'company_id' => $this->aim->id,
+        'change_type' => 'STAFF_STATUS',
+        'new_label' => 'CONFIRMED',
+        'effective_date' => '2026-03-01',
+    ]);
+    EmployeeRole::factory()->forCompany($this->aim)->role('MANAGER')->create([
+        'employee_id' => $subject->id,
+        'effective_date' => '2026-01-15',
+        'revoked_date' => '2026-08-08',
+    ]);
+
+    Livewire::actingAs($this->hr)->test(EmployeeDetail::class, ['employee' => $subject])
+        ->call('selectTab', EmployeePolicy::TAB_STATUS_HISTORY)
+        ->assertSee('Role → Manager')
+        ->assertSee('Status → CONFIRMED')
+        ->assertSee('Manager revoked')
+        ->assertSee('15 Jan 2026')
+        ->assertSee('08 Aug 2026')
+        // §7: each entry indicates its source, and every line names its company.
+        ->assertSee('employee_status_history')
+        ->assertSee('employee_roles')
+        ->assertSee($this->aim->name);
 });
 
 it('links every list row to its detail screen', function () {
