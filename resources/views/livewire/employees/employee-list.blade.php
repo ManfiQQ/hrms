@@ -5,9 +5,16 @@
     date of birth, bank account — are the Personal tab's, behind a per-tab permission check.
     A list identifies people; it does not display their identity.
 
-    ⚠ NO PER-ROW LINK, and its absence is deliberate rather than unfinished. The employee
-    detail screen does not exist yet, and a row linking to a 404 is worse than a row that does
-    not link. The link lands with that screen.
+    ⚠ THE PER-ROW LINK CARRIES NO PERMISSION CHECK, AND THAT IS AN ARGUMENT RATHER THAN AN
+    OMISSION. Every row this table shows is a row `EmployeePolicy::view()` admits: the list is
+    narrowed by `Employee::scopeVisibleTo()`, and `EmployeeListVisibilityTest` compares the two
+    as whole result sets across a population of reporting shapes. A `@can` here would be a
+    second answer to a question already answered — and the day it disagreed, the guard would be
+    the thing that noticed, not this template.
+
+    Its stated limit applies and is worth knowing: that guard is only as wide as its
+    population, and it proves the two forms are the SAME rule rather than that the rule is
+    right. The detail screen re-authorises on mount and on every render regardless.
 --}}
 <div class="space-y-6">
 
@@ -131,7 +138,12 @@
                     @forelse ($employees as $employee)
                         <tr wire:key="employee-{{ $employee->id }}">
                             <td class="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-600">{{ $employee->employee_no }}</td>
-                            <td class="px-4 py-3 font-medium">{{ $employee->full_name }}</td>
+                            <td class="px-4 py-3 font-medium">
+                                <a href="{{ route('employees.show', $employee) }}"
+                                   class="underline decoration-slate-300 underline-offset-2 hover:decoration-slate-900">
+                                    {{ $employee->full_name }}
+                                </a>
+                            </td>
                             <td class="px-4 py-3 text-slate-600">{{ $employee->company?->name }}</td>
                             <td class="px-4 py-3 text-slate-600">{{ $employee->department?->name }}</td>
                             <td class="px-4 py-3 text-slate-600">{{ $employee->position?->title ?? '—' }}</td>

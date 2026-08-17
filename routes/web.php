@@ -83,6 +83,21 @@ Route::middleware(['auth', EnsureAccountIsActive::class, EnsurePasswordIsChanged
     Route::get('/employees', fn () => view('employees.index'))->name('employees.index');
 
     /*
+     * The employee detail screen (§7, §7.1) — read-only, eight tab headers, seven with
+     * content. EmployeePolicy::view enforced inside the Livewire component, for the same
+     * reason as the three screens around it.
+     *
+     * ⚠ TWO REFUSALS, AND THEY LOOK DIFFERENT ON PURPOSE. `Employee` carries `TenantScope`,
+     * which applies to route model binding — so another company's record is a **404** here,
+     * resolved before any policy runs, and the URL cannot be used to confirm that an employee
+     * id exists outside the reader's scope. An in-scope record the reader may not open is a
+     * **403** from the policy. Neither answer is a courtesy: the first withholds existence,
+     * the second withholds contents.
+     */
+    Route::get('/employees/{employee}', fn (App\Models\Employee $employee) => view('employees.show', ['employee' => $employee]))
+        ->name('employees.show');
+
+    /*
      * Master Admin management (§5.8) — Master Admin only, enforced by
      * UserPolicy::administerMasterAdmins inside the component, and BR-A13's 3/1 limits
      * enforced inside the Actions rather than by either.
