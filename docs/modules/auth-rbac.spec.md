@@ -381,6 +381,27 @@ A rejoining employee gets a new employee record, a new `employee_no`, and a new 
 > This is the **second** blocker on the rejoining flow. The first is `employees.ic_no`, recorded
 > in `schema.md` and `adr/0003` decision 9. **They are one question and must be decided
 > together**, because deciding either alone leaves the flow just as blocked. Neither has an ADR.
+>
+> > **✅ Both have one now — `adr/0015`, 2026-08-17, decided together as this note required.**
+> >
+> > **BR-A18 itself is unchanged.** No reactivation, by anyone, including Master Admin: a
+> > rejoiner still gets a new employee record, a new `employee_no` and a new account. The
+> > rule was never the problem — the unique index was. `adr/0015` decision 1 records that
+> > reactivation was reconsidered and rejected a second time, partly on this rule's own
+> > ground and partly on a new one: the old account carries a password set years ago and
+> > unused since, so reactivating it would restore working credentials instead of issuing
+> > the single-use activation BR-A21 requires.
+> >
+> > A nullable `superseded_at` on `users` and a functional index —
+> > `UNIQUE ((IF(superseded_at IS NULL, phone_no, NULL)))` — let the frozen old account keep
+> > its number while releasing its claim on it. **The row is not deleted**, so the audit
+> > trail this freeze exists to preserve survives, and none of the five closed escapes above
+> > is reopened.
+> >
+> > ⚠ **Decided, not built. Nothing in `app/` has changed** — `superseded_at` does not
+> > exist, no `unique:users,phone_no` rule was added, and `CreateEmployee` still fails on
+> > `users_phone_no_unique` as a raw 1062 inside its transaction. The ⚠ above describes the
+> > system as it stands today.
 
 **BR-A19 — The countdown is visible on five dashboards** — the employee's own, HR's,
 Account's, Master Admin's, and the employee's manager or supervisor's. This is the

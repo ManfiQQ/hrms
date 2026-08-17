@@ -207,6 +207,18 @@ in a way the code cannot explain.
 narrowed to the account's read scope and then filtered by status, so the two columns are used
 together and in that order.
 
+> **⚠ Three of the unique indexes on this table are due to be rebuilt as functional indexes
+> — decided 2026-08-17 by `adr/0015`, not yet built.** `ic_no`, `passport_no` and
+> `fingerprint_id` become `UNIQUE ((IF(superseded_at IS NULL, <column>, NULL)))` so that a
+> superseded record stops competing for a value it keeps. `employee_no` is **not** among
+> them: it is never reissued and a rejoiner gets a new one, so it has no rejoiner problem to
+> solve (`adr/0003` decision 9, BR-13).
+>
+> **`fingerprint_id` is included although it is not an identity column** — it is a device id
+> from NGTime, unique for a different reason, but a rejoiner re-enrolling on the same reader
+> hits the same wall. See the note under `ic_no` above for what is decided and what is still
+> only decided.
+
 `department_id`, `direct_supervisor_id`, `manager_id` and `previous_employee_id` are indexed
 **implicitly** by their foreign keys and carry no separate declaration. `employee-master.spec.md`
 §3 lists them, and reading that list as four missing indexes is the mistake to avoid: a second
@@ -256,6 +268,32 @@ index on the same column is dead weight MySQL maintains on every write.
 > including `deleted_at`, a partial index MySQL 8 does not support, or accepting that a
 > rejoiner's IC moves to the live record — are a decision, not an implementation detail.
 >
+> > **✅ Decided 2026-08-17 by `adr/0015` — and none of the three candidates won.** The
+> > rejoining design stands unchanged (decision 1); what changes is the index. A nullable
+> > `superseded_at` lands on `employees` and `users` (decision 2), and the four unique
+> > indexes are rebuilt over an expression — `UNIQUE ((IF(superseded_at IS NULL, ic_no,
+> > NULL)))` and its three siblings (decision 3) — so a superseded row stops competing for
+> > the value without giving it up. **`ic_no` is never emptied**, which is what the
+> > paragraph above required and no candidate offered.
+> >
+> > **Decision 3 also settles the storage form, because an index only constrains values
+> > stored identically: `ic_no` and `passport_no` hold digits and letters only — no dashes,
+> > no spaces.** The registration form renders the separators as its own boxes, six, two and
+> > four, so the separator is never typed. **That closes the form path only.** The legacy
+> > import does not go through the form and its file has never been seen, so normalisation
+> > stays a separate ADR for that path (`conventions.md` §9, `CLAUDE.md` §10 question (d)).
+> >
+> > The composite was **tested and rejected on MySQL 8.4**: `UNIQUE (ic_no, superseded_at)`
+> > is created successfully and **removes the constraint entirely**, because two live rows
+> > both carrying NULL are distinct. It reads as a narrowing and is a cancellation. The
+> > partial index is a syntax error, as this paragraph already suspected.
+> >
+> > ⚠ **Decided, not built.** No migration exists, `superseded_at` is on neither table, and
+> > the four indexes are still the plain ones described above. **Every sentence of this note
+> > therefore still describes the database as it stands** — a rejoiner cannot be registered
+> > today. The rows in the table above are unchanged for the same reason.
+>
+
 > **No `personal_phone` column exists and none may be added** — `users.phone_no` is already
 > the personal number as well as the login username (`adr/0006`), and a second would be two
 > numbers for one person: HR updates one, login reads the other, and an employee is locked
@@ -1070,6 +1108,23 @@ login username, `adr/0006`), `failed_login_attempts` (unsigned integer,
 > **This is the same question as `ic_no` above** (`adr/0003` decision 9), and the two must be
 > decided together — fixing either alone leaves the flow blocked. Recorded at BR-A18 in
 > `auth-rbac.spec.md`. **No ADR exists yet.**
+>
+> > **✅ Decided 2026-08-17 by `adr/0015`, which decides both together** — as the sentence
+> > above required. `users` gains a nullable `superseded_at` and the unique index on
+> > `phone_no` is rebuilt as `UNIQUE ((IF(superseded_at IS NULL, phone_no, NULL)))`, so the
+> > frozen old account keeps its number while releasing its claim on it. **No row is
+> > deleted and no number is emptied**, so the audit trail the freeze exists to preserve is
+> > untouched — and none of the five closed escapes above had to be reopened.
+> >
+> > `CreateEmployee` marks the prior record and its account superseded **before** writing
+> > the new rows, inside the transaction it already opens (decision 4). **Order is
+> > load-bearing**: the new `users` row cannot be written while the old one still binds the
+> > number.
+> >
+> > ⚠ **Decided, not built.** `superseded_at` does not exist, the index is still the plain
+> > one, `CreateEmployee` does nothing of the sort, and **there is still no
+> > `unique:users,phone_no` rule anywhere in `app/`** — so the failure remains a raw 1062
+> > inside the transaction, exactly as described above.
 
 > **BR-A3's throttle state — added 2026-08-12**
 > (`2026_08_12_100200_add_login_throttle_to_users_table.php`). The spec described four tiers

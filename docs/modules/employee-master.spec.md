@@ -375,6 +375,24 @@ impossible, since a derived value cannot be edited.
 | **Resignation / termination** | **Retired permanently**, never reissued | Terminal (BR-2) |
 | **Rejoining** | **New number** | **New record**, linked via `previous_employee_id` |
 
+> **⚠ The rejoining row above could not be executed until 2026-08-17, and `adr/0015` is what
+> makes it executable.** A rejoiner brings the same `ic_no` and the same `users.phone_no`; both
+> are unique, the old rows still hold them, and the new record therefore could not be created
+> at all. **The rule was never the problem — the indexes were**, so this row and the whole
+> lifecycle table stand exactly as written.
+>
+> `adr/0015` adds a nullable `superseded_at` to `employees` and `users` and rebuilds four
+> unique indexes over an expression, so a superseded row releases its claim on a value without
+> giving the value up. `CreateEmployee` sets it on the prior record and its account **before**
+> writing the new rows, in the transaction it already opens — order is load-bearing.
+>
+> ⚠ **Two things this leaves for whoever builds registration.** §8 test 22 below requires a
+> rejoiner to get a new record with `previous_employee_id` set: **that test cannot pass today**
+> and is not merely unwritten. And `adr/0015` decision 5 makes the form ask *"has this employee
+> worked here before?"* before searching prior records — **a search this module cannot
+> currently perform**, since the employee list shows no soft-deleted row and cannot cross a
+> tenant boundary.
+
 **`employees.previous_employee_id`** — self-FK, nullable — is the thread from a rejoiner's
 new record back to the old one. BR-2 already required reinstatement to reference the prior
 record, but no column existed for it, leaving the rule unimplementable. **Employee Master
