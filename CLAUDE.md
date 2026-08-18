@@ -266,6 +266,14 @@ The legacy system's **approval hierarchy design** and its validation checklist (
 **These are not architecture questions, and nobody here can answer them.** They arose from
 implementing Employee Master, where every rule now enforced meets the legacy data at once.
 
+> **The legacy system runs on the Vultr VPS at `/var/www/ahs-hr` and will be replaced
+> entirely. The data inside it is test data, not real employee records** — so it is **not** a
+> source for the import, and (a) to (f) below stay open until real HR records answer them.
+> Recorded 2026-08-18.
+>
+> ⚠ **Do not attempt to settle any of the six by reading the legacy database.** It will give
+> answers that look plausible and are wrong.
+
 - **(a) How many employees in the current records have no usable mobile number, and who will
   collect the missing ones?** ⚠ This is the hard blocker. `users.phone_no` is the login
   username: NOT NULL, unique, 9–12 digits, and **a placeholder is banned** because it would
