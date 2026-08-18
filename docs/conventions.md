@@ -924,6 +924,17 @@ and `DB_DATABASE=laravel`. `phpunit.xml` is read by PHPUnit and by nothing else 
 - **(b)** no real data exists in any database,
 - **(c)** the repo is held by a single developer.
 
+> **⚠ ALL THREE CONDITIONS ARE ABOUT THIS REPO — recorded 2026-08-18.**
+>
+> A legacy system runs on the Vultr VPS at `/var/www/ahs-hr`, and it is **separate code**: not
+> this codebase, not deployed from this repo, and not touched by these migrations. It is
+> therefore **not** the production environment (a) speaks of, and its database is not a
+> database (b) speaks of — (b) means any database **this repo's migrations run against**.
+>
+> The data in that legacy system is **test data** in any case (`CLAUDE.md` §10), so it neither
+> opens this window nor closes it. **The window closes on the first deployment OF THIS REPO**,
+> or on the first clone by a second person. Do not read the VPS as evidence either way.
+
 **When any one condition falls, this option dies** and a repair migration becomes the only
 route — even though that is the pattern `CLAUDE.md` §9 records as the legacy system's
 disease.
