@@ -157,7 +157,16 @@ who rejected it, and why. An event is emitted for the Notification Engine.
 a period would need a scheduled task — this project has none, and
 `routes/console.php` is empty — and the notification telling the employee to
 resubmit needs the Notification Engine, which has not started and is blocked on
-client question 4.
+the outstanding client decision about notification channel — email, WhatsApp, or
+in-app only (`CLAUDE.md` §10).
+
+> **⚠ THE FIRST CLAUSE IS NOW FALSE, AND THE CONCLUSION STANDS — `adr/0016`, 2026-08-18.**
+> *"This project has none, and `routes/console.php` is empty"* was true when this was written.
+> Two tasks are registered there today, `security-events:prune` and `sessions:prune`, and both
+> are asserted by tests. **But nothing calls `schedule:run`** — no cron entry, no deployment —
+> so no scheduled task can be relied on to run, and the rejection above holds for a different
+> reason than the one it gives. `adr/0016` decision 5 makes the cron entry a documented step of
+> the first deployment.
 
 **What settles it: the rejected file is not the only copy.** The employee
 uploaded it, so it is still on their phone. A window would protect something

@@ -260,6 +260,14 @@ The legacy system's **approval hierarchy design** and its validation checklist (
   accounts are provisioned for every employee precisely so attendance verification is
   possible, and payroll is blocked on unverified attendance. `employee-master.spec.md` §2
   lists self-service as out of scope for Phase 1, which stays true.
+- **Notification channel — email, WhatsApp, or in-app only.** Asked of the client and
+  unanswered. Recorded here 2026-08-18 because it had been asked but never written down, and
+  two ADRs cite it as a blocker: `adr/0012` defers the resubmit notification on it, and
+  `adr/0016` decision 2 defers the `adr/0013` permit-expiry and EPF/SOCSO warnings on it.
+  **The Notification Engine cannot be specced until it is answered** — the channel decides
+  what the engine delivers, not merely how. Every event emitted with no listener today
+  (`AccountFrozen`, `AccountActivated`, and those declared by ADRs but not yet built) waits
+  on the same answer.
 
 ### Questions for the client — legacy import, added 2026-08-13
 
