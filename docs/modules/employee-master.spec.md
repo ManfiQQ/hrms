@@ -555,6 +555,37 @@ full. Test both directions (§8).
 Soft delete only. An employee with dependent records is archived, never hard-deleted.
 Hard deletion is not exposed in the UI at all.
 
+> **⚠ NOTHING IN THE APPLICATION TOUCHES `employees.deleted_at`, AND THAT IS THE RECORDED
+> STATE RATHER THAN A GAP TO CLOSE — 2026-08-18.**
+>
+> The column exists because `conventions.md` §3 requires it on every business table, and no
+> code path writes it. `Employee` uses `SoftDeletes`, no `->delete()` is called on it anywhere
+> in `app/`, and no `->restore()` exists anywhere in the repository. `EmployeePolicy::archive()`
+> is an alias for `update()` whose only caller is a test. The exclusion from the list in §5.4
+> is Eloquent's default `SoftDeletingScope` doing it — neither `TenantScope` nor
+> `Employee::scopeVisibleTo()` knows anything about `deleted_at`.
+>
+> **A real case exists and has never occurred:** HR creates a duplicate record by mistake, and
+> §5.2 bans hard deletion, so the duplicate has to go somewhere. **Do not build a screen for
+> it until it happens.** A confirmation screen for an operation with no caller is a control
+> that invites the operation.
+>
+> **Archiving and terminal status are two axes, not one.** A terminal `staff_status` is the
+> employment lifecycle (BR-2); `deleted_at` is administrative cleanup. Setting a terminal
+> status does not archive, and archiving does not freeze the account or revoke roles — BR-A15
+> belongs to the status change alone. An employee record **stays in the list after they
+> leave**. `superseded_at` is a third thing again: an identity claim released for a rejoiner
+> (`adr/0015`), not a deletion of any kind.
+>
+> **Restoring a wrongly-deleted record is not forbidden.** BR-A18 refuses reactivation of an
+> **account** after a terminal status; it says nothing about `deleted_at`, and the two must not
+> be read as one rule.
+>
+> The one deliberate reader of archived rows is
+> `App\Services\Employee\PriorEmploymentLookup` — one exact-match query returning six
+> fields, with no HTTP route. `adr/0015`'s amendment states that an archived-record **browse**
+> is not built and not authorised, and this note does not change that.
+
 ### 5.3 Status history is automatic
 
 Any change to `staff_status`, `position_id`, `department_id`, or `level` writes a new
@@ -1099,7 +1130,14 @@ group-level HR moving an employee from AIM to TURSENIA is the ordinary case.
 
 Blade + Livewire 3. Screens: employee list (search/filter/paginate), employee detail
 (tabbed — Employment, Personal, Family, Education, Employment History, Documents,
-**Roles & Functions**, Status History), create/edit form, archive confirmation.
+**Roles & Functions**, Status History), create/edit form, ~~archive confirmation~~.
+
+> **⚠ "Archive confirmation" is residue of a model this project rejected — struck 2026-08-18.**
+> It described a world where ending an employment removed the record from view. **It does not:
+> an employee record stays in the list after they leave, and there is no separate "archive"
+> act** — see §5.2, which records that no application path touches `deleted_at` at all. The
+> screen it names must not be built. Left struck rather than deleted so a reader who remembers
+> it finds this note instead of rebuilding it.
 
 ### 7.1 What each tab displays
 
