@@ -189,6 +189,20 @@ comparing: strip spaces, dashes, and a leading `+60` or `60`. `012-345 6789`,
 Normalisation lives in one place and is called by both the login attempt and the employee
 form. Two implementations will diverge.
 
+> **⚠ ONE NAMED EXCEPTION — the system account, `adr/0016` decision 1, 2026-08-18.** The
+> scheduler writes rows, and `AuthorshipObserver` refuses a write with no actor, so scheduled
+> work acts as a real `users` row whose `phone_no` is the literal string `SYSTEM`.
+>
+> **It is not the placeholder this rule forbids.** A placeholder is banned because it occupies
+> the unique index and hands one person's username to another; `SYSTEM` contains letters, so it
+> is outside the space of Malaysian mobile numbers and can collide with nobody. The exception is
+> bounded to that single row, and every other account still obeys this rule as written.
+>
+> ⚠ **Two consequences `adr/0016` requires to be built rather than assumed:**
+> `PhoneNumber::normalise('SYSTEM')` returns an empty string — measured, not inferred — so any
+> path that normalises before comparing will never match this row; and the login form must
+> refuse the value before it reaches the database.
+
 **BR-A2 — Password minimum 6 characters, no composition rules.** No forced uppercase,
 digits, or symbols.
 

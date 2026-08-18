@@ -1510,6 +1510,13 @@ carries an index for exactly this query.**
 
 **Expired session rows are pruned on a schedule.** Without it the table grows without bound.
 
+> **⚠ TRUE OF THE CODE, FALSE OF THE SYSTEM UNTIL FIRST DEPLOYMENT — `adr/0016`, 2026-08-18.**
+> `sessions:prune` is written, registered hourly in `routes/console.php`, and asserted by
+> `SessionConfigurationTest`. **Nothing calls `schedule:run`** — no cron entry exists, and the
+> system has never been deployed — so the sweep has never run and this table does grow without
+> bound. `adr/0016` decision 5 makes installing the cron entry a documented step of the first
+> deployment, and its decision 4 heartbeat is what surfaces the failure if the step is missed.
+
 ### `policy_configurations`
 `id`, `company_id` (FK), `key`, `value`, `effective_from`, timestamps
 
