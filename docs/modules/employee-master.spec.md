@@ -592,10 +592,16 @@ Any change to `staff_status`, `position_id`, `department_id`, or `level` writes 
 `employee_status_history` row inside the same transaction as the update — the caller
 cannot forget to write it, because the service does it, not the controller.
 
-**`staff_status` is implemented: `App\Actions\Employee\ChangeEmployeeStatus`** (2026-08-12).
-It validates the BR-2 transition **before** opening the transaction, then writes the status,
-the ledger row, the audit row and — for a terminal status — the BR-A15 freeze, all inside
-one transaction. The other three change types have no Action yet.
+**Both Actions exist.** `App\Actions\Employee\ChangeEmployeeStatus` (2026-08-12) handles
+`STAFF_STATUS`; `App\Actions\Employee\ChangeEmployeeAssignment` (2026-08-13, PR #35) handles
+`POSITION`, `DEPARTMENT` and `LEVEL`.
+
+> **⚠ Corrected 2026-08-18.** This paragraph read *"The other three change types have no
+> Action yet"* — true on 12 August and stale the following day. `conventions.md` §9.
+
+`ChangeEmployeeStatus` validates the BR-2 transition **before** opening the transaction, then
+writes the status, the ledger row, the audit row and — for a terminal status taking effect
+today or earlier — the BR-A15 freeze, all inside one transaction.
 
 ⚠ **The ledger row is not optional, and BR-A17 is why.** Account expiry counts ten days from
 `employee_status_history.effective_date`, so a terminal status written *without* its ledger
@@ -627,12 +633,405 @@ writing the same event to a second table would create two records of one fact th
 disagree. A role change must therefore write **only** the pivot row — a service that also
 appends a status-history row is wrong.
 
+> **⚠ The set is five, not four — `EMPLOYER` joined it on 2026-08-13 (`adr/0010`, migration
+> `2026_08_13_100700`).** The paragraph above is retained as written because its subject is the
+> `CORE_ROLE` exclusion, which `adr/0010` leaves untouched. `StatusHistoryScopeTest`'s guard
+> already reads *five* and asserts all five.
+
 **`old_label` / `new_label` are a snapshot of the display text at the time.** Storing only
 `department_id = 7` would need a join to render, and that join shows the department's name
-**today**, not its name **then** — renaming a department would retroactively rewrite
-history, and a ledger that changes retroactively is not a ledger. The labels are redundant
-for enum types (`CONFIRMED` / `CONFIRMED`); that is accepted, because one uniform row
-shape costs a few bytes and avoids per-type branching in every reader.
+**today**, not its name **then** — renaming a department would retroactively rewrite history,
+and a ledger that changes retroactively is not a ledger. The labels are redundant for enum
+types (`CONFIRMED` / `CONFIRMED`); that is accepted, because one uniform row shape costs a few
+bytes and avoids per-type branching in every reader.
+
+#### 5.3.1 A future `effective_date` splits the write in two
+
+> **⚠ Amended 2026-08-18 — `adr/0016`.** The paragraphs above describe a single transaction
+> that writes the status **and** the ledger row **and** the freeze together, always. That is
+> now true only when the change takes effect **today or earlier**.
+
+**`effective_date` may be in the future, and the ordinary case is that it is.** An employee
+who gives notice on the 18th for a last working day on the 31st is not a resigned employee
+on the 18th. They come to work, verify their own attendance, endorse their subordinates'
+leave, and are paid for August in full. **Notice periods are how people resign.**
+
+**`staff_status` answers one question — what is true today.** The ledger answers a different
+one — what was decided, and from which date it applies. `effective_date` has existed for
+exactly this since `adr/0003` decision 8, where a promotion is typically effective before
+HR gets to enter it. A future-dated departure uses the same column for the same reason.
+
+The write divides by date, not by status:
+
+| `effective_date` | Written immediately | Left to the scheduler |
+|---|---|---|
+| **Today or earlier** | Ledger row, audit row, `staff_status`, BR-A15 freeze — one transaction, exactly as before | nothing |
+| **Later than today** | Ledger row, audit row | `staff_status`, BR-A15 freeze |
+
+**A backdated status is in the first row, not the second.** Paperwork that arrives late is
+recorded with a past `effective_date` and freezes in the transaction like any same-day
+change. Only *later than today* defers.
+
+**No second Action for the ordinary case, and BR-A15 stands as written.**
+
+**`TERMINATED` follows the same rule as `RESIGNED`.** `adr/0004` decision 5 diverges the two
+statuses in two places — who approves (the manager approves a resignation; a termination
+review is non-blocking) and the session kill (BR-A15, `TERMINATED` only). **Neither is a rule
+about dates.** A dismissal for misconduct carries an `effective_date` of *today*, so it lands
+in the first row above and freezes immediately, exactly as that decision requires. A
+retrenchment or an expiring contract carries a real future date, and the employee works out
+the notice they are legally owed.
+
+**The scheduler completes the deferred half. It does not repeat the recorded half.**
+
+When the date arrives, the scheduled task sets `staff_status`, revokes the `employee_roles`
+rows, kills sessions if the status is `TERMINATED`, and emits the BR-A16 Approval Engine
+event. **It writes no ledger row.** The row was written on the day HR recorded the decision
+and is already correct; a second row would show the employee resigning twice on the §7
+timeline.
+
+⚠ **`adr/0016`'s sentence *"A scheduled freeze writes a row like any other"* means the row HR
+wrote is an ordinary row — not that the task writes one.** Read the other way it produces the
+duplicate above.
+
+**The ledger row's `changed_by` stays with the human who decided.**
+`employee_status_history` is append-only, carries no `updated_by`, and is **not** in
+`AuthorshipObserver::MODELS` — nothing about authorship touches it. The system user appears on
+`employees.updated_by` only, which is accurate: the decision was HR's on the 18th; the
+execution was the scheduler's on the 1st.
+
+**The deferred half has its own Action:**
+`App\Actions\Employee\ApplyPendingStatusChange`, invoked only by the scheduled task.
+
+It sets `staff_status`, revokes the `employee_roles` rows, kills sessions for `TERMINATED`,
+emits the BR-A16 event, and writes the audit row. **It writes no ledger row** — the row exists
+already. `ChangeEmployeeStatus::execute()` cannot serve here for exactly that reason: it always
+writes one.
+
+**It still calls `assertPermitted()`.** The transition was validated when HR recorded it, and
+re-validating costs nothing — but the gap between recording and effect is days long, and a net
+that catches an unanticipated route into that window is worth more than the call it saves.
+
+**The two Actions record different actors, and both are true.** The ledger's `changed_by` is
+the HR user who decided (§5.3.1); the audit row's actor is the system user who executed
+(`adr/0016` decision 1). *Who decided* and *who performed* are separate questions, which is why
+the two tables answer them separately (`adr/0003` decision 8).
+
+#### 5.3.2 The divergence window
+
+Between the recording and the effective date, **`employees.staff_status` and the latest
+`employee_status_history` row deliberately disagree.** This is a named, bounded state, and
+every reader must be written knowing it exists.
+
+| Reader | Behaviour during the window |
+|---|---|
+| Employee list, headcount, payroll eligibility, leave accrual, attendance import | Read `staff_status`. The employee is **active**, because they are. |
+| `EnsureAccountIsActive` | Reads `staff_status`. Not frozen, not expired. |
+| `AccountExpiry` | Returns `null` throughout — see §5.3.3 |
+| §7 timeline | Reads the ledger, and therefore holds an event that **has not happened yet** |
+| Pending-departure indicator | Reads the ledger — and is the reason the window is visible at all |
+
+**§7 must render a future ledger row as future.** The timeline is a chronological history and
+a reader scanning it will otherwise read a dated resignation as one that occurred. The row is
+separated and labelled; *"render it inline with the past"* is not an available choice.
+
+⚠ **A recorded-but-not-effective departure needs its own indicator, and BR-A19 is not it.**
+
+BR-A19's five-dashboard countdown is the **expiry** countdown: it reads
+`AccountExpiry::expiresAfter()`, which returns `null` until `staff_status` is terminal
+(§5.3.3). It therefore appears **after** the freeze and cannot catch a date typed wrongly on
+the 18th.
+
+That matters because `adr/0004` decision 5 gives the countdown a specific job — it is *"the
+correction mechanism"*, the reason there is no cancel button. Under a same-day-only rule the
+countdown appeared the moment HR acted, so the job was done. A future-dated departure opens a
+gap of days in which the decision is recorded and nothing announces it.
+
+**BR-A19 is not widened to close that gap** — it would mean `AccountExpiry` reporting a date
+for an employee who is not leaving yet, which is a second meaning for one method. What is
+needed is a **separate** indicator, reading the ledger, showing *"departure recorded,
+effective 31 August"* to the same five parties from the day it is recorded.
+
+> **⚠ This indicator has no BR number and no home yet.** It belongs either here or beside
+> BR-A19 in `auth-rbac.spec.md`; it must not be left as prose in this subsection, or it will
+> be built as a UI afterthought — which is exactly what it cannot be.
+
+#### 5.3.3 `AccountExpiry` is gated on `staff_status`, and that is correct
+
+`AccountExpiry::terminalEffectiveDate()` returns `null` unless `employees.staff_status` is
+already terminal, before it reads the ledger at all. **During the divergence window it
+resolves nothing**, so `expiresAfter()` is `null` and `hasExpired()` is false.
+
+**That is the right answer.** The employee has not left; the account must not expire. The
+guard reaches it by a shorter path than the arithmetic would, and both paths agree.
+
+> **⚠ The comment above that guard, dated 2026-08-12, must be amended in the same commit as
+> this section.** It reads that §5.3 *"makes the status-change service write the ledger row in
+> the same transaction as the change, so the two cannot come apart."* §5.3.1 now separates
+> them deliberately. The guard's behaviour does not change; the justification written beside
+> it is no longer true, and a reader trusting it will write something on top of an assumption
+> that has been withdrawn. `conventions.md` §9.
+
+#### 5.3.4 What the scheduler selects — and the two meanings of "latest"
+
+The predicate belongs to `adr/0016` decision 3; it is restated here because §5.3 is what makes
+it correct or incorrect.
+
+**An employee is due for completion when the *latest* row on their status ledger is terminal
+and its `effective_date` is strictly earlier than today.**
+
+- **Latest, not "a terminal row exists."** The ledger is append-only, so a decision withdrawn
+  before it takes effect is a **new row**, not a deletion. A predicate asking whether the
+  ledger *holds* a terminal row still matches after the withdrawal and freezes an employee who
+  is staying.
+- **Latest by `created_at desc, id desc`.** `created_at` is second-resolution
+  (`useCurrent()`), so two decisions recorded in one second tie — and the tie is broken by
+  insertion order, because the later insert is the later decision. Without the `id` fallback
+  the predicate picks arbitrarily between a departure and its withdrawal, and the wrong pick
+  freezes an employee who is staying. `AccountExpiry` already models the shape for the same
+  reason on the other axis: `reorder('effective_date','desc')->orderByDesc('id')`.
+- **Strictly earlier than today.** `effective_date` is the last working day; the freeze is the
+  midnight *after* it. `<= today` freezes the employee on the morning of their final shift —
+  one day early, through a mechanism that would report success.
+
+> **⚠ `adr/0016` decision 3 as merged reads *"effective today or earlier"*.** It is off by one
+> and must carry a dated pointer to this subsection in the same commit, or the two documents
+> disagree in writing.
+
+⚠ **"Latest" means different things to the two readers of this table, and neither is wrong.**
+
+| Reader | Asks | Orders by |
+|---|---|---|
+| Scheduler predicate | *Which decision is currently in force?* | `created_at desc, id desc` — the later **decision** governs |
+| `AccountExpiry` | *From which date do I count ten days?* | `effective_date desc, id desc` — the later **event** is the one that ended the employment |
+
+A withdrawal recorded on the 25th for the 25th sits *earlier* on the effective-date axis than
+the resignation it withdraws, which is dated the 31st. Ordered by `effective_date` the
+resignation still wins and the withdrawal does nothing — which is why the predicate cannot use
+that ordering. `AccountExpiry` cannot use `created_at` either, for the reason its own comment
+gives.
+
+**Do not reconcile these.** They are two questions, and the next reader who notices the
+mismatch will align one to the other and break it silently. The divergence is recorded here so
+that reader finds this table first.
+
+#### 5.3.5 Withdrawing a recorded departure
+
+**A departure recorded for a future date can be withdrawn:**
+`App\Actions\Employee\CancelPendingStatusChange`.
+
+An employee who gives notice and then agrees to stay is ordinary. Under a same-day-only rule
+the case could not arise — a terminal status meant the person had already gone, and BR-2
+refused every transition out of it precisely to enforce BR-A18. §5.3.1 creates a state where a
+terminal row means the person *will* go, and that is a decision, not a fact.
+
+**BR-2 is not relaxed.** Its refusal of transitions out of a terminal status stands unchanged,
+and BR-A18's no-reactivation rule stands unchanged. Both are about employment that has
+**ended**. This Action operates only on employment that has not.
+
+> **⚠ `ChangeEmployeeStatus` does not refuse this as `fromTerminal()`.** `assertPermitted`
+> reads `employees.staff_status`, which during the window still holds the pre-departure value,
+> so the refusal arrives as `InvalidStatusTransitionException::between()` on `$from === $to`.
+> A test asserting `fromTerminal` here passes vacuously (`conventions.md` §9). Confirmed
+> against the code 2026-08-18.
+
+**A withdrawal writes a ledger row, and this is forced rather than chosen.** §5.3.4's predicate
+reads the latest ledger row. A withdrawal recorded only in `audit_logs` leaves the terminal row
+latest, and the scheduler freezes the employee on the effective date with a full audit trail
+explaining that they were staying.
+
+**The row carries the `effective_date` of the row it withdraws — not today's date.**
+
+| Column | Value |
+|---|---|
+| `effective_date` | **the withdrawn row's `effective_date`** |
+| `new_value` | the employee's current `staff_status` — unchanged, because it never moved |
+| `old_value` | the withdrawn terminal value |
+| `changed_by` | the acting user |
+| `created_at` | the day the withdrawal was decided |
+
+**Because that is the date the withdrawal takes effect.** Between the recording and the
+departure date nothing differs between the two worlds: the employee is active either way,
+holds their roles either way, is paid either way. **The only day the withdrawal changes
+anything is the day the freeze would have happened.** `created_at` records when it was
+decided; `effective_date` records the day from which it applies. That is the split
+`adr/0003` decision 8 established, applied literally.
+
+⚠ **Dating the row today produces a ledger that lies, and the failure is invisible until the
+date passes.** `Employee::statusHistory()` orders by `effective_date` ascending. A withdrawal
+dated the 18th sorts *before* the resignation dated the 31st it cancels, so once the 31st has
+passed a reader sees `18 Aug → ACTIVE` followed by `31 Aug → RESIGNED` as the final event —
+**a working employee displayed as having resigned.** §5.3.2's future-row rendering does not
+catch it: by then the withdrawn row is not a future row, it is a past-labelled row for an event
+that never occurred.
+
+**Two rows now share one `effective_date`.** The §7 timeline is not rendered through
+`Employee::statusHistory()`'s ordering — `StatusTimeline` re-sorts by
+`TimelineEntry::sortKey()`: date, then source rank, then a ten-digit padded `sourceId`. Two
+`employee_status_history` rows on one date share a rank and fall through to ascending `id`, so
+the withdrawal — inserted later — renders last and the timeline ends in the employee's actual
+state. **This already holds; nothing needs changing for it.**
+
+⚠ **`Employee::statusHistory()` itself carries no tie-break at all** — `orderBy('effective_date')`
+and nothing more, so same-day rows return in whatever order the engine gives.
+
+**No production caller is exposed to that today**, and how they avoid it is the finding.
+`StatusTimeline` re-sorts entirely through `sortKey()`. `AccountExpiry` and
+`PriorEmploymentLookup::terminalEffectiveDate()` both call
+`reorder('effective_date','desc')->orderByDesc('id')` — and both carry a comment explaining why
+`reorder()` rather than `orderByDesc()`: an added clause does not replace an existing one, so
+`value()` would silently return the oldest row.
+
+**All three found the relation's default ordering to be something they had to discard, and two
+needed a comment to explain how to discard it correctly.** That is an argument about the
+default, not about its tie-break. Adding `->orderBy('id')` is worth doing as a defensive
+default for the next reader, but it closes no gap that exists — and this section does not
+mandate it, because a change to a relation three services deliberately override belongs in its
+own decision, not in a subsection about withdrawals.
+
+> The `SOURCE_RANK` docblock already states why: `effective_date` and `revoked_date` are
+> **dates, not timestamps**, so two events on one day are the ordinary case, not a rare
+> collision.
+
+**Three alternatives were rejected:**
+
+- **Ordering `statusHistory()` by `created_at`.** It fixes this pair and breaks the ordinary
+  case: a backdated correction recorded today belongs at its historical position on the
+  timeline, which is the entire reason the ordering is by `effective_date`.
+- **A `withdrawn_at` column on the withdrawn row.** An update to an existing ledger row. The
+  table is append-only with no exception (`audit-trail.spec.md` BR-AT6).
+- **No row at all, with the withdrawal held in `audit_logs`.** See the paragraph above: the
+  predicate would still freeze the employee.
+
+⚠ **`old_value` here names the row being superseded, not a value `employees` ever held** —
+`staff_status` never moved. This is the one place in the ledger where that is true. It is a
+consequence of the split in §5.3.1, not a new convention, and must not be generalised.
+
+**After the date passes, the timeline reads `31 Aug → RESIGNED` then `31 Aug → ACTIVE`.** That
+is correct and should not be smoothed away: HR decided one thing and then decided another, and
+an append-only ledger shows both. A correction is a new row (`conventions.md` §3).
+
+**Preconditions, all three required:**
+
+1. The latest status row **by `created_at`** is terminal.
+2. Its `effective_date` is later than today — once the scheduler has run, BR-A18 governs and
+   there is no path back.
+3. The acting user is `HR` or Master Admin, following §5.7's two-capable-actors pattern: HR is
+   the ordinary actor, Master Admin the support path, neither approving the other.
+
+#### 5.3.6 Confined to `staff_status`
+
+**This section governs `staff_status` alone.** Whether a future-dated promotion or department
+move defers the same way is undecided. `ChangeEmployeeAssignment` exists and writes all three
+types today; it has **not** been examined against a future `effective_date`, and it must not be
+assumed to follow this rule by having the rule copied into it. That is a separate decision.
+
+#### 5.3.7 Must be asserted
+
+1. Same-day terminal status freezes inside the transaction — no window in which writes succeed.
+2. Backdated terminal status freezes inside the transaction, like same-day.
+3. Future-dated terminal status writes the ledger row and leaves `staff_status` untouched.
+4. Future-dated terminal status leaves roles live and sessions alive, `TERMINATED` included.
+5. `AccountExpiry::expiresAfter()` is `null` throughout the divergence window.
+6. The scheduled task, run on the effective date, changes nothing.
+7. The scheduled task, run the day after, sets the status, revokes roles, emits BR-A16.
+8. The scheduled task writes **no** ledger row — the timeline holds exactly one departure.
+9. Running the task twice changes nothing the second time (`adr/0016` decision 3).
+10. The employee appears as active in the list and in headcount throughout the window.
+11. A withdrawal recorded during the window leaves the employee unfrozen after the effective
+    date has passed and the task has run. ⚠ **This is the test that proves §5.3.4's ordering** —
+    it fails against an `effective_date`-ordered predicate and against a
+    ledger-holds-a-terminal-row predicate. Verify it fails before trusting it
+    (`conventions.md` §9).
+12. `CancelPendingStatusChange` is refused once the effective date has passed.
+13. `ChangeEmployeeStatus` still refuses a transition out of a genuinely terminal status.
+14. `ApplyPendingStatusChange` and `CancelPendingStatusChange` each declare an `AUDITS`
+    constant and the `AuditedFields` architecture test stays green (BR-AT13). No new registry
+    entry — `staff_status` is already listed.
+15. ⚠ **An audit row actually lands for each of the two new Actions.** `AuditAuthorshipTest`
+    states its own limit on line 17: it does not catch an Action that declares `AUDITS`
+    correctly and never calls the logger. Assumption 14 alone can be green while nothing is
+    audited — the empty-guard shape `conventions.md` §9 records three times.
+16. ⚠ **Withheld.** The scheduled task's audit row currently lands with a **null actor and null
+    `company_id`**, silently. `AuditLogger` writes `auth()->id()` — *"From the authenticated
+    context, NEVER from arguments"* — and `AuthorshipContext` feeds `AuthorshipObserver` only.
+    `adr/0016` decision 1 closed the **authorship** path; the **audit** path is a second
+    requirement no document has named. See the note at the end of this section.
+
+---
+
+**Two things in this section are recorded as open. Neither blocks writing it down; both block
+building it.**
+
+#### Open — the recorded-departure indicator has no BR number
+
+§5.3.2 establishes that a departure recorded for a future date must be visible to the five
+BR-A19 parties **from the day it is recorded**, and that BR-A19 itself cannot carry it —
+`AccountExpiry::expiresAfter()` returns `null` until `staff_status` is terminal (§5.3.3), so
+that countdown appears only after the freeze.
+
+`adr/0004` decision 5 gives the countdown a specific job: it is *"the correction mechanism"*,
+the reason there is no cancel button. §5.3.1 opens a gap of days in which a departure is
+recorded, a wrong date is uncorrected, and nothing announces it. `CancelPendingStatusChange`
+(§5.3.5) is the remedy — and a remedy nobody knows they need is not one.
+
+**It needs a BR number and a home**, most likely beside BR-A19 in `auth-rbac.spec.md`, since
+the five dashboards are defined there. ⚠ **Left as prose it becomes a UI afterthought** — a
+requirement stated in the reasoning of a section about something else, which nobody
+implementing a screen will ever read.
+
+**It is a third reader of "latest".** It must order by `created_at desc, id desc` like the
+scheduler predicate (§5.3.4), not by `effective_date` — a withdrawal shares the withdrawn row's
+date (§5.3.5), so an `effective_date` ordering keeps announcing a departure that has been
+called off. When the indicator lands, §5.3.4's table gains a third row.
+
+#### Open — how the system user reaches `AuditLogger`
+
+Assumption 16 is withheld against this.
+
+`adr/0016` decision 1 provisions a system user so the scheduled task can write
+`created_by` / `updated_by`. That closes the **authorship** path only. `audit_logs` is written
+by a different service with a different actor source: `AuditLogger` writes `auth()->id()`,
+under a comment reading *"From the authenticated context, NEVER from arguments."* In a
+scheduled task there is no authenticated user, so the row lands with a **null actor**, without
+error — the silent-null failure `adr/0009` decision 2 exists to refuse, in the one table whose
+entire value is answering *who*.
+
+**Direction chosen 2026-08-18 — `AuditLogger` consults `AuthorshipContext` when no
+authenticated user is present.**
+
+The alternative — the task authenticating the system user into the guard — was rejected: it
+would log in an account `adr/0016` decision 1 states cannot log in, refused at the form and
+unrepresentable by `PhoneNumber::normalise()`. One account with a locked front door and a
+nightly back door is two rules disagreeing about the same thing.
+
+**`AuthorshipContext` is not an argument.** It is process context, set once at the boundary and
+readable by anything inside it. The `NEVER from arguments` comment exists to stop a **caller**
+injecting a false actor into a single call, and that prohibition is untouched — but the comment
+must be rewritten, because as worded it forbids the fix.
+
+⚠ **`company_id` goes the same way, and `security_events` already holds the rule to apply.**
+`currentCompanyId()` resolves through `auth()->user()?->employee?->company_id`; the system user
+holds no employee, so it is `null` under either form. `schema.md` states the principle for
+`security_events`: `company_id` is filled where knowable and left null where it is not — a
+*"reporting convenience, never an access control."* It maps directly. A scheduled sweep acting
+across every company has no knowable company; an audit row about one employee's departure does —
+the subject's.
+
+**The per-table answer is itself the precedent, and it was written before this question
+arose.** `schema.md` closes that passage: *"Two nullable `company_id` columns in one module, two
+different answers — which is why the choice is made per table and declared on the model."* The
+amendment adopts that reasoning rather than inventing a second one, and cites it.
+
+⚠ **The two tables do not share a scope, and the amendment must not imply they do.** `AuditLog`
+adds `SystemTenantScope` in `booted()`. `SecurityEvent` declares **no scope class at all** —
+the documented opt-out `adr/0005` decision 6 requires, so that *"deliberately unscoped"* and
+*"someone forgot"* stay distinguishable, with a guard test failing any model that is merely
+silent. Borrowing the null-where-unknowable rule is not borrowing the scope.
+
+**This is an amendment to `adr/0016` decision 1, not a new ADR** — the same question (*who acts
+when no human does*) which that decision answered half of. ⚠ **No code changes to `AuditLogger`
+until the amendment lands**: it is a Phase 0 service every module writes through.
 
 ### 5.4 List & search
 
