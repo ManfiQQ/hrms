@@ -94,9 +94,22 @@ class AccountExpiry
         // returns null and the account NEVER EXPIRES — it stays frozen and readable instead.
         // That is wider than BR-A17 requires, and it is a real dependency rather than an
         // oversight: employee-master.spec.md §5.3 makes the status-change service write the
-        // ledger row in the same transaction as the change, so the two cannot come apart.
-        // Until that Action exists no terminal status can be set through the application at
-        // all. Asserted by test so it is a known state, not a surprise.
+        // ledger row, so a terminal status set through the application always has one.
+        // Asserted by test so it is a known state, not a surprise.
+        //
+        // ⚠ Amended 2026-08-19 — two sentences were withdrawn here, not any behaviour. This
+        // comment read that §5.3 writes the ledger row "in the same transaction as the
+        // change, so the two cannot come apart", and that "until that Action exists no
+        // terminal status can be set through the application at all". `ChangeEmployeeStatus`
+        // has existed since 2026-08-12, and §5.3.1 now splits the write by date: a terminal
+        // status effective LATER THAN TODAY writes the ledger row and deliberately leaves
+        // `staff_status` untouched until the scheduled task completes it. The two therefore
+        // DO come apart, by design, for a bounded window.
+        //
+        // This method is unaffected, and §5.3.3 is why: throughout that window `staff_status`
+        // is not yet terminal, so the early return above fires and nothing below is reached —
+        // expiresAfter() is null and the account does not expire, which is the right answer
+        // for an employee who has not left. Do not build on the withdrawn wording.
         return $employee->statusHistory()
             ->where('change_type', 'STAFF_STATUS')
             ->whereIn('new_value', self::TERMINAL_STATUSES)

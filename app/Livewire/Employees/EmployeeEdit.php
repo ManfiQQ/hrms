@@ -166,6 +166,15 @@ class EmployeeEdit extends Component
             // `employee_status_history` row in the same transaction as the change and the caller
             // must not be able to forget it (§5.3). Writing them on the model here would produce
             // a record whose history has a gap exactly where a promotion was.
+            //
+            // ⚠ Pointer added 2026-08-19 — "in the same transaction" is true HERE, and is no
+            // longer true of §5.3 in general. §5.3.1 splits the write by date for
+            // `staff_status`: effective later than today, the ledger row is written and the
+            // status change itself is deferred to the scheduled task. This loop is unaffected
+            // on two counts — LEDGER_FIELDS holds POSITION, DEPARTMENT and LEVEL only, and
+            // §5.3.6 confines the deferral to `staff_status`, leaving `ChangeEmployeeAssignment`
+            // deliberately unexamined against a future `effective_date`. Nothing changes here;
+            // the sentence above must not be carried to a caller that changes status.
             foreach (self::LEDGER_FIELDS as $field => $changeType) {
                 if (! $changes->has($field)) {
                     continue;
