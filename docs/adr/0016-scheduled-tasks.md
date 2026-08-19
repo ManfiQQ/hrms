@@ -132,6 +132,19 @@ employees whose `staff_status` is not yet terminal and whose ledger holds a
 terminal row effective today or earlier. Once frozen, the employee is outside
 the predicate; a second run in the same minute or the same day finds nothing.
 
+> **⚠ Pointer added 2026-08-19 — the predicate above is off by one, and incomplete.**
+> *"Effective today or earlier"* freezes the employee on the morning of their final
+> working day: `effective_date` is the last day worked, so the freeze belongs to the
+> midnight **after** it. The predicate must read **strictly earlier than today**, and it
+> must select on the **latest** ledger row ordered `created_at desc, id desc` rather than
+> on whether the ledger merely holds a terminal row — otherwise a departure withdrawn
+> before it took effect still matches. Both points, with the reasoning, are in
+> `employee-master.spec.md` §5.3.4.
+>
+> **The wording above is left exactly as merged, on purpose.** Rewriting the predicate
+> here would be an amendment made in passing, in the document the amendment is about. The
+> full amendment to this ADR comes separately; until it lands, §5.3.4 governs.
+
 **`withoutOverlapping()` was rejected**, and not because it fails. It prevents
 two *concurrent* runs and does nothing about two *consecutive* ones — cron
 firing again a minute later, or somebody running `schedule:run` by hand during
