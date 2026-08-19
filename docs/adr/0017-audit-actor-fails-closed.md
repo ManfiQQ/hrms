@@ -2,7 +2,8 @@
 
 - **Status:** Accepted — 2026-08-19
 - **Amends:** `audit_logs.user_id` — nullable becomes NOT NULL, by forward migration;
-  `AuditLogger::record()` gains an actor precondition
+  `AuditLogger::record()` gains an actor precondition;
+  `audit-trail.spec.md` §3, §5.1 and BR-AT14; `AuditLogger`'s *"never from arguments"* comment
 - **Extends:** `adr/0009` decision 2 (no silent NULL) and decision 3 (`created_by` /
   `updated_by` made NOT NULL) — this applies the same rule to the table those decisions did
   not reach
@@ -175,6 +176,15 @@ logic to live.
 **`record()` gains no actor parameter, and there is no channel through which one could be
 passed.** The *"NEVER from arguments and never from request input"* prohibition stands; only
 its wording changes, because as written it forbids decision 4.
+
+> **⚠ Attribution added 2026-08-19.** Decision 3 quotes the prohibition as *"NEVER from
+> arguments and never from request input"* and names no source. That wording is
+> `AuditLogger`'s **comment**, verbatim. The **rule** lives in `audit-trail.spec.md` §5.1,
+> which reads *"never from method arguments"* — same prohibition, different sentence,
+> different document. An unattributed quotation cannot be checked against anything, which is
+> the failure `conventions.md` §9 records against `adr/0011` — a blockquote assembled from
+> memory that never existed at the source it named. Both the comment and §5.1 are amended by
+> this ADR and are now named in **Amends** above.
 
 ### 4. A caller holding a named actor enters `AuthorshipContext` with it
 

@@ -1,8 +1,20 @@
 # Module Spec — Audit Trail
 
 - **Phase:** 0 — Core Engine
-- **Status:** Draft — awaiting approval. **No code until this is approved** (`CLAUDE.md`
-  Principle #1).
+- **Status:** **Accepted and partially implemented** — the write path, the read path and the
+  retention sweep were all built 2026-08-12; the §5.5 audit report and the §7 UI are not
+
+  > **⚠ Status corrected 2026-08-19.** This read *"Draft — awaiting approval. **No code until
+  > this is approved** (`CLAUDE.md` Principle #1)"* while `AuditLogger`, `AuditLogReader`,
+  > `AuthorshipContext` and `SecurityEventLogger` were all in `app/`, exercised by a green
+  > suite. §10 records the write path being built on 2026-08-12 — the same day this line was
+  > written. `AuditLogReader` (`c651d0b`) and `PruneSecurityEvents` (`2705bd5`) landed that
+  > day too. The line was never revisited.
+  >
+  > **Principle #1 was not breached; the header was.** The spec existed and was followed. What
+  > went stale is the sentence claiming it had not been approved, and a document that
+  > misreports its own status is one nobody can use to answer whether code is authorised.
+  > `conventions.md` §9.
 - **Branch:** `feat/audit-trail`
 - **Depends on:** `users`, `companies` (migrated); `employees` (Phase 1, for read-scope
   resolution only); `auth-rbac.spec.md` §5.4 `ReadScopeResolver` and §5.5 `RoleChecker`;
@@ -109,7 +121,7 @@ records only what a migration author needs beyond the column list.
 | Subject | `auditable_type` + `auditable_id`, **polymorphic** — not `employee_id` |
 | Values | `old_value` / `new_value`, **`TEXT`, nullable** |
 | Display text | `old_label` / `new_label`, a snapshot of how the value read **at the time** |
-| Actor | `user_id` |
+| Actor | `user_id`, **NOT NULL** — every audited action has one (`adr/0017`) |
 | Tenancy | `company_id`, **nullable**, with `SystemTenantScope` — a **third** scope class, see below |
 | Mutability | Append-only: `created_at` only — no `updated_at`, no `updated_by`, no soft deletes |
 
@@ -124,6 +136,32 @@ OR (company_id IS NULL AND the account has system_access = FULL)
 ```
 
 Full reasoning, and the `adr/0005` decision 6 guard test this obliges, in §11.
+
+**`user_id` is NOT NULL, and until 2026-08-19 this table said nothing about it either way.**
+
+> **⚠ Added 2026-08-19 — `adr/0017`.** The row above read `| Actor | user_id |`. Two words.
+> The same table spells out nullability for three other columns — `old_value` / `new_value`
+> **TEXT, nullable**, `company_id` **nullable** — and gives `company_id` a paragraph, a fenced
+> predicate, and a pointer to §11's full reasoning. The actor got none of it.
+>
+> **The migration then decided it.** `user_id` was created `->nullable()` under one clause —
+> *"Nullable for console and system-initiated writes"* — naming a console writer that did not
+> exist, since `AuditLogger` had not been written. A gap in the spec became a decision in a
+> migration, and nothing contradicted it because there was nothing to contradict.
+
+**There is no audited action without an actor.** Every row records something somebody or
+something did. `NULL` here is never a fact about the action; it is always a failure to
+resolve one — and it is indistinguishable from the *"system-level event"* meaning that
+`company_id` carries legitimately on the same row.
+
+**This is deliberately asymmetric with `company_id` directly above.** A `NULL` company is a
+real state: a Master Admin changing another Master Admin's `system_access` has no company to
+name. A `NULL` actor is not the parallel case, because a session-less write and a
+company-less actor are different absences. **Never infer one column's nullability from its
+neighbour's.**
+
+BR-AT14 is how this is enforced at write time; the column constraint is what holds if
+anything reaches the table another way.
 
 **`reason` is nullable and it is not decoration.** `MasterAdminContext::run()` already
 takes a reason and refuses a bypass without one (`adr/0005` decision 5), and the
@@ -469,10 +507,74 @@ people looking for the check that is actually missing. What closes the gap is a 
 feature test asserting the rows appear, and **those belong to the module that owns the
 Action**, alongside the rest of its behaviour. Each module spec must require them.
 
-⚠ **The registry is empty today**, because no Action exists anywhere in the codebase yet.
-An architecture test over an empty set passes forever while checking nothing, so the test
-**fails on an empty registry** unless the registry declares itself intentionally empty and
-says until when. Employee Master is the first module that will fill it.
+⚠ **The registry is filled, and the architecture test is doing real work.**
+
+> **⚠ Corrected 2026-08-19.** This read that the registry was *"empty today, because no Action
+> exists anywhere in the codebase yet"*, that an architecture test over an empty set *"passes
+> forever while checking nothing"*, and that Employee Master *"is the first module that will
+> fill it."* All three were true when written and none is now. `AuditedFields::FIELDS` lists
+> seven fields on `Employee` — `staff_status`, `employee_no`, `position_id`, `department_id`,
+> `level`, `company_id`, `superseded_at` — and six on `User` — `phone_no`,
+> `password_changed_at`, `locked_until`, `activation_expires_at`, `system_access`,
+> `superseded_at`. Dated comments record `company_id` joining on 2026-08-13 and
+> `superseded_at` on 2026-08-17. Four Employee Actions declare matching `AUDITS` constants;
+> six Auth Actions call the logger.
+>
+> The empty-set warning was correct and is kept in this note rather than deleted, because it
+> is the reason the registry is asserted from both directions. The rule it carried — the test
+> **fails on an empty registry** unless the registry declares itself intentionally empty and
+> says until when — stands unchanged in §8 test 35 and §9. `conventions.md` §9.
+
+**BR-AT14 — a write with no resolvable actor is refused.**
+
+`AuditLogger` resolves the actor in three tiers and **throws** if none is found:
+
+1. `AuthorshipContext`, if active
+2. `auth()->id()`
+3. `App\Exceptions\Audit\MissingAuthorshipActorException`
+
+**Context first**, for the reason `AuthorshipObserver` already gives: a seeder running while
+somebody happens to be authenticated must attribute to the actor it named, not to whoever
+holds the session.
+
+**This closes an asymmetry between two services answering one question.**
+`AuthorshipObserver` throws when no actor can be resolved — `adr/0009` decision 2 refuses a
+silent `NULL`, and decision 3 made `created_by` / `updated_by` NOT NULL, dropping the
+development database to do it. `AuditLogger` wrote `NULL` and carried on. One absence, two
+behaviours, and the fail-open one was in the table whose entire value is answering *who*.
+
+⚠ **Six Actions could already produce an actorless row**, and none of them is new:
+`CreateMasterAdmin`, `RemoveMasterAdmin`, `ResetAccountPassword`, `UnlockAccount`,
+`ChangeLoginUsername`, `RegenerateActivationToken`. The dividing line is
+`AuthorshipObserver::MODELS`, and it falls on **`users` versus everything else** — `users`
+carries no `created_by` / `updated_by`, so no observer refuses a write to it. Every Action
+touching an observed model was already held closed; the eight in `app/Actions/Auth/` were
+not. Nothing in production reaches them without a session today, but that is **caller
+layout, not enforcement** — `RedeemActivationToken`'s route sits outside the `auth` group by
+design.
+
+**The check is made *before* the no-op exit, and the placement is part of the rule.** §5.1
+already refuses to write when `old_value === new_value`. If the actor check sat below it,
+whether a caller failed would depend on **whether the data happened to change** — a caller
+making only no-op calls passes in testing and fails in production the first time a value
+actually moves. Above it, the failure is deterministic.
+
+⚠ **A caller holding a named actor enters `AuthorshipContext` with it; it does not pass one.**
+`RemoveMasterAdmin` requires `User $actor` and will still throw under this rule without a
+session, which reads like a defect and is not. That parameter answers *"who requested this
+removal"* — it exists to refuse self-removal. It does not answer *"who is this process acting
+as."* Accepting it into `record()` would open the channel §5.1's *never from method
+arguments* exists to close. `AuthorshipContext` is process context: set at a boundary, naming
+a real `User`, refusing to run without a stated reason.
+
+**Same shape as BR-AT7 and BR-AT12, and for the same reason.** All three are preconditions
+checked before anything is written, all three throw rather than substituting a value, and all
+three refuse the fallback that would hide its own failure. A `NULL` actor is the same mistake
+as a silently-minted `batch_id`: a row that looks ordinary while the one fact worth knowing
+about it has been erased.
+
+> **Numbering note.** BR-AT14 was decided on 2026-08-19, after BR-AT12 and BR-AT13, and is
+> placed by topic under the same convention recorded above.
 
 ### Reading
 
@@ -598,13 +700,28 @@ Rules the service enforces so no caller has to remember them:
 - `batch_id` comes from the transaction (BR-AT12): generated on the first write inside it,
   reused by every later write in the same transaction, released when it commits **or rolls
   back**. Nested transactions belong to the outermost batch.
-- `company_id` and `user_id` come from the authenticated context, **never** from method
-  arguments and never from request input.
+- `company_id` comes from the authenticated context, **never** from method arguments and
+  never from request input.
+- `user_id` comes from `AuthorshipContext` if one is active, otherwise from the
+  authenticated context, and **never** from method arguments or request input (BR-AT14). A
+  caller with no session and no context gets
+  `App\Exceptions\Audit\MissingAuthorshipActorException` — **the write is not attempted**,
+  the same shape §8 item 28 already asserts for BR-AT12.
+
+  > **⚠ Amended 2026-08-19 — `adr/0017`.** This read *"`company_id` and `user_id` come from
+  > the authenticated context, **never** from method arguments and never from request
+  > input."* The prohibition is unchanged and applies to both columns: no caller may name an
+  > actor. What changed is that a **process boundary** may declare one, which the single
+  > sentence had no room to express. Splitting the bullet is what makes the two facts about
+  > `user_id` — where it comes from, and what happens when it cannot be found — both
+  > statable.
 - Labels are resolved **at write time** (BR-AT4). A reader never joins to produce them. A
   subject may implement `auditLabel(string $field, mixed $value): ?string` to render a
   foreign key as the text it stood for **then**; without it the label is the value's own
   string form, which BR-AT4 already accepts as redundant-but-uniform for enums and scalars.
-- A no-op change writes nothing. `old_value === new_value` is not an audit row.
+- A no-op change writes nothing. `old_value === new_value` is not an audit row. ⚠ **The
+  actor check in BR-AT14 runs before this**, so a no-op call with no resolvable actor still
+  throws.
 - ⚠ **The logger never opens a transaction of its own.** Doing so would satisfy its own
   precondition and defeat BR-AT7 — the action would still be able to land without its audit
   row. The caller's transaction is the guarantee; the logger only refuses to work without
@@ -968,6 +1085,28 @@ forgot the transaction.
 stated limitation, not an omission here — a static test cannot observe a runtime call inside
 a branch. The per-Action feature tests that close it belong to the modules owning those
 Actions.
+
+**The actor precondition (BR-AT14)**
+
+38. A write with no session and no `AuthorshipContext` **throws**
+    `MissingAuthorshipActorException`. ⚠ **Verify it fails before trusting it** — the
+    assertion is worthless if the harness authenticates by default
+    (`conventions.md` §9).
+39. The throw happens **before** the no-op exit: `$old === $new`, no actor, still throws.
+    This is the assertion that proves the placement in BR-AT14, and it is the one an
+    implementation is most likely to get wrong while passing test 38. ⚠ **Verify it fails
+    before trusting it** (`conventions.md` §9).
+40. Inside `AuthorshipContext`, the row carries the **context's** actor and not the
+    authenticated user — asserted with **both** present, since only that ordering
+    distinguishes tier 1 from tier 2.
+41. Outside the context with a session, the row carries `auth()->id()`. Unchanged
+    behaviour, asserted so the amendment cannot silently break the ordinary path.
+42. Every one of the six Actions in `app/Actions/Auth/` that calls `AuditLogger` writes a
+    row with a non-null `user_id`. ⚠ **Naming a concrete id, never `auth()->id()`** — an
+    assertion comparing the column to its own source passes when both are `null`, which is
+    the vacuous form `conventions.md` §9 records three times and which
+    `ChangeEmployeeAssignmentTest:103` currently takes. **Verify it fails before trusting
+    it.**
 
 ## 9. Definition of Done
 
