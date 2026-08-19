@@ -938,6 +938,13 @@ part of it) — see `business-rules.md` § Approval Hierarchy.
 (text, nullable), `old_label` (text, nullable), `new_label` (text, nullable), `reason`
 (text, nullable), `created_at`
 
+> **⚠ `user_id` becomes NOT NULL — `adr/0017`, 2026-08-19. The migration has not landed.**
+> `audit-trail.spec.md` BR-AT14 refuses a write with no resolvable actor, and §3 now carries
+> the column as NOT NULL. The line above still reads `nullable` because that is what the
+> schema still is: a forward migration is required, and until it lands this file is correct
+> and the spec is ahead of it (`CLAUDE.md` Principle #5 — `schema.md` moves with the
+> migration commit, not with the decision).
+
 **What changed, who changed it, and when.** Authentication events do **not** live here —
 they are `security_events` below (`audit-trail.spec.md` BR-AT1).
 
